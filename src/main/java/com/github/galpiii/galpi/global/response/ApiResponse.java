@@ -1,4 +1,4 @@
-package com.github.yeonja23.springboottemplate.global.response;
+package com.github.galpiii.galpi.global.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Getter;
