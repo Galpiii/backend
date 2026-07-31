@@ -1,6 +1,6 @@
-package com.github.yeonja23.springboottemplate.global.error.exception;
+package com.github.galpiii.galpi.global.error.exception;
 
-import com.github.yeonja23.springboottemplate.global.error.ErrorCode;
+import com.github.galpiii.galpi.global.error.ErrorCode;
 import lombok.Getter;
 
 @Getter

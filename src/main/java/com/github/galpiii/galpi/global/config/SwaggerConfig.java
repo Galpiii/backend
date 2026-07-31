@@ -1,4 +1,4 @@
-package com.github.yeonja23.springboottemplate.global.config;
+package com.github.galpiii.galpi.global.config;
 
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;

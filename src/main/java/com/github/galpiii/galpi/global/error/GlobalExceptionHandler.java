@@ -1,7 +1,7 @@
-package com.github.yeonja23.springboottemplate.global.error;
+package com.github.galpiii.galpi.global.error;
 
-import com.github.yeonja23.springboottemplate.global.error.exception.GlobalException;
-import com.github.yeonja23.springboottemplate.global.response.ApiResponse;
+import com.github.galpiii.galpi.global.error.exception.GlobalException;
+import com.github.galpiii.galpi.global.response.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;

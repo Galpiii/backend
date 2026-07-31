@@ -1,4 +1,4 @@
-package com.github.yeonja23.springboottemplate.global.entity;
+package com.github.galpiii.galpi.global.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.EntityListeners;

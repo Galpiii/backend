@@ -1,4 +1,4 @@
-package com.github.yeonja23.springboottemplate.global.error;
+package com.github.galpiii.galpi.global.error;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;

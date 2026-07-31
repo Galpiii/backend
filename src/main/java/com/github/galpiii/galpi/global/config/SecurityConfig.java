@@ -1,4 +1,4 @@
-package com.github.yeonja23.springboottemplate.global.config;
+package com.github.galpiii.galpi.global.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
