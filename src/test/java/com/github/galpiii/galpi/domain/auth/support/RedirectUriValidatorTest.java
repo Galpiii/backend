@@ -80,8 +80,16 @@ class RedirectUriValidatorTest {
     @Test
     @DisplayName("오류 리다이렉트에 상세 사유를 담지 않는다")
     void buildsErrorRedirect() {
-        String url = validator.buildFrontendError(ErrorCode.GITHUB_OAUTH_FAILED.getCode());
+        String url = validator.buildFrontendError(ErrorCode.GITHUB_OAUTH_FAILED.getCode(), "");
 
         assertThat(url).isEqualTo("https://galpi.dev/auth/callback?error=GITHUB-004");
+    }
+
+    @Test
+    @DisplayName("오류 리다이렉트도 복귀 대상을 인코딩해 붙인다")
+    void buildsErrorRedirectWithReturnTo() {
+        String url = validator.buildFrontendError(ErrorCode.GITHUB_OAUTH_FAILED.getCode(), "/projects/3");
+
+        assertThat(url).isEqualTo("https://galpi.dev/auth/callback?error=GITHUB-004&returnTo=%2Fprojects%2F3");
     }
 }

@@ -49,22 +49,28 @@ public class RedirectUriValidator {
      * 최종 이동할 프론트 주소를 만든다. 기본 콜백 주소에 일회용 코드를 붙인다.
      */
     public String buildFrontendCallback(String loginCode, String returnTo) {
-        StringBuilder url = new StringBuilder(properties.defaultRedirectUri());
-        url.append(properties.defaultRedirectUri().contains("?") ? '&' : '?')
-                .append("code=")
-                .append(urlEncode(loginCode));
-        if (returnTo != null && !returnTo.isBlank()) {
-            url.append("&returnTo=").append(urlEncode(returnTo));
-        }
-        return url.toString();
+        return buildFrontendUrl("code", loginCode, returnTo);
     }
 
     /**
      * OAuth 실패를 프론트 오류 화면으로 넘긴다. 상세 사유는 담지 않는다.
+     *
+     * @param returnTo 로그인을 시작한 위치. 알 수 있으면 실패 후에도 그대로 돌려보낸다
      */
-    public String buildFrontendError(String errorCode) {
-        String base = properties.defaultRedirectUri();
-        return base + (base.contains("?") ? '&' : '?') + "error=" + urlEncode(errorCode);
+    public String buildFrontendError(String errorCode, String returnTo) {
+        return buildFrontendUrl("error", errorCode, returnTo);
+    }
+
+    private String buildFrontendUrl(String paramName, String paramValue, String returnTo) {
+        StringBuilder url = new StringBuilder(properties.defaultRedirectUri());
+        url.append(properties.defaultRedirectUri().contains("?") ? '&' : '?')
+                .append(paramName)
+                .append('=')
+                .append(urlEncode(paramValue));
+        if (returnTo != null && !returnTo.isBlank()) {
+            url.append("&returnTo=").append(urlEncode(returnTo));
+        }
+        return url.toString();
     }
 
     private boolean isAllowedOrigin(String candidate) {

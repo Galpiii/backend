@@ -42,7 +42,12 @@ public class GithubOAuthService {
     public String handleCallback(String code, String state, String error, String errorDescription) {
         if (error != null && !error.isBlank()) {
             log.info("[GitHub] OAuth 거부 error={} description={}", error, errorDescription);
-            return redirectUriValidator.buildFrontendError(ErrorCode.GITHUB_OAUTH_FAILED.getCode());
+            // 실패 경로에서는 state를 거부 사유로 쓰지 않는다. 검증 실패로 예외를 던지면 위조된
+            // error 콜백만으로 정상 로그인 흐름을 무효화할 수 있다. 남은 state를 정리하고,
+            // 알 수 있으면 사용자를 시작 위치로 돌려보내는 데까지만 쓴다.
+            String returnTo = stateStore.consume(state).orElse("");
+            return redirectUriValidator.buildFrontendError(
+                    ErrorCode.GITHUB_OAUTH_FAILED.getCode(), returnTo);
         }
         if (code == null || code.isBlank()) {
             throw new BadRequestException(ErrorCode.GITHUB_OAUTH_FAILED);

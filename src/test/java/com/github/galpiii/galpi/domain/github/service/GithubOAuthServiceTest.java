@@ -255,6 +255,8 @@ class GithubOAuthServiceTest {
         @Test
         @DisplayName("GitHub이 error를 주면 프론트 오류 화면으로 넘긴다")
         void redirectsToErrorPage() {
+            given(stateStore.consume(STATE)).willReturn(Optional.of(""));
+
             String redirect = service.handleCallback(
                     null, STATE, "access_denied", "The user has denied your application access.");
 
@@ -264,11 +266,36 @@ class GithubOAuthServiceTest {
         }
 
         @Test
-        @DisplayName("error가 있으면 state를 소비하지 않는다")
-        void doesNotConsumeStateOnError() {
+        @DisplayName("error 경로에서도 남은 state를 정리한다")
+        void consumesStateOnError() {
+            given(stateStore.consume(STATE)).willReturn(Optional.of(""));
+
             service.handleCallback(null, STATE, "access_denied", null);
 
-            verify(stateStore, never()).consume(any());
+            verify(stateStore).consume(STATE);
+        }
+
+        @Test
+        @DisplayName("복귀 경로를 알 수 있으면 오류 화면에도 returnTo를 실어준다")
+        void preservesReturnPathOnError() {
+            given(stateStore.consume(STATE)).willReturn(Optional.of("/projects/3"));
+
+            String redirect = service.handleCallback(null, STATE, "access_denied", null);
+
+            assertThat(redirect).contains("returnTo=%2Fprojects%2F3");
+        }
+
+        @Test
+        @DisplayName("state가 유효하지 않아도 error 응답은 오류 화면으로 넘긴다")
+        void doesNotRejectOnUnknownState() {
+            // 위조된 error 콜백만으로 정상 로그인 흐름을 무효화할 수 없어야 한다.
+            given(stateStore.consume(STATE)).willReturn(Optional.empty());
+
+            String redirect = service.handleCallback(null, STATE, "access_denied", null);
+
+            assertThat(redirect)
+                    .startsWith("https://galpi.dev/auth/callback?error=")
+                    .doesNotContain("returnTo");
         }
     }
 
