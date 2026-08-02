@@ -57,12 +57,21 @@ public class AuthService {
         return issue(storedUserId);
     }
 
+    /**
+     * Access 토큰이 만료된 뒤의 로그아웃도 흔한 경로다(access 30분 / refresh 14일). 인증 principal이
+     * 없으면 refresh 쿠키에 저장된 주체를 대신 쓴다. 그러지 않으면 GitHub user token이 DB와 캐시에
+     * 그대로 남는다.
+     */
     public void logout(String refreshToken, Long userId) {
+        Long resolvedUserId = userId;
         if (refreshToken != null && !refreshToken.isBlank()) {
-            refreshTokenStore.revoke(refreshToken);
+            Long storedUserId = refreshTokenStore.consume(refreshToken).orElse(null);
+            if (resolvedUserId == null) {
+                resolvedUserId = storedUserId;
+            }
         }
-        if (userId != null) {
-            githubUserTokenService.delete(userId);
+        if (resolvedUserId != null) {
+            githubUserTokenService.delete(resolvedUserId);
         }
     }
 

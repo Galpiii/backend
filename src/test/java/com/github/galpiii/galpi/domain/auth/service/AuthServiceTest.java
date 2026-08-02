@@ -190,9 +190,11 @@ class AuthServiceTest {
         @Test
         @DisplayName("refresh 토큰과 GitHub user token을 함께 정리한다")
         void revokesBoth() {
+            given(refreshTokenStore.consume("refresh-token")).willReturn(Optional.of(USER_ID));
+
             service.logout("refresh-token", USER_ID);
 
-            verify(refreshTokenStore).revoke("refresh-token");
+            verify(refreshTokenStore).consume("refresh-token");
             verify(githubUserTokenService).delete(USER_ID);
         }
 
@@ -201,8 +203,29 @@ class AuthServiceTest {
         void toleratesMissingCookie() {
             service.logout(null, USER_ID);
 
-            verify(refreshTokenStore, never()).revoke(any());
+            verify(refreshTokenStore, never()).consume(any());
             verify(githubUserTokenService).delete(USER_ID);
+        }
+
+        @Test
+        @DisplayName("Access 토큰이 만료돼 principal이 없어도 쿠키의 주체로 GitHub 토큰을 정리한다")
+        void fallsBackToRefreshCookieSubject() {
+            given(refreshTokenStore.consume("refresh-token")).willReturn(Optional.of(USER_ID));
+
+            service.logout("refresh-token", null);
+
+            verify(refreshTokenStore).consume("refresh-token");
+            verify(githubUserTokenService).delete(USER_ID);
+        }
+
+        @Test
+        @DisplayName("principal도 없고 쿠키도 만료됐으면 조용히 끝낸다")
+        void toleratesUnknownSubject() {
+            given(refreshTokenStore.consume("stale-token")).willReturn(Optional.empty());
+
+            service.logout("stale-token", null);
+
+            verify(githubUserTokenService, never()).delete(any());
         }
     }
 

@@ -25,10 +25,6 @@ public class RefreshTokenStore {
         return Optional.ofNullable(userId).map(Long::valueOf);
     }
 
-    public void revoke(String refreshToken) {
-        redisTemplate.delete(key(refreshToken));
-    }
-
     private String key(String refreshToken) {
         return KEY_PREFIX + Hashes.sha256Hex(refreshToken);
     }
