@@ -1,0 +1,48 @@
+package com.github.galpiii.galpi.domain.github.client;
+
+import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
+import com.github.galpiii.galpi.domain.github.config.GithubClientConfig;
+
+import java.time.Duration;
+import java.util.List;
+
+/**
+ * 클라이언트 테스트용 공통 픽스처. 실제 {@link GithubClientConfig}가 만든 빌더를 그대로 쓰기 위한
+ * 얇은 헬퍼다 — 헤더 설정을 테스트에서 다시 흉내 내면 규약이 깨져도 테스트가 통과해버린다.
+ */
+final class GithubTestClients {
+
+    static final String API_BASE_URL = "https://api.github.com";
+    static final String OAUTH_BASE_URL = "https://github.com";
+    static final String API_VERSION = "2022-11-28";
+
+    private GithubTestClients() {
+    }
+
+    static GithubAppProperties properties() {
+        return properties(2, 10);
+    }
+
+    static GithubAppProperties properties(int maxRetries, int maxPages) {
+        return new GithubAppProperties(
+                "12345",
+                "Iv1.testclient",
+                "test-client-secret",
+                "-----BEGIN PRIVATE KEY-----\nunused\n-----END PRIVATE KEY-----",
+                "https://api.galpi.dev",
+                API_VERSION,
+                API_BASE_URL,
+                OAUTH_BASE_URL,
+                "Galpi",
+                List.of("https://galpi.dev"),
+                "https://galpi.dev/auth/callback",
+                Duration.ofSeconds(5),
+                Duration.ofSeconds(15),
+                maxRetries,
+                maxPages);
+    }
+
+    static GithubClientConfig config() {
+        return new GithubClientConfig();
+    }
+}
