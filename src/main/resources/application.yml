@@ -14,12 +14,64 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: ${JPA_DDL_AUTO}
+      ddl-auto: ${JPA_DDL_AUTO:validate}
     properties:
       hibernate:
         format_sql: true
         default_batch_fetch_size: ${JPA_BATCH_FETCH_SIZE}
     open-in-view: false
+
+  flyway:
+    enabled: ${FLYWAY_ENABLED:true}
+    baseline-on-migrate: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD:}
+      timeout: ${REDIS_TIMEOUT:3s}
+
+galpi:
+  crypto:
+    token:
+      current-version: ${TOKEN_ENCRYPTION_CURRENT_VERSION:1}
+      keys:
+        1: ${TOKEN_ENCRYPTION_KEY_V1}
+
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
+
+  jwt:
+    secret: ${JWT_SECRET}
+    issuer: ${JWT_ISSUER:galpi}
+    access-token-ttl: ${JWT_ACCESS_TTL:30m}
+    refresh-token-ttl: ${JWT_REFRESH_TTL:14d}
+    login-code-ttl: ${JWT_LOGIN_CODE_TTL:60s}
+    cookie:
+      name: ${JWT_COOKIE_NAME:galpi_refresh}
+      path: ${JWT_COOKIE_PATH:/auth}
+      secure: ${JWT_COOKIE_SECURE:true}
+      same-site: ${JWT_COOKIE_SAME_SITE:Lax} # 프론트와 백엔드가 다른 사이트면 None(+secure=true), 같은 사이트면 Lax
+      domain: ${JWT_COOKIE_DOMAIN:}
+
+  github:
+    app-id: ${GITHUB_APP_ID}
+    client-id: ${GITHUB_CLIENT_ID}
+    client-secret: ${GITHUB_CLIENT_SECRET}
+    private-key: ${GITHUB_PRIVATE_KEY}
+    base-url: ${GITHUB_APP_BASE_URL}
+    # 2022-11-28과 2026-03-10이 지원되는데, 2026-03-10은 PR 응답에서 merge_commit_sha를 제거하므로 Phase 1C 수집에 불리 당분간 2022-11-28로 사용
+    api-version: ${GITHUB_API_VERSION:2022-11-28}
+    api-base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
+    oauth-base-url: ${GITHUB_OAUTH_BASE_URL:https://github.com}
+    user-agent: ${GITHUB_USER_AGENT:Galpi}
+    allowed-redirect-origins: ${GITHUB_ALLOWED_REDIRECT_ORIGINS}
+    default-redirect-uri: ${GITHUB_DEFAULT_REDIRECT_URI}
+    connect-timeout: ${GITHUB_CONNECT_TIMEOUT:5s}
+    read-timeout: ${GITHUB_READ_TIMEOUT:15s}
+    max-retries: ${GITHUB_MAX_RETRIES:2}
+    max-pages: ${GITHUB_MAX_PAGES:10}
 
 logging:
   level:
