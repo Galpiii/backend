@@ -40,10 +40,10 @@ class RedirectUriValidatorTest {
     @ParameterizedTest(name = "{0} 은 거부된다")
     @ValueSource(strings = {
             "https://evil.example.com/steal",
-            "//evil.example.com",              // 프로토콜 상대 URL — 상대경로처럼 보이지만 외부로 나간다
-            "http://galpi.dev.evil.com",       // 접두어만 같은 도메인
+            "//evil.example.com",
+            "http://galpi.dev.evil.com",
             "javascript:alert(1)",
-            "https://galpi.dev:8443/x"         // 포트가 다르면 다른 origin
+            "https://galpi.dev:8443/x"
     })
     @DisplayName("허용되지 않은 대상은 거부한다")
     void rejectsUntrustedTargets(String target) {

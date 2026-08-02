@@ -7,9 +7,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 
-/**
- * Refresh 토큰 쿠키 생성. HttpOnly로만 내보내며 자바스크립트에서 읽히지 않는다.
- */
 @Component
 @RequiredArgsConstructor
 public class RefreshCookieFactory {
@@ -20,9 +17,6 @@ public class RefreshCookieFactory {
         return build(refreshToken, jwtProperties.refreshTokenTtl());
     }
 
-    /**
-     * 로그아웃·재사용 감지 시 즉시 만료시킨다.
-     */
     public ResponseCookie expired() {
         return build("", Duration.ZERO);
     }

@@ -8,7 +8,6 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum ErrorCode {
 
-    // Common
     INTERNAL_SERVER_ERROR("COMMON-001", HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다."),
     INVALID_INPUT_VALUE("COMMON-002", HttpStatus.BAD_REQUEST, "요청 값이 유효하지 않습니다."),
     METHOD_NOT_ALLOWED("COMMON-003", HttpStatus.METHOD_NOT_ALLOWED, "허용되지 않은 HTTP 메서드입니다."),
@@ -19,7 +18,6 @@ public enum ErrorCode {
     CONFLICT("COMMON-008", HttpStatus.CONFLICT, "이미 존재하는 리소스입니다."),
     BAD_REQUEST("COMMON-009", HttpStatus.BAD_REQUEST, "잘못된 요청입니다."),
 
-    // Auth
     UNAUTHORIZED("AUTH-001", HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
     FORBIDDEN("AUTH-002", HttpStatus.FORBIDDEN, "접근 권한이 없습니다."),
     EXPIRED_TOKEN("AUTH-003", HttpStatus.UNAUTHORIZED, "만료된 토큰입니다."),
@@ -28,7 +26,6 @@ public enum ErrorCode {
     REFRESH_TOKEN_NOT_FOUND("AUTH-006", HttpStatus.UNAUTHORIZED, "만료되었거나 이미 사용된 리프레시 토큰입니다."),
     INVALID_LOGIN_CODE("AUTH-007", HttpStatus.UNAUTHORIZED, "유효하지 않거나 만료된 로그인 코드입니다."),
 
-    // GitHub
     GITHUB_REAUTH_REQUIRED("GITHUB-001", HttpStatus.UNAUTHORIZED, "GitHub 재연결이 필요합니다."),
     GITHUB_OAUTH_STATE_INVALID("GITHUB-002", HttpStatus.BAD_REQUEST, "유효하지 않거나 만료된 state입니다."),
     GITHUB_OAUTH_CODE_REUSED("GITHUB-003", HttpStatus.BAD_REQUEST, "이미 사용된 인증 코드입니다."),

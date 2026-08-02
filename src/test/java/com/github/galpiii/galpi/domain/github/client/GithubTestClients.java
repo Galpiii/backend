@@ -6,10 +6,6 @@ import com.github.galpiii.galpi.domain.github.config.GithubClientConfig;
 import java.time.Duration;
 import java.util.List;
 
-/**
- * 클라이언트 테스트용 공통 픽스처. 실제 {@link GithubClientConfig}가 만든 빌더를 그대로 쓰기 위한
- * 얇은 헬퍼다 — 헤더 설정을 테스트에서 다시 흉내 내면 규약이 깨져도 테스트가 통과해버린다.
- */
 final class GithubTestClients {
 
     static final String API_BASE_URL = "https://api.github.com";

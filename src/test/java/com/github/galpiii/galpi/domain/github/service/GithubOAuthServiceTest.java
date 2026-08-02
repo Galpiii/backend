@@ -193,7 +193,6 @@ class GithubOAuthServiceTest {
         @Test
         @DisplayName("이미 사용된 state는 두 번째 호출에서 거부한다")
         void rejectsReusedState() {
-            // consume은 조회와 동시에 삭제하므로 두 번째 호출은 empty를 돌려준다.
             given(stateStore.consume(STATE)).willReturn(Optional.of("")).willReturn(Optional.empty());
             given(codeGuard.markUsed(CODE)).willReturn(true);
             given(oAuthClient.exchangeCodeForToken(CODE)).willReturn(tokenResponse(28800L));
@@ -288,7 +287,6 @@ class GithubOAuthServiceTest {
         @Test
         @DisplayName("state가 유효하지 않아도 error 응답은 오류 화면으로 넘긴다")
         void doesNotRejectOnUnknownState() {
-            // 위조된 error 콜백만으로 정상 로그인 흐름을 무효화할 수 없어야 한다.
             given(stateStore.consume(STATE)).willReturn(Optional.empty());
 
             String redirect = service.handleCallback(null, STATE, "access_denied", null);

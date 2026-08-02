@@ -1,12 +1,3 @@
-# 컨텍스트 로딩 테스트용 설정.
-#
-# 운영 application.yml은 필수 값에 기본값을 두지 않는다. 설정 누락을 기동 시점에 터뜨리기 위한
-# 의도이므로 그쪽에 더미 기본값을 넣는 대신, test 프로필에서만 값을 채운다. 운영 설정 파일은
-# 그대로 로딩되므로 구조 검증도 계속 유효하다.
-#
-# 여기 값은 전부 가짜다. galpi.github.private-key만 예외로, PEM 파싱이 생성자에서 일어나
-# 실제 RSA 키가 필요하다. 저장소에 개인키를 남기지 않으려고 IntegrationTestSupport가 실행 시점에
-# 생성해 주입한다.
 
 server:
   port: 0
@@ -27,7 +18,6 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
-        # DB 없이 컨텍스트만 띄운다. 이게 없으면 Hibernate가 기동 중 커넥션을 연다.
         boot:
           allow_jdbc_metadata_access: false
 
@@ -70,7 +60,4 @@ swagger:
   servers:
     - http://localhost:8080
 
-# SwaggerConfig가 swagger.servers가 아니라 @Value("${APP_SERVER_URL}")로 환경변수를 직접 읽는다.
-# 설정 계층을 건너뛰는 배선이라 위의 swagger.servers는 실제로 아무도 읽지 않는다. 운영 코드를
-# 고치기 전까지는 여기서도 같은 이름으로 채워 줘야 컨텍스트가 뜬다.
 APP_SERVER_URL: http://localhost:8080

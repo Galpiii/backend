@@ -8,13 +8,6 @@ import org.springframework.data.mapping.context.PersistentEntities;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * 시각 컬럼이 {@code timestamptz}이므로 감사 필드도 {@link java.time.OffsetDateTime}이어야 한다.
- *
- * <p>Spring Data의 기본 {@code DateTimeProvider}는 {@code LocalDateTime}을 준다. 여기서 실제
- * 감사 핸들러를 돌려, 설정한 provider가 엔티티 필드 타입까지 제대로 채우는지 확인한다.
- * 이게 깨지면 저장 시점에야 드러나므로 단위 테스트로 고정해둔다.
- */
 @DisplayName("BaseEntity — timestamptz 감사 필드")
 class BaseEntityAuditingTest {
 

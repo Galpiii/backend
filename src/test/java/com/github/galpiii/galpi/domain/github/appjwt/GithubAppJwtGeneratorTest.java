@@ -34,15 +34,10 @@ class GithubAppJwtGeneratorTest {
         keyPair = generator.generateKeyPair();
     }
 
-    /** JDK가 내보내는 PKCS#8 PEM. */
     private static String pkcs8Pem() {
         return wrap("PRIVATE KEY", keyPair.getPrivate().getEncoded());
     }
 
-    /**
-     * GitHub이 실제로 내려주는 PKCS#1 PEM. JDK는 PKCS#1을 직접 내보내지 못하므로
-     * RSAPrivateCrtKey에서 DER을 조립한다.
-     */
     private static String pkcs1Pem() {
         RSAPrivateCrtKey key = (RSAPrivateCrtKey) keyPair.getPrivate();
         byte[] der = Pkcs1Der.encode(key);
@@ -127,9 +122,6 @@ class GithubAppJwtGeneratorTest {
                 .hasMessageNotContaining("QUJD");
     }
 
-    /**
-     * RSAPrivateCrtKey를 PKCS#1 RSAPrivateKey DER로 인코딩하는 테스트 전용 헬퍼.
-     */
     private static final class Pkcs1Der {
 
         static byte[] encode(RSAPrivateCrtKey key) {
