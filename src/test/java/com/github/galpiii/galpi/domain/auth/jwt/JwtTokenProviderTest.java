@@ -20,9 +20,13 @@ class JwtTokenProviderTest {
     private JwtTokenProvider tokenProvider;
 
     private static JwtProperties properties(String secret, Duration accessTtl) {
+        return properties(secret, "galpi", accessTtl);
+    }
+
+    private static JwtProperties properties(String secret, String issuer, Duration accessTtl) {
         return new JwtProperties(
                 secret,
-                "galpi",
+                issuer,
                 accessTtl,
                 Duration.ofDays(14),
                 Duration.ofSeconds(60),
@@ -91,6 +95,19 @@ class JwtTokenProviderTest {
                 .isInstanceOf(UnauthorizedException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.EXPIRED_TOKEN);
+    }
+
+    @Test
+    @DisplayName("같은 시크릿이어도 issuer가 다르면 거부한다")
+    void rejectsForeignIssuer() {
+        JwtTokenProvider other = new JwtTokenProvider(
+                properties(SECRET, "another-service", Duration.ofMinutes(30)));
+        String foreignToken = other.createAccessToken(1L);
+
+        assertThatThrownBy(() -> tokenProvider.parse(foreignToken, TokenType.ACCESS))
+                .isInstanceOf(UnauthorizedException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_TOKEN);
     }
 
     @Test

@@ -93,6 +93,11 @@ public class JwtTokenProvider {
             throw new UnauthorizedException(ErrorCode.EXPIRED_TOKEN);
         }
 
+        if (!properties.issuer().equals(claims.getIssuer())) {
+            log.debug("[JWT] issuer 불일치");
+            throw new UnauthorizedException(ErrorCode.INVALID_TOKEN);
+        }
+
         String type = claims.getClaim(CLAIM_TOKEN_TYPE) instanceof String s ? s : null;
         if (!expectedType.name().equals(type)) {
             log.debug("[JWT] 토큰 타입 불일치. expected={}", expectedType);
