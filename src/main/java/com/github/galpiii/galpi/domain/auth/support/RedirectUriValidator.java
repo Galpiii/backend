@@ -9,17 +9,28 @@ import org.springframework.stereotype.Component;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class RedirectUriValidator {
 
+    /**
+     * 브라우저는 URL의 백슬래시를 슬래시로 정규화한다(WHATWG URL). 그래서 {@code /\evil.com}은
+     * {@code //evil.com}, 즉 프로토콜 상대 URL이 되어 외부로 나간다. 제어문자도 같은 이유로 막는다.
+     */
+    private static final Pattern PATH_TRAVERSAL_TO_HOST = Pattern.compile("[\\\\\\p{Cntrl}]");
+
     private final GithubAppProperties properties;
 
     public String validate(String returnTo) {
         if (returnTo == null || returnTo.isBlank()) {
             return "";
+        }
+        if (PATH_TRAVERSAL_TO_HOST.matcher(returnTo).find()) {
+            log.warn("[Auth] 백슬래시·제어문자가 섞인 리다이렉트 대상 요청");
+            throw new BadRequestException(ErrorCode.GITHUB_REDIRECT_NOT_ALLOWED);
         }
         if (returnTo.startsWith("/") && !returnTo.startsWith("//")) {
             return returnTo;

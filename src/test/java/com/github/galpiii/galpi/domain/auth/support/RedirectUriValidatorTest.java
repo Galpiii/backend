@@ -43,10 +43,29 @@ class RedirectUriValidatorTest {
             "//evil.example.com",
             "http://galpi.dev.evil.com",
             "javascript:alert(1)",
-            "https://galpi.dev:8443/x"
+            "https://galpi.dev:8443/x",
+            "https://galpi.dev@evil.example.com/"
     })
     @DisplayName("허용되지 않은 대상은 거부한다")
     void rejectsUntrustedTargets(String target) {
+        assertThatThrownBy(() -> validator.validate(target))
+                .isInstanceOf(BadRequestException.class)
+                .extracting(e -> ((GlobalException) e).getErrorCode())
+                .isEqualTo(ErrorCode.GITHUB_REDIRECT_NOT_ALLOWED);
+    }
+
+    @ParameterizedTest(name = "{0} 은 거부된다")
+    @ValueSource(strings = {
+            "/\\evil.example.com",
+            "/\\/evil.example.com",
+            "\\/evil.example.com",
+            "/projects\\..\\evil",
+            "/\tevil",
+            "/pro\njects"
+    })
+    @DisplayName("백슬래시·제어문자로 //를 우회하려는 대상은 거부한다")
+    void rejectsBackslashBypass(String target) {
+        // 브라우저가 \를 /로 정규화하므로 /\evil.com은 //evil.com과 같다.
         assertThatThrownBy(() -> validator.validate(target))
                 .isInstanceOf(BadRequestException.class)
                 .extracting(e -> ((GlobalException) e).getErrorCode())
