@@ -20,6 +20,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -64,7 +66,7 @@ class GithubUserTokenServiceTest {
     private static JwtProperties jwtProperties() {
         return new JwtProperties(
                 "galpi-test-secret-key-must-be-at-least-32-bytes", "galpi",
-                Duration.ofMinutes(30), SESSION_TTL, Duration.ofSeconds(60),
+                Duration.ofMinutes(30), SESSION_TTL, Duration.ofDays(90), Duration.ofSeconds(60),
                 new JwtProperties.Cookie("galpi_refresh", "/auth", true, "Lax", ""));
     }
 
@@ -169,6 +171,30 @@ class GithubUserTokenServiceTest {
             service.save(user(), TOKEN, SESSION_TTL.plusDays(30));
 
             verify(cache).put(USER_ID, TOKEN, SESSION_TTL);
+        }
+
+        /**
+         * 트랜잭션 안에서 캐시를 먼저 채우면 롤백됐을 때 DB에 없는 토큰이 Redis에만 남는다.
+         * find()는 캐시를 먼저 보므로 그 토큰을 계속 유효하다고 답하게 된다.
+         */
+        @Test
+        @DisplayName("캐시는 커밋된 뒤에 채운다 — 롤백되면 넣지 않는다")
+        void fillsCacheOnlyAfterCommit() {
+            given(tokenRepository.findByUserIdAndProvider(USER_ID, OAuthProvider.GITHUB))
+                    .willReturn(Optional.empty());
+            TransactionSynchronizationManager.initSynchronization();
+            try {
+                service.save(user(), TOKEN, Duration.ofHours(8));
+
+                verify(cache, never()).put(any(), any(), any());
+
+                TransactionSynchronizationManager.getSynchronizations()
+                        .forEach(TransactionSynchronization::afterCommit);
+
+                verify(cache).put(eq(USER_ID), eq(TOKEN), any());
+            } finally {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
         }
     }
 

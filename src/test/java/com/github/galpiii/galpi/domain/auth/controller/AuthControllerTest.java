@@ -4,6 +4,7 @@ import com.github.galpiii.galpi.domain.auth.config.JwtProperties;
 import com.github.galpiii.galpi.domain.auth.dto.IssuedTokens;
 import com.github.galpiii.galpi.domain.auth.dto.MeResponse;
 import com.github.galpiii.galpi.domain.auth.jwt.JwtTokenProvider;
+import com.github.galpiii.galpi.domain.auth.support.CookieAuthCsrfFilter;
 import com.github.galpiii.galpi.domain.user.entity.GithubConnectionStatus;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.UnauthorizedException;
@@ -122,7 +123,7 @@ class AuthControllerTest extends WebMvcTestSupport {
             given(authService.refresh("old-refresh"))
                     .willReturn(new IssuedTokens("new-access", "new-refresh", 1800L));
 
-            MvcResult result = mockMvc.perform(post("/auth/refresh")
+            MvcResult result = mockMvc.perform(post("/auth/refresh").header(CookieAuthCsrfFilter.HEADER, "1")
                             .cookie(new Cookie(REFRESH_COOKIE, "old-refresh")))
                     .andExpect(status().isOk())
                     .andReturn();
@@ -136,7 +137,7 @@ class AuthControllerTest extends WebMvcTestSupport {
             willThrow(new UnauthorizedException(ErrorCode.REFRESH_TOKEN_NOT_FOUND))
                     .given(authService).refresh(null);
 
-            mockMvc.perform(post("/auth/refresh"))
+            mockMvc.perform(post("/auth/refresh").header(CookieAuthCsrfFilter.HEADER, "1"))
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.code").value(ErrorCode.REFRESH_TOKEN_NOT_FOUND.getCode()));
         }
@@ -147,7 +148,7 @@ class AuthControllerTest extends WebMvcTestSupport {
             willThrow(new UnauthorizedException(ErrorCode.REFRESH_TOKEN_REUSED))
                     .given(authService).refresh("stolen");
 
-            mockMvc.perform(post("/auth/refresh")
+            mockMvc.perform(post("/auth/refresh").header(CookieAuthCsrfFilter.HEADER, "1")
                             .cookie(new Cookie(REFRESH_COOKIE, "stolen")))
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.code").value(ErrorCode.REFRESH_TOKEN_REUSED.getCode()));
@@ -161,7 +162,7 @@ class AuthControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("쿠키를 즉시 만료시킨다")
         void expiresCookie() throws Exception {
-            MvcResult result = mockMvc.perform(post("/auth/logout")
+            MvcResult result = mockMvc.perform(post("/auth/logout").header(CookieAuthCsrfFilter.HEADER, "1")
                             .cookie(new Cookie(REFRESH_COOKIE, "refresh-jwt")))
                     .andExpect(status().isOk())
                     .andReturn();
@@ -173,7 +174,7 @@ class AuthControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("쿠키가 없어도 200으로 끝낸다")
         void succeedsWithoutCookie() throws Exception {
-            mockMvc.perform(post("/auth/logout")).andExpect(status().isOk());
+            mockMvc.perform(post("/auth/logout").header(CookieAuthCsrfFilter.HEADER, "1")).andExpect(status().isOk());
 
             verify(authService).logout(null);
         }

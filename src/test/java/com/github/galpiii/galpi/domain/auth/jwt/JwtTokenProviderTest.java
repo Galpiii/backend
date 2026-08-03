@@ -29,6 +29,7 @@ class JwtTokenProviderTest {
                 issuer,
                 accessTtl,
                 Duration.ofDays(14),
+                Duration.ofDays(90),
                 Duration.ofSeconds(60),
                 new JwtProperties.Cookie("galpi_refresh", "/auth", true, "Lax", ""));
     }

@@ -26,6 +26,8 @@ import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,7 +61,7 @@ class AuthServiceTest {
     private static JwtProperties jwtProperties() {
         return new JwtProperties(
                 "galpi-test-secret-key-must-be-at-least-32-bytes", "galpi",
-                Duration.ofMinutes(30), Duration.ofDays(14), Duration.ofSeconds(60),
+                Duration.ofMinutes(30), Duration.ofDays(14), Duration.ofDays(90), Duration.ofSeconds(60),
                 new JwtProperties.Cookie("galpi_refresh", "/auth", true, "Lax", ""));
     }
 
@@ -129,12 +131,71 @@ class AuthServiceTest {
         void rotatesRefreshToken() {
             String oldRefresh = tokenProvider.createRefreshToken(USER_ID);
             given(refreshTokenStore.consume(oldRefresh)).willReturn(Optional.of(USER_ID));
+            given(userRepository.existsById(USER_ID)).willReturn(true);
 
             IssuedTokens tokens = service.refresh(oldRefresh);
 
             assertThat(tokens.refreshToken()).isNotEqualTo(oldRefresh);
             verify(refreshTokenStore).consume(oldRefresh);
             verify(refreshTokenStore).save(eq(tokens.refreshToken()), eq(USER_ID), any());
+        }
+
+        @Test
+        @DisplayName("회전해도 세션 시작 시각은 물려받는다 — 회전으로 절대 수명을 늘릴 수 없다")
+        void carriesSessionStartAcrossRotation() {
+            Instant sessionStartedAt = Instant.now().minus(Duration.ofDays(30));
+            String oldRefresh = tokenProvider.createRefreshToken(USER_ID, sessionStartedAt);
+            given(refreshTokenStore.consume(oldRefresh)).willReturn(Optional.of(USER_ID));
+            given(userRepository.existsById(USER_ID)).willReturn(true);
+
+            IssuedTokens tokens = service.refresh(oldRefresh);
+
+            assertThat(tokenProvider.parse(tokens.refreshToken(), TokenType.REFRESH).sessionStartedAt())
+                    .isEqualTo(sessionStartedAt.truncatedTo(ChronoUnit.SECONDS));
+        }
+
+        @Test
+        @DisplayName("절대 수명이 지난 세션은 회전을 거부하고 남은 세션도 정리한다")
+        void rejectsSessionPastAbsoluteTtl() {
+            String refresh = tokenProvider.createRefreshToken(
+                    USER_ID, Instant.now().minus(Duration.ofDays(91)));
+            given(refreshTokenStore.consume(refresh)).willReturn(Optional.of(USER_ID));
+
+            assertThatThrownBy(() -> service.refresh(refresh))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .extracting(e -> ((GlobalException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.SESSION_EXPIRED);
+
+            verify(refreshTokenStore).revokeAll(USER_ID);
+            verify(refreshTokenStore, never()).save(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("세션 시작 시각이 없는 토큰은 거부한다 — 없는 값을 지금으로 메우면 상한이 무력화된다")
+        void rejectsTokenWithoutSessionStart() {
+            String accessShapedRefresh = tokenProvider.createRefreshToken(USER_ID, null);
+            given(refreshTokenStore.consume(accessShapedRefresh)).willReturn(Optional.of(USER_ID));
+
+            assertThatThrownBy(() -> service.refresh(accessShapedRefresh))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .extracting(e -> ((GlobalException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_TOKEN);
+        }
+
+        @Test
+        @DisplayName("탈퇴한 사용자는 저장소에 토큰이 남아 있어도 재발급받지 못한다")
+        void rejectsDeletedUser() {
+            String refresh = tokenProvider.createRefreshToken(USER_ID);
+            given(refreshTokenStore.consume(refresh)).willReturn(Optional.of(USER_ID));
+            given(userRepository.existsById(USER_ID)).willReturn(false);
+
+            assertThatThrownBy(() -> service.refresh(refresh))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .extracting(e -> ((GlobalException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+            verify(refreshTokenStore).revokeAll(USER_ID);
+            verify(refreshTokenStore, never()).save(any(), any(), any());
         }
 
         @Test

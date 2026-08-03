@@ -25,6 +25,7 @@ import java.util.UUID;
 public class JwtTokenProvider {
 
     private static final String CLAIM_TOKEN_TYPE = "typ";
+    private static final String CLAIM_SESSION_STARTED_AT = "sst";
     private static final int MIN_SECRET_BYTES = 32;
 
     private final JwtProperties properties;
@@ -47,23 +48,34 @@ public class JwtTokenProvider {
     }
 
     public String createAccessToken(Long userId) {
-        return create(userId, TokenType.ACCESS, properties.accessTokenTtl());
+        return create(userId, TokenType.ACCESS, properties.accessTokenTtl(), null);
     }
 
+    /** 새 세션을 시작한다. 절대 수명은 지금부터 센다. */
     public String createRefreshToken(Long userId) {
-        return create(userId, TokenType.REFRESH, properties.refreshTokenTtl());
+        return createRefreshToken(userId, Instant.now());
     }
 
-    private String create(Long userId, TokenType type, Duration ttl) {
+    /**
+     * 회전용. 세션 시작 시각을 그대로 물려줘야 회전이 절대 수명을 늘리지 못한다.
+     */
+    public String createRefreshToken(Long userId, Instant sessionStartedAt) {
+        return create(userId, TokenType.REFRESH, properties.refreshTokenTtl(), sessionStartedAt);
+    }
+
+    private String create(Long userId, TokenType type, Duration ttl, Instant sessionStartedAt) {
         Instant now = Instant.now();
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
                 .subject(String.valueOf(userId))
                 .issuer(properties.issuer())
                 .jwtID(UUID.randomUUID().toString())
                 .claim(CLAIM_TOKEN_TYPE, type.name())
                 .issueTime(Date.from(now))
-                .expirationTime(Date.from(now.plus(ttl)))
-                .build();
+                .expirationTime(Date.from(now.plus(ttl)));
+        if (sessionStartedAt != null) {
+            builder.claim(CLAIM_SESSION_STARTED_AT, sessionStartedAt.getEpochSecond());
+        }
+        JWTClaimsSet claims = builder.build();
 
         SignedJWT jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claims);
         try {
@@ -112,6 +124,19 @@ public class JwtTokenProvider {
             throw new UnauthorizedException(ErrorCode.INVALID_TOKEN);
         }
 
-        return new TokenClaims(userId, claims.getJWTID(), expectedType, expiration.toInstant());
+        return new TokenClaims(userId, claims.getJWTID(), expectedType, expiration.toInstant(),
+                sessionStartedAt(claims));
+    }
+
+    /**
+     * 세션 시작 시각. 손상됐거나 없으면 null을 주고, 절대 수명을 재야 하는 쪽에서 거부하게 한다.
+     * 여기서 "지금"으로 메워 주면 상한이 조용히 무력화된다.
+     */
+    private static Instant sessionStartedAt(JWTClaimsSet claims) {
+        Object raw = claims.getClaim(CLAIM_SESSION_STARTED_AT);
+        if (raw instanceof Number epochSeconds) {
+            return Instant.ofEpochSecond(epochSeconds.longValue());
+        }
+        return null;
     }
 }

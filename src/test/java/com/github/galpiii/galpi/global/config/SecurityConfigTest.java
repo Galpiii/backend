@@ -1,6 +1,7 @@
 package com.github.galpiii.galpi.global.config;
 
 import com.github.galpiii.galpi.domain.auth.dto.IssuedTokens;
+import com.github.galpiii.galpi.domain.auth.support.CookieAuthCsrfFilter;
 import com.github.galpiii.galpi.domain.github.dto.AuthorizeRedirect;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.support.WebMvcTestSupport;
@@ -14,6 +15,8 @@ import org.springframework.http.MediaType;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
@@ -67,13 +70,13 @@ class SecurityConfigTest extends WebMvcTestSupport {
         void refreshIsPublic() throws Exception {
             given(authService.refresh(any())).willReturn(TOKENS);
 
-            mockMvc.perform(post("/auth/refresh")).andExpect(status().isOk());
+            mockMvc.perform(post("/auth/refresh").header(CookieAuthCsrfFilter.HEADER, "1")).andExpect(status().isOk());
         }
 
         @Test
         @DisplayName("로그아웃은 열려 있다")
         void logoutIsPublic() throws Exception {
-            mockMvc.perform(post("/auth/logout")).andExpect(status().isOk());
+            mockMvc.perform(post("/auth/logout").header(CookieAuthCsrfFilter.HEADER, "1")).andExpect(status().isOk());
         }
 
         @Test
@@ -85,6 +88,43 @@ class SecurityConfigTest extends WebMvcTestSupport {
                     .andExpect(status().isOk())
                     .andExpect(header().string(
                             HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:5173"));
+        }
+    }
+
+    /**
+     * 쿠키 하나로 인증하는 엔드포인트는 교차 사이트에서 그대로 호출될 수 있다. 커스텀 헤더는
+     * 교차 사이트 폼으로 붙일 수 없고 fetch로 붙이면 프리플라이트가 CORS 허용 목록에 걸린다.
+     */
+    @Nested
+    @DisplayName("쿠키 인증 엔드포인트의 CSRF 방어")
+    class CookieAuthCsrf {
+
+        @Test
+        @DisplayName("헤더 없는 재발급은 403이고 서비스를 부르지 않는다")
+        void rejectsRefreshWithoutHeader() throws Exception {
+            mockMvc.perform(post("/auth/refresh"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value(ErrorCode.CSRF_HEADER_REQUIRED.getCode()));
+
+            verify(authService, never()).refresh(any());
+        }
+
+        @Test
+        @DisplayName("헤더 없는 로그아웃은 403이고 세션을 건드리지 않는다")
+        void rejectsLogoutWithoutHeader() throws Exception {
+            mockMvc.perform(post("/auth/logout"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value(ErrorCode.CSRF_HEADER_REQUIRED.getCode()));
+
+            verify(authService, never()).logout(any());
+        }
+
+        @Test
+        @DisplayName("Access 토큰으로 인증하는 곳에는 헤더를 요구하지 않는다")
+        void leavesBearerEndpointsAlone() throws Exception {
+            mockMvc.perform(get("/auth/me"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value(ErrorCode.UNAUTHORIZED.getCode()));
         }
     }
 

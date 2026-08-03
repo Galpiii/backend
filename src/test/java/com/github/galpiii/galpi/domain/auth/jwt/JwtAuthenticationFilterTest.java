@@ -32,7 +32,7 @@ class JwtAuthenticationFilterTest {
     private static JwtProperties properties() {
         return new JwtProperties(
                 "galpi-test-secret-key-must-be-at-least-32-bytes", "galpi",
-                Duration.ofMinutes(30), Duration.ofDays(14), Duration.ofSeconds(60),
+                Duration.ofMinutes(30), Duration.ofDays(14), Duration.ofDays(90), Duration.ofSeconds(60),
                 new JwtProperties.Cookie("galpi_refresh", "/auth", true, "Lax", ""));
     }
 
@@ -88,7 +88,7 @@ class JwtAuthenticationFilterTest {
     void rejectsForeignSignature() throws Exception {
         JwtTokenProvider attacker = new JwtTokenProvider(new JwtProperties(
                 "attacker-secret-key-that-is-also-32-bytes-long", "galpi",
-                Duration.ofMinutes(30), Duration.ofDays(14), Duration.ofSeconds(60),
+                Duration.ofMinutes(30), Duration.ofDays(14), Duration.ofDays(90), Duration.ofSeconds(60),
                 new JwtProperties.Cookie("galpi_refresh", "/auth", true, "Lax", "")));
 
         doFilter("Bearer " + attacker.createAccessToken(USER_ID));

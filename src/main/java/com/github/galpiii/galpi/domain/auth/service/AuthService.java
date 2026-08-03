@@ -18,6 +18,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -36,7 +38,7 @@ public class AuthService {
                     log.info("[Auth] 유효하지 않은 로그인 코드 교환 시도");
                     return new UnauthorizedException(ErrorCode.INVALID_LOGIN_CODE);
                 });
-        return issue(userId);
+        return issue(userId, Instant.now());
     }
 
     public IssuedTokens refresh(String refreshToken) {
@@ -52,7 +54,35 @@ public class AuthService {
             log.warn("[Auth] refresh 토큰의 주체가 저장값과 다르다");
             throw new UnauthorizedException(ErrorCode.INVALID_TOKEN);
         }
-        return issue(storedUserId);
+
+        Instant sessionStartedAt = requireLivingSession(claims, storedUserId);
+
+        // 회전은 저장소만 보므로, 탈퇴한 사용자도 상한에 닿을 때까지 계속 토큰을 받아 간다.
+        if (!userRepository.existsById(storedUserId)) {
+            log.info("[Auth] 없는 사용자의 refresh 요청 userId={}", storedUserId);
+            refreshTokenStore.revokeAll(storedUserId);
+            throw new UnauthorizedException(ErrorCode.UNAUTHORIZED);
+        }
+
+        return issue(storedUserId, sessionStartedAt);
+    }
+
+    /**
+     * 회전할 때마다 refresh TTL이 새로 붙으므로, 상한이 없으면 활성 세션은 무한히 연장된다.
+     * 세션 시작 시각은 회전 사이에 그대로 물려받은 값이라 회전으로 늘릴 수 없다.
+     */
+    private Instant requireLivingSession(TokenClaims claims, Long userId) {
+        Instant sessionStartedAt = claims.sessionStartedAt();
+        if (sessionStartedAt == null) {
+            log.warn("[Auth] refresh 토큰에 세션 시작 시각이 없다 userId={}", userId);
+            throw new UnauthorizedException(ErrorCode.INVALID_TOKEN);
+        }
+        if (sessionStartedAt.plus(jwtProperties.sessionAbsoluteTtl()).isBefore(Instant.now())) {
+            log.info("[Auth] 세션 절대 수명 초과. 다시 로그인해야 한다 userId={}", userId);
+            refreshTokenStore.revokeAll(userId);
+            throw new UnauthorizedException(ErrorCode.SESSION_EXPIRED);
+        }
+        return sessionStartedAt;
     }
 
     private UnauthorizedException onMissingToken(String refreshToken, Long userId) {
@@ -86,9 +116,9 @@ public class AuthService {
         return MeResponse.of(user, githubUserTokenService.isValid(userId));
     }
 
-    private IssuedTokens issue(Long userId) {
+    private IssuedTokens issue(Long userId, Instant sessionStartedAt) {
         String accessToken = tokenProvider.createAccessToken(userId);
-        String refreshToken = tokenProvider.createRefreshToken(userId);
+        String refreshToken = tokenProvider.createRefreshToken(userId, sessionStartedAt);
         refreshTokenStore.save(refreshToken, userId, jwtProperties.refreshTokenTtl());
         return new IssuedTokens(accessToken, refreshToken, jwtProperties.accessTokenTtl().toSeconds());
     }

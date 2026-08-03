@@ -78,7 +78,7 @@ class GithubOAuthServiceTest {
     private static JwtProperties jwtProperties() {
         return new JwtProperties(
                 "galpi-test-secret-key-must-be-at-least-32-bytes", "galpi",
-                Duration.ofMinutes(30), SESSION_TTL, Duration.ofSeconds(60),
+                Duration.ofMinutes(30), SESSION_TTL, Duration.ofDays(90), Duration.ofSeconds(60),
                 new JwtProperties.Cookie("galpi_refresh", "/auth", true, "Lax", ""));
     }
 

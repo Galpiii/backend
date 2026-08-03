@@ -3,6 +3,7 @@ package com.github.galpiii.galpi.global.config;
 import com.github.galpiii.galpi.domain.auth.jwt.JwtAccessDeniedHandler;
 import com.github.galpiii.galpi.domain.auth.jwt.JwtAuthenticationEntryPoint;
 import com.github.galpiii.galpi.domain.auth.jwt.JwtAuthenticationFilter;
+import com.github.galpiii.galpi.domain.auth.support.CookieAuthCsrfFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -34,6 +35,7 @@ public class SecurityConfig {
             "/auth/logout"
     };
 
+    private final CookieAuthCsrfFilter cookieAuthCsrfFilter;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
     private final JwtAccessDeniedHandler accessDeniedHandler;
@@ -42,6 +44,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http
+                // 토큰 인증 API라 세션 기반 CSRF 토큰은 쓰지 않는다. 다만 쿠키만으로 인증하는
+                // /auth/refresh·/auth/logout은 표적이 되므로 CookieAuthCsrfFilter로 따로 막는다.
                 .csrf(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
@@ -57,6 +61,7 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(cookieAuthCsrfFilter, JwtAuthenticationFilter.class)
                 .build();
     }
 
