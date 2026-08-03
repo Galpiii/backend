@@ -43,6 +43,25 @@ public class GithubUserTokenCache {
         } catch (DataAccessException e) {
             log.warn("[GitHub] 토큰 캐시 적재 실패. 캐시 없이 계속한다 userId={} cause={}",
                     userId, e.getClass().getSimpleName());
+            discardStaleEntry(userId);
+        }
+    }
+
+    /**
+     * 새 값을 못 썼다면 옛 값이 남아 있어서는 안 된다.
+     *
+     * <p>쓰기만 실패하는 상태가 실제로 있다 — maxmemory 초과에 noeviction이면 SET은 거부되고
+     * GET은 정상이다. 이때 무효화하지 않으면 방금 교체한 토큰 대신 폐기된 옛 토큰이 TTL이
+     * 끝날 때까지 계속 제공된다. 캐시 장애 시 DB로 폴백한다는 약속은 옛 값이 남지 않을 때만
+     * 성립한다.
+     */
+    private void discardStaleEntry(Long userId) {
+        try {
+            evict(userId);
+        } catch (DataAccessException e) {
+            // 읽기도 같이 죽은 전면 장애라면 스테일을 읽을 일도 없다. 그 경우가 아니라면 위험하다.
+            log.error("[GitHub] 캐시 적재도 무효화도 실패했다. 옛 토큰이 남아 있을 수 있다 userId={} cause={}",
+                    userId, e.getClass().getSimpleName());
         }
     }
 

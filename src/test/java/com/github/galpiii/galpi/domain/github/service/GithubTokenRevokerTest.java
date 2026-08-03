@@ -14,18 +14,17 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.data.domain.Limit;
 
 import java.security.SecureRandom;
-import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
@@ -42,8 +41,9 @@ class GithubTokenRevokerTest {
     private GithubApiClient apiClient;
     @Mock
     private GithubTokenRevocationRepository revocationRepository;
+    @Mock
+    private GithubTokenRevocationWriter writer;
 
-    private TokenCipher tokenCipher;
     private GithubTokenRevoker revoker;
 
     private static String randomKey() {
@@ -54,20 +54,8 @@ class GithubTokenRevokerTest {
 
     @BeforeEach
     void setUp() {
-        tokenCipher = new TokenCipher(new TokenEncryptionProperties(1, Map.of(1, randomKey())));
-        revoker = new GithubTokenRevoker(apiClient, revocationRepository, tokenCipher);
-    }
-
-    private GithubTokenRevocation pendingFor(String token) {
-        return GithubTokenRevocation.pending(
-                USER_ID, tokenCipher.encrypt(token), tokenCipher.currentVersion(), "GithubApiException");
-    }
-
-    private void givenDue(GithubTokenRevocation... rows) {
-        given(revocationRepository
-                .findByAttemptsLessThanAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAsc(
-                        anyInt(), any(OffsetDateTime.class), any(Limit.class)))
-                .willReturn(List.of(rows));
+        TokenCipher tokenCipher = new TokenCipher(new TokenEncryptionProperties(1, Map.of(1, randomKey())));
+        revoker = new GithubTokenRevoker(apiClient, revocationRepository, writer, tokenCipher);
     }
 
     @Nested
@@ -95,6 +83,7 @@ class GithubTokenRevokerTest {
             verify(revocationRepository).save(saved.capture());
             assertThat(saved.getValue().getUserId()).isEqualTo(USER_ID);
             assertThat(saved.getValue().getAttempts()).isEqualTo(1);
+            assertThat(saved.getValue().isDead()).isFalse();
         }
 
         @Test
@@ -118,64 +107,37 @@ class GithubTokenRevokerTest {
     class Retry {
 
         @Test
-        @DisplayName("성공하면 원래 토큰으로 폐기하고 큐에서 지운다")
-        void revokesWithOriginalTokenAndClears() {
-            GithubTokenRevocation pending = pendingFor(TOKEN);
-            givenDue(pending);
+        @DisplayName("밀린 건마다 한 번씩 처리하고 성공 건수를 센다")
+        void processesEveryDueRow() {
+            given(writer.findDueIds(any(Limit.class))).willReturn(List.of(1L, 2L, 3L));
+            given(writer.revokeOne(1L)).willReturn(true);
+            given(writer.revokeOne(2L)).willReturn(false);
+            given(writer.revokeOne(3L)).willReturn(true);
 
-            assertThat(revoker.retryPending()).isEqualTo(1);
-
-            verify(apiClient).revokeUserToken(TOKEN);
-            verify(revocationRepository).delete(pending);
+            assertThat(revoker.retryPending()).isEqualTo(2);
         }
 
         @Test
-        @DisplayName("또 실패하면 시도 횟수를 올리고 큐에 남겨 둔다")
-        void keepsRowAndBacksOffOnFailure() {
-            GithubTokenRevocation pending = pendingFor(TOKEN);
-            givenDue(pending);
-            willThrow(new GithubApiException()).given(apiClient).revokeUserToken(anyString());
+        @DisplayName("한 건이 터져도 나머지는 계속 처리한다 — 배치가 통째로 멈추면 안 된다")
+        void oneBrokenRowDoesNotStopTheBatch() {
+            given(writer.findDueIds(any(Limit.class))).willReturn(List.of(1L, 2L, 3L));
+            given(writer.revokeOne(1L)).willThrow(new CannotAcquireLockException("commit failed"));
+            given(writer.revokeOne(2L)).willReturn(true);
+            given(writer.revokeOne(3L)).willReturn(true);
 
-            assertThat(revoker.retryPending()).isZero();
+            assertThat(revoker.retryPending()).isEqualTo(2);
 
-            assertThat(pending.getAttempts()).isEqualTo(2);
-            verify(revocationRepository, never()).delete(any());
-        }
-
-        @Test
-        @DisplayName("실패할수록 다음 시도를 뒤로 민다")
-        void backsOffProgressively() {
-            GithubTokenRevocation pending = pendingFor(TOKEN);
-            givenDue(pending);
-            willThrow(new GithubApiException()).given(apiClient).revokeUserToken(anyString());
-
-            revoker.retryPending();
-            OffsetDateTime afterFirst = pending.getNextAttemptAt();
-            revoker.retryPending();
-
-            assertThat(pending.getNextAttemptAt()).isAfter(afterFirst);
-        }
-
-        @Test
-        @DisplayName("복호화할 수 없게 된 항목은 붙잡고 있지 않는다")
-        void dropsUndecryptableRow() {
-            GithubTokenRevocation broken = GithubTokenRevocation.pending(USER_ID, "not-base64!!", 1, "x");
-            givenDue(broken);
-
-            assertThat(revoker.retryPending()).isZero();
-
-            verify(apiClient, never()).revokeUserToken(anyString());
-            verify(revocationRepository).delete(broken);
+            verify(writer).revokeOne(3L);
         }
 
         @Test
         @DisplayName("밀린 게 없으면 아무것도 하지 않는다")
         void doesNothingWhenQueueEmpty() {
-            givenDue();
+            given(writer.findDueIds(any(Limit.class))).willReturn(List.of());
 
             assertThat(revoker.retryPending()).isZero();
 
-            verify(apiClient, never()).revokeUserToken(anyString());
+            verify(writer, never()).revokeOne(anyLong());
         }
     }
 }

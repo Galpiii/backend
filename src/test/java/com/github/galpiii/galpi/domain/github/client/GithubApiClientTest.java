@@ -349,6 +349,33 @@ class GithubApiClientTest {
         }
 
         @Test
+        @DisplayName("프로토콜 상대 URL로도 오리진을 벗어날 수 없다")
+        void refusesProtocolRelativeLink() {
+            server.expect(requestTo(PAGE_1))
+                    .andRespond(withSuccess("[\"a\"]", MediaType.APPLICATION_JSON)
+                            .headers(linkHeader("<//evil.example/user/repos?page=2>; rel=\"next\"")));
+
+            assertThat(client.getAllPages("/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
+            })).containsExactly("a");
+            server.verify();
+        }
+
+        @Test
+        @DisplayName("기본 포트를 명시한 같은 오리진은 막지 않는다")
+        void followsSameOriginWithExplicitDefaultPort() {
+            server.expect(requestTo(PAGE_1))
+                    .andRespond(withSuccess("[\"a\"]", MediaType.APPLICATION_JSON)
+                            .headers(linkHeader(
+                                    "<https://api.github.com:443/user/repos?page=2>; rel=\"next\"")));
+            server.expect(requestTo("https://api.github.com:443/user/repos?page=2"))
+                    .andRespond(withSuccess("[\"b\"]", MediaType.APPLICATION_JSON));
+
+            assertThat(client.getAllPages("/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
+            })).containsExactly("a", "b");
+            server.verify();
+        }
+
+        @Test
         @DisplayName("호스트만 비슷한 곳도 막는다")
         void refusesLookalikeHost() {
             server.expect(requestTo(PAGE_1))

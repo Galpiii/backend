@@ -4,14 +4,12 @@ import com.github.galpiii.galpi.domain.github.client.GithubApiClient;
 import com.github.galpiii.galpi.domain.github.entity.GithubTokenRevocation;
 import com.github.galpiii.galpi.domain.github.repository.GithubTokenRevocationRepository;
 import com.github.galpiii.galpi.global.crypto.TokenCipher;
-import com.github.galpiii.galpi.global.crypto.TokenCipherException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -26,13 +24,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class GithubTokenRevoker {
 
-    /** 이 횟수를 넘기면 자동 재시도를 멈춘다. 행은 남겨 두어 운영이 볼 수 있게 한다. */
-    static final int MAX_ATTEMPTS = 12;
-
     private static final Limit BATCH_SIZE = Limit.of(50);
 
     private final GithubApiClient apiClient;
     private final GithubTokenRevocationRepository revocationRepository;
+    private final GithubTokenRevocationWriter writer;
     private final TokenCipher tokenCipher;
 
     /**
@@ -55,53 +51,30 @@ public class GithubTokenRevoker {
     }
 
     /**
-     * 밀린 폐기를 재시도한다.
+     * 밀린 폐기를 재시도한다. 각 건은 독립된 트랜잭션이라 한 건의 실패가 나머지를 되돌리지 않는다.
      *
      * @return 이번 회차에 폐기에 성공한 건수
      */
-    @Transactional
     public int retryPending() {
-        List<GithubTokenRevocation> due = revocationRepository
-                .findByAttemptsLessThanAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAsc(
-                        MAX_ATTEMPTS, OffsetDateTime.now(), BATCH_SIZE);
+        List<Long> dueIds = writer.findDueIds(BATCH_SIZE);
+        if (dueIds.isEmpty()) {
+            return 0;
+        }
 
         int revoked = 0;
-        for (GithubTokenRevocation pending : due) {
-            if (retryOne(pending)) {
-                revoked++;
+        for (Long id : dueIds) {
+            try {
+                if (writer.revokeOne(id)) {
+                    revoked++;
+                }
+            } catch (RuntimeException e) {
+                // 커밋 실패처럼 revokeOne 안에서 못 삼킨 것들. 이 건만 다음 회차로 미룬다.
+                log.warn("[GitHub] 폐기 재시도 중 처리하지 못한 항목을 건너뛴다 id={} cause={}",
+                        id, e.getClass().getSimpleName());
             }
         }
-        if (!due.isEmpty()) {
-            log.info("[GitHub] 밀린 토큰 폐기 재시도 대상={} 성공={}", due.size(), revoked);
-        }
+
+        log.info("[GitHub] 밀린 토큰 폐기 재시도 대상={} 성공={}", dueIds.size(), revoked);
         return revoked;
-    }
-
-    private boolean retryOne(GithubTokenRevocation pending) {
-        String accessToken;
-        try {
-            accessToken = tokenCipher.decrypt(pending.getEncryptedAccessToken(), pending.getTokenVersion());
-        } catch (TokenCipherException e) {
-            log.error("[GitHub] 폐기 대기 토큰을 복호화할 수 없어 폐기를 포기한다 userId={} tokenVersion={}",
-                    pending.getUserId(), pending.getTokenVersion());
-            revocationRepository.delete(pending);
-            return false;
-        }
-
-        try {
-            apiClient.revokeUserToken(accessToken);
-            revocationRepository.delete(pending);
-            log.info("[GitHub] 밀린 user token 폐기 성공 userId={} 시도={}",
-                    pending.getUserId(), pending.getAttempts());
-            return true;
-        } catch (RuntimeException e) {
-            pending.recordFailure(e.getClass().getSimpleName());
-            if (pending.getAttempts() >= MAX_ATTEMPTS) {
-                log.error("[GitHub] user token 폐기를 {}회 실패해 자동 재시도를 멈춘다. "
-                                + "github_token_revocations 행을 직접 확인하세요 userId={}",
-                        MAX_ATTEMPTS, pending.getUserId());
-            }
-            return false;
-        }
     }
 }

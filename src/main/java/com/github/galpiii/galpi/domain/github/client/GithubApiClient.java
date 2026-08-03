@@ -27,7 +27,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 @Slf4j
 @Component
@@ -88,7 +90,7 @@ public class GithubApiClient {
             }
             page++;
             nextUri = LinkHeaderParser.next(response.getHeaders().getFirst(HttpHeaders.LINK))
-                    .filter(this::withinApiOrigin)
+                    .flatMap(this::resolveWithinApi)
                     .orElse(null);
         }
 
@@ -101,37 +103,54 @@ public class GithubApiClient {
     }
 
     /**
-     * Link 헤더가 가리키는 다음 페이지가 API 오리진 안에 있는지 확인한다.
+     * Link 헤더의 다음 페이지를 API base에 resolve하고, 오리진이 같을 때만 돌려준다.
      *
-     * <p>다음 요청에는 사용자 access token이 Bearer로 붙는다. 절대 URL을 검증 없이 따라가면
-     * 응답 헤더 하나로 자격증명을 임의의 호스트에 흘릴 수 있다. RestClient는 절대 URL이면
-     * baseUrl을 무시하고, followRedirects(NEVER)도 이 경로는 막지 못하므로 여기서 강제한다.
+     * <p>다음 요청에는 사용자 access token이 Bearer로 붙는다. 검증 없이 따라가면 응답 헤더
+     * 하나로 자격증명을 임의의 호스트에 흘릴 수 있다. RestClient는 host가 있는 URI면 baseUrl을
+     * 무시하고, followRedirects(NEVER)도 이 경로는 막지 못하므로 여기서 강제한다.
+     *
+     * <p>비교 전에 resolve하는 이유가 두 가지다. {@code //evil.example/repos} 같은 프로토콜
+     * 상대 URL은 scheme이 없어 "절대 URL이 아님"으로 통과해 버리는데, resolve하면
+     * {@code https://evil.example/repos}가 되어 오리진 검사에 걸린다. 또 base의 생략된 포트와
+     * Link의 명시된 포트({@code :443})를 같은 것으로 보려면 기본 포트를 채워 비교해야 한다.
      */
-    private boolean withinApiOrigin(String nextUri) {
-        URI next;
+    private Optional<String> resolveWithinApi(String nextUri) {
         URI apiBase;
+        URI resolved;
         try {
-            next = new URI(nextUri);
             apiBase = new URI(properties.apiBaseUrl());
-        } catch (URISyntaxException e) {
+            resolved = apiBase.resolve(new URI(nextUri));
+        } catch (URISyntaxException | IllegalArgumentException e) {
             log.warn("[GitHub] Link 헤더를 URI로 읽을 수 없어 페이지네이션을 멈춘다");
-            return false;
+            return Optional.empty();
         }
 
-        if (!next.isAbsolute()) {
-            return true;
-        }
-
-        boolean sameOrigin = next.getScheme().equalsIgnoreCase(apiBase.getScheme())
-                && next.getHost() != null
-                && next.getHost().equalsIgnoreCase(apiBase.getHost())
-                && next.getPort() == apiBase.getPort();
-
-        if (!sameOrigin) {
+        if (!sameOrigin(apiBase, resolved)) {
             log.warn("[GitHub] Link 헤더가 API 오리진 밖을 가리켜 페이지네이션을 멈춘다 host={}",
-                    LogSafe.text(next.getHost()));
+                    LogSafe.text(resolved.getHost()));
+            return Optional.empty();
         }
-        return sameOrigin;
+        return Optional.of(resolved.toString());
+    }
+
+    private static boolean sameOrigin(URI base, URI candidate) {
+        return candidate.getScheme() != null
+                && candidate.getScheme().equalsIgnoreCase(base.getScheme())
+                && candidate.getHost() != null
+                && candidate.getHost().equalsIgnoreCase(base.getHost())
+                && effectivePort(candidate) == effectivePort(base);
+    }
+
+    /** 생략된 포트를 scheme의 기본값으로 채운다. https://host 와 https://host:443 은 같은 곳이다. */
+    private static int effectivePort(URI uri) {
+        if (uri.getPort() != -1) {
+            return uri.getPort();
+        }
+        return switch (uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT)) {
+            case "https" -> 443;
+            case "http" -> 80;
+            default -> -1;
+        };
     }
 
     private <T> ResponseEntity<T> execute(String uri,

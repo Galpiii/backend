@@ -188,6 +188,27 @@ class GithubUserTokenCacheTest {
         }
 
         @Test
+        @DisplayName("적재가 실패하면 옛 항목을 지운다 — 쓰기만 막히면 폐기된 토큰이 계속 제공된다")
+        void putInvalidatesStaleEntryOnFailure() {
+            willThrow(DOWN).given(valueOperations).set(anyString(), anyString(), any(Duration.class));
+
+            cache.put(USER_ID, TOKEN, TTL);
+
+            verify(redisTemplate).delete(KEY);
+        }
+
+        @Test
+        @DisplayName("적재도 무효화도 실패하면 조용히 넘기지 않는다")
+        void reportsWhenStaleEntryCannotBeCleared() {
+            willThrow(DOWN).given(valueOperations).set(anyString(), anyString(), any(Duration.class));
+            given(redisTemplate.delete(KEY)).willThrow(DOWN);
+
+            assertThatCode(() -> cache.put(USER_ID, TOKEN, TTL)).doesNotThrowAnyException();
+
+            verify(redisTemplate).delete(KEY);
+        }
+
+        @Test
         @DisplayName("손상된 항목 정리가 실패해도 조회는 캐시 미스로 끝난다")
         void cleanupFailureDoesNotBreakRead() {
             given(valueOperations.get(KEY)).willReturn("1:not-a-valid-ciphertext");
