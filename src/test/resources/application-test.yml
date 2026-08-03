@@ -1,3 +1,13 @@
+# 컨텍스트 로딩 테스트용 설정.
+#
+# 운영 application.yml은 모든 값을 환경변수로만 받는다. 설정 누락을 기동 시점에 터뜨리기 위한
+# 의도이므로 그쪽에 기본값을 넣는 대신, test 프로필에서만 값을 채운다. 운영 설정 파일은 그대로
+# 로딩되므로 구조 검증도 계속 유효하다. 대신 application.yml에 키를 추가하면 여기에도 같이
+# 넣어야 한다. 빠뜨리면 치환되지 않은 ${VAR} 문자열이 그대로 바인딩된다.
+#
+# 여기 값은 전부 가짜다. galpi.github.private-key만 예외로, PEM 파싱이 생성자에서 일어나
+# 실제 RSA 키가 필요하다. 저장소에 개인키를 남기지 않으려고 IntegrationTestSupport가 실행 시점에
+# 생성해 주입한다.
 
 server:
   port: 0
@@ -17,7 +27,9 @@ spring:
       ddl-auto: none
     properties:
       hibernate:
+        default_batch_fetch_size: 100
         dialect: org.hibernate.dialect.PostgreSQLDialect
+        # DB 없이 컨텍스트만 띄운다. 이게 없으면 Hibernate가 기동 중 커넥션을 연다.
         boot:
           allow_jdbc_metadata_access: false
 
@@ -28,6 +40,8 @@ spring:
     redis:
       host: localhost
       port: 6379
+      password: ""
+      timeout: 3s
 
 galpi:
   crypto:
@@ -38,19 +52,37 @@ galpi:
 
   cors:
     allowed-origins:
-      - http://localhost:3000
+      - http://localhost:5173
 
   jwt:
     secret: galpi-test-secret-key-must-be-at-least-32-bytes
+    issuer: galpi
+    access-token-ttl: 30m
+    refresh-token-ttl: 14d
+    login-code-ttl: 60s
+    cookie:
+      name: galpi_refresh
+      path: /auth
+      secure: false
+      same-site: Lax
+      domain: ""
 
   github:
     app-id: "12345"
     client-id: Iv1.test-client-id
     client-secret: test-client-secret
     base-url: http://localhost:8080
+    api-version: 2022-11-28
+    api-base-url: https://api.github.com
+    oauth-base-url: https://github.com
+    user-agent: Galpi
     allowed-redirect-origins:
-      - http://localhost:3000
-    default-redirect-uri: http://localhost:3000/auth/callback
+      - http://localhost:5173
+    default-redirect-uri: http://localhost:5173/auth/callback
+    connect-timeout: 5s
+    read-timeout: 15s
+    max-retries: 2
+    max-pages: 10
 
 logging:
   level:
@@ -60,4 +92,7 @@ swagger:
   servers:
     - http://localhost:8080
 
+# SwaggerConfig가 swagger.servers가 아니라 @Value("${APP_SERVER_URL}")로 환경변수를 직접 읽는다.
+# 설정 계층을 건너뛰는 배선이라 위의 swagger.servers는 실제로 아무도 읽지 않는다. 운영 코드를
+# 고치기 전까지는 여기서도 같은 이름으로 채워 줘야 컨텍스트가 뜬다.
 APP_SERVER_URL: http://localhost:8080
