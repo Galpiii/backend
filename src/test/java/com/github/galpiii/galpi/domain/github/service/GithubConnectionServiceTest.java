@@ -52,7 +52,6 @@ class GithubConnectionServiceTest {
 
         service.disconnect(USER_ID);
 
-        // 폐기는 로컬 삭제보다 먼저 일어나야 한다. 먼저 지우면 폐기할 토큰을 잃는다.
         InOrder order = inOrder(apiClient, userTokenService, userWriter);
         order.verify(apiClient).revokeUserToken(TOKEN);
         order.verify(userTokenService).delete(USER_ID);

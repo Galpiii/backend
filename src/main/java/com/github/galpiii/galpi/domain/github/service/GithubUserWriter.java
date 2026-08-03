@@ -34,10 +34,6 @@ class GithubUserWriter {
         return findAndSync(githubUser);
     }
 
-    /**
-     * 연결 해제는 GitHub 호출을 트랜잭션 밖에서 끝낸 뒤 상태만 바꾼다.
-     * 호출부가 트랜잭션을 열지 않는 이유는 {@code GithubConnectionService}를 참고.
-     */
     @Transactional
     void disconnectGithub(Long userId) {
         userRepository.findById(userId)

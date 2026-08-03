@@ -38,6 +38,7 @@ class RefreshTokenStoreTest {
     private static final String TOKEN_KEY = "auth:refresh:" + Hashes.sha256Hex(TOKEN);
     private static final String INDEX_KEY = "auth:refresh-index:" + USER_ID;
     private static final String REVOKED_KEY = "auth:refresh-revoked:" + Hashes.sha256Hex(TOKEN);
+    private static final String CONSUMED_KEY = "auth:refresh-consumed:" + Hashes.sha256Hex(TOKEN);
 
     @Mock
     private StringRedisTemplate redisTemplate;
@@ -104,6 +105,36 @@ class RefreshTokenStoreTest {
             assertThat(store.consume(TOKEN)).isEmpty();
 
             verify(setOperations, never()).remove(any(), any(Object[].class));
+        }
+
+        @Test
+        @DisplayName("방금 회전했다는 흔적을 남긴다 — 동시 갱신을 탈취로 오판하지 않으려면 필요하다")
+        void marksRecentlyConsumed() {
+            given(valueOperations.getAndDelete(TOKEN_KEY)).willReturn(String.valueOf(USER_ID));
+
+            store.consume(TOKEN);
+
+            verify(valueOperations).set(eq(CONSUMED_KEY), eq("1"), any(Duration.class));
+        }
+
+        @Test
+        @DisplayName("없는 토큰이면 회전 흔적도 남기지 않는다")
+        void leavesNoMarkerOnMiss() {
+            given(valueOperations.getAndDelete(TOKEN_KEY)).willReturn(null);
+
+            store.consume(TOKEN);
+
+            verify(valueOperations, never()).set(eq(CONSUMED_KEY), anyString(), any(Duration.class));
+        }
+
+        @Test
+        @DisplayName("회전 흔적이 살아 있는 동안만 동시 갱신으로 인정한다")
+        void reportsRecentlyConsumedWhileMarkerLives() {
+            given(redisTemplate.hasKey(CONSUMED_KEY)).willReturn(true);
+            assertThat(store.wasRecentlyConsumed(TOKEN)).isTrue();
+
+            given(redisTemplate.hasKey(CONSUMED_KEY)).willReturn(false);
+            assertThat(store.wasRecentlyConsumed(TOKEN)).isFalse();
         }
     }
 
@@ -172,7 +203,6 @@ class RefreshTokenStoreTest {
 
             store.revokeAll(USER_ID);
 
-            // 흔적이 없으면 다른 기기의 다음 갱신이 또 재사용으로 오판된다.
             verify(valueOperations).set(eq("auth:refresh-revoked:hash-a"), eq("1"), any(Duration.class));
             verify(valueOperations).set(eq("auth:refresh-revoked:hash-b"), eq("1"), any(Duration.class));
         }

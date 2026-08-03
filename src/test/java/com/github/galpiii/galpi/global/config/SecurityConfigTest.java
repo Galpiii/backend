@@ -1,6 +1,7 @@
 package com.github.galpiii.galpi.global.config;
 
 import com.github.galpiii.galpi.domain.auth.dto.IssuedTokens;
+import com.github.galpiii.galpi.domain.github.dto.AuthorizeRedirect;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.support.WebMvcTestSupport;
 import org.junit.jupiter.api.DisplayName;
@@ -22,10 +23,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * 어떤 엔드포인트가 인증 없이 열려 있는지는 설정 한 줄로 뒤집힌다.
- * 화이트리스트를 실수로 넓히면 서비스 단위 테스트로는 절대 잡히지 않으므로 여기서 고정한다.
- */
 @DisplayName("SecurityConfig — 공개 엔드포인트 화이트리스트")
 class SecurityConfigTest extends WebMvcTestSupport {
 
@@ -38,7 +35,8 @@ class SecurityConfigTest extends WebMvcTestSupport {
         @Test
         @DisplayName("GitHub 인증 시작은 열려 있다")
         void authorizeIsPublic() throws Exception {
-            given(githubOAuthService.buildAuthorizeRedirect(any())).willReturn("https://github.com/x");
+            given(githubOAuthService.buildAuthorizeRedirect(any()))
+                    .willReturn(new AuthorizeRedirect("https://github.com/x", "state"));
 
             mockMvc.perform(get("/auth/github/authorize")).andExpect(status().isFound());
         }
@@ -46,7 +44,7 @@ class SecurityConfigTest extends WebMvcTestSupport {
         @Test
         @DisplayName("GitHub 콜백은 열려 있다")
         void callbackIsPublic() throws Exception {
-            given(githubOAuthService.handleCallback(any(), any(), any(), any()))
+            given(githubOAuthService.handleCallback(any(), any(), any(), any(), any()))
                     .willReturn("https://galpi.dev/auth/callback?code=x");
 
             mockMvc.perform(get("/auth/github/callback").param("code", "c"))

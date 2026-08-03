@@ -58,7 +58,6 @@ class OAuthCodeGuardTest {
 
         assertThat(guard.markUsed(CODE)).isTrue();
 
-        // exists 후 set으로 나누면 동시에 도착한 두 콜백이 모두 통과한다.
         verify(valueOperations).setIfAbsent(eq(KEY), eq("1"), any(Duration.class));
     }
 

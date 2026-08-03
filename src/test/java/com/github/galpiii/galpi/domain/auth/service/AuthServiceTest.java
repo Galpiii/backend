@@ -165,6 +165,38 @@ class AuthServiceTest {
         }
 
         @Test
+        @DisplayName("동시 갱신에서 진 요청은 재사용으로 오판하지 않는다 — 다른 기기 세션을 지키다")
+        void doesNotTreatConcurrentRefreshAsReuse() {
+            String refresh = tokenProvider.createRefreshToken(USER_ID);
+            given(refreshTokenStore.consume(refresh)).willReturn(Optional.empty());
+            given(refreshTokenStore.wasRevoked(refresh)).willReturn(false);
+            given(refreshTokenStore.wasRecentlyConsumed(refresh)).willReturn(true);
+
+            assertThatThrownBy(() -> service.refresh(refresh))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .extracting(e -> ((GlobalException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.REFRESH_TOKEN_NOT_FOUND);
+
+            verify(refreshTokenStore, never()).revokeAll(any());
+        }
+
+        @Test
+        @DisplayName("유예 창을 지나 다시 오면 그때는 재사용으로 본다")
+        void stillDetectsReuseAfterGraceWindow() {
+            String refresh = tokenProvider.createRefreshToken(USER_ID);
+            given(refreshTokenStore.consume(refresh)).willReturn(Optional.empty());
+            given(refreshTokenStore.wasRevoked(refresh)).willReturn(false);
+            given(refreshTokenStore.wasRecentlyConsumed(refresh)).willReturn(false);
+
+            assertThatThrownBy(() -> service.refresh(refresh))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .extracting(e -> ((GlobalException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.REFRESH_TOKEN_REUSED);
+
+            verify(refreshTokenStore).revokeAll(USER_ID);
+        }
+
+        @Test
         @DisplayName("로그아웃으로 폐기된 토큰은 재사용으로 오판하지 않는다")
         void doesNotTreatLoggedOutTokenAsReuse() {
             String refresh = tokenProvider.createRefreshToken(USER_ID);
@@ -176,7 +208,6 @@ class AuthServiceTest {
                     .extracting(e -> ((GlobalException) e).getErrorCode())
                     .isEqualTo(ErrorCode.REFRESH_TOKEN_NOT_FOUND);
 
-            // 로그아웃한 기기 하나 때문에 다른 기기까지 끊기면 안 된다.
             verify(refreshTokenStore, never()).revokeAll(any());
         }
 

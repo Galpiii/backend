@@ -29,8 +29,6 @@ spring:
     redis:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT}
-      # 비어 있는 게 정상인 값은 기본값을 준다. 없으면 치환되지 않은 "${REDIS_PASSWORD}" 문자열이
-      # 그대로 바인딩돼 기동은 성공하고 런타임에 터진다.
       password: ${REDIS_PASSWORD:}
       timeout: ${REDIS_TIMEOUT}
 

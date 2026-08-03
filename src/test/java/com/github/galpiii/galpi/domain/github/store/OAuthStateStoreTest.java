@@ -82,7 +82,6 @@ class OAuthStateStoreTest {
     void treatsEmptyValueAsValidState() {
         given(valueOperations.getAndDelete("oauth:state:abc")).willReturn("");
 
-        // 빈 문자열과 "state 없음"을 구분하지 못하면 정상 로그인이 state 검증 실패로 막힌다.
         assertThat(store.consume("abc")).contains("");
     }
 

@@ -14,7 +14,8 @@ public class OAuthStateStore {
 
     private static final String KEY_PREFIX = "oauth:state:";
     private static final int STATE_BYTES = 32;
-    private static final Duration TTL = Duration.ofMinutes(5);
+
+    public static final Duration TTL = Duration.ofMinutes(5);
 
     private final StringRedisTemplate redisTemplate;
 

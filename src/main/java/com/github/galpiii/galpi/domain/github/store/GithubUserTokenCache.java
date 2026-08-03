@@ -10,14 +10,6 @@ import org.springframework.stereotype.Repository;
 import java.time.Duration;
 import java.util.Optional;
 
-/**
- * GitHub user access token의 조회 캐시.
- * <p>
- * DB와 마찬가지로 암호문만 보관한다. Redis는 DB보다 접근 통제가 느슨한 경우가 많고
- * (RDB 스냅샷·복제·MONITOR 등으로 값이 새어 나간다), TTL이 세션 수명만큼 길어 노출 창도 넓다.
- * 저장 형식은 {@code {키버전}:{암호문}}이다. 키 버전을 함께 두어야 키를 로테이션한 뒤에도
- * 캐시에 남아 있는 이전 버전 항목을 복호화할 수 있다.
- */
 @Slf4j
 @Repository
 @RequiredArgsConstructor
@@ -38,9 +30,6 @@ public class GithubUserTokenCache {
         redisTemplate.opsForValue().set(key(userId), encoded, ttl);
     }
 
-    /**
-     * 복호화에 실패하면 캐시 미스로 처리하고 항목을 버린다. 호출부가 DB에서 다시 읽어 복구한다.
-     */
     public Optional<String> find(Long userId) {
         String encoded = redisTemplate.opsForValue().get(key(userId));
         if (encoded == null) {

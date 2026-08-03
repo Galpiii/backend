@@ -27,8 +27,6 @@ dependencies {
 
 	implementation 'org.springframework.security:spring-security-oauth2-jose'
 
-	// Boot 4는 자동설정을 기술별 모듈로 분리했다. flyway-core만 넣으면 라이브러리는 올라오지만
-	// 자동설정이 없어 마이그레이션이 조용히 실행되지 않는다.
 	implementation 'org.springframework.boot:spring-boot-flyway'
 	runtimeOnly 'org.flywaydb:flyway-database-postgresql'
 

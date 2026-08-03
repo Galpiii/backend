@@ -8,6 +8,7 @@ import com.github.galpiii.galpi.domain.github.client.GithubOAuthClient;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubAccessTokenResponse;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubUserResponse;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
+import com.github.galpiii.galpi.domain.github.dto.AuthorizeRedirect;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.domain.github.store.OAuthCodeGuard;
 import com.github.galpiii.galpi.domain.github.store.OAuthStateStore;
@@ -106,6 +107,10 @@ class GithubOAuthServiceTest {
                 new RedirectUriValidator(githubProperties), jwtProperties());
     }
 
+    private String callback(String code, String state, String error, String errorDescription) {
+        return service.handleCallback(code, state, state, error, errorDescription);
+    }
+
     private void givenHappyPath() {
         given(stateStore.consume(STATE)).willReturn(Optional.of(""));
         given(codeGuard.markUsed(CODE)).willReturn(true);
@@ -125,7 +130,7 @@ class GithubOAuthServiceTest {
         void redirectsWithLoginCodeOnly() {
             givenHappyPath();
 
-            String redirect = service.handleCallback(CODE, STATE, null, null);
+            String redirect = callback(CODE, STATE, null, null);
 
             assertThat(redirect).startsWith("https://galpi.dev/auth/callback?code=one-time-login-code");
         }
@@ -135,7 +140,7 @@ class GithubOAuthServiceTest {
         void neverPutsAccessTokenInUrl() {
             givenHappyPath();
 
-            String redirect = service.handleCallback(CODE, STATE, null, null);
+            String redirect = callback(CODE, STATE, null, null);
 
             assertThat(redirect)
                     .doesNotContain(USER_TOKEN)
@@ -148,7 +153,7 @@ class GithubOAuthServiceTest {
         void handsTokenToTokenService() {
             givenHappyPath();
 
-            service.handleCallback(CODE, STATE, null, null);
+            callback(CODE, STATE, null, null);
 
             ArgumentCaptor<Duration> expiresIn = ArgumentCaptor.forClass(Duration.class);
             verify(userTokenService).save(any(User.class), eq(USER_TOKEN), expiresIn.capture());
@@ -160,7 +165,7 @@ class GithubOAuthServiceTest {
         void discardsRefreshToken() {
             givenHappyPath();
 
-            service.handleCallback(CODE, STATE, null, null);
+            callback(CODE, STATE, null, null);
 
             verify(userTokenService).save(any(User.class), eq(USER_TOKEN), any());
             verify(userTokenService, never()).save(any(), eq("ghr_refreshtokenvalue"), any());
@@ -172,7 +177,7 @@ class GithubOAuthServiceTest {
             givenHappyPath();
             given(stateStore.consume(STATE)).willReturn(Optional.of("/projects/3"));
 
-            String redirect = service.handleCallback(CODE, STATE, null, null);
+            String redirect = callback(CODE, STATE, null, null);
 
             assertThat(redirect).contains("returnTo=%2Fprojects%2F3");
         }
@@ -187,7 +192,7 @@ class GithubOAuthServiceTest {
         void rejectsMissingState() {
             given(stateStore.consume(null)).willReturn(Optional.empty());
 
-            String redirect = service.handleCallback(CODE, null, null, null);
+            String redirect = callback(CODE, null, null, null);
 
             assertThat(redirect).isEqualTo(errorUrl(ErrorCode.GITHUB_OAUTH_STATE_INVALID));
         }
@@ -203,9 +208,9 @@ class GithubOAuthServiceTest {
             given(githubUserService.upsert(any())).willReturn(userWithId(7L));
             given(loginCodeStore.issue(anyLong(), any())).willReturn("code");
 
-            service.handleCallback(CODE, STATE, null, null);
+            callback(CODE, STATE, null, null);
 
-            assertThat(service.handleCallback(CODE, STATE, null, null))
+            assertThat(callback(CODE, STATE, null, null))
                     .isEqualTo(errorUrl(ErrorCode.GITHUB_OAUTH_STATE_INVALID));
         }
 
@@ -214,7 +219,7 @@ class GithubOAuthServiceTest {
         void doesNotExchangeCodeWhenStateInvalid() {
             given(stateStore.consume(STATE)).willReturn(Optional.empty());
 
-            service.handleCallback(CODE, STATE, null, null);
+            callback(CODE, STATE, null, null);
 
             verify(oAuthClient, never()).exchangeCodeForToken(any());
         }
@@ -230,7 +235,7 @@ class GithubOAuthServiceTest {
             given(stateStore.consume(STATE)).willReturn(Optional.of(""));
             given(codeGuard.markUsed(CODE)).willReturn(false);
 
-            String redirect = service.handleCallback(CODE, STATE, null, null);
+            String redirect = callback(CODE, STATE, null, null);
 
             assertThat(redirect).isEqualTo(errorUrl(ErrorCode.GITHUB_OAUTH_CODE_REUSED));
             verify(oAuthClient, never()).exchangeCodeForToken(any());
@@ -241,7 +246,7 @@ class GithubOAuthServiceTest {
         void rejectsBlankCode() {
             given(stateStore.consume(STATE)).willReturn(Optional.of(""));
 
-            assertThat(service.handleCallback("  ", STATE, null, null))
+            assertThat(callback("  ", STATE, null, null))
                     .isEqualTo(errorUrl(ErrorCode.GITHUB_OAUTH_FAILED));
         }
     }
@@ -258,7 +263,7 @@ class GithubOAuthServiceTest {
             given(oAuthClient.exchangeCodeForToken(CODE))
                     .willThrow(new UnauthorizedException(ErrorCode.GITHUB_OAUTH_FAILED));
 
-            assertThat(service.handleCallback(CODE, STATE, null, null))
+            assertThat(callback(CODE, STATE, null, null))
                     .isEqualTo(errorUrl(ErrorCode.GITHUB_OAUTH_FAILED));
         }
 
@@ -270,7 +275,7 @@ class GithubOAuthServiceTest {
             given(oAuthClient.exchangeCodeForToken(CODE)).willReturn(tokenResponse(28800L));
             given(apiClient.getAuthenticatedUser(USER_TOKEN)).willThrow(new GithubApiException());
 
-            assertThat(service.handleCallback(CODE, STATE, null, null))
+            assertThat(callback(CODE, STATE, null, null))
                     .isEqualTo(errorUrl(ErrorCode.GITHUB_API_ERROR));
         }
 
@@ -282,7 +287,7 @@ class GithubOAuthServiceTest {
             given(oAuthClient.exchangeCodeForToken(CODE))
                     .willThrow(new IllegalStateException("boom"));
 
-            assertThat(service.handleCallback(CODE, STATE, null, null))
+            assertThat(callback(CODE, STATE, null, null))
                     .isEqualTo(errorUrl(ErrorCode.INTERNAL_SERVER_ERROR));
         }
 
@@ -292,7 +297,7 @@ class GithubOAuthServiceTest {
             given(stateStore.consume(STATE)).willReturn(Optional.of("/projects/3"));
             given(codeGuard.markUsed(CODE)).willReturn(false);
 
-            assertThat(service.handleCallback(CODE, STATE, null, null))
+            assertThat(callback(CODE, STATE, null, null))
                     .contains("error=" + ErrorCode.GITHUB_OAUTH_CODE_REUSED.getCode())
                     .contains("returnTo=%2Fprojects%2F3");
         }
@@ -307,7 +312,7 @@ class GithubOAuthServiceTest {
         void redirectsToErrorPage() {
             given(stateStore.consume(STATE)).willReturn(Optional.of(""));
 
-            String redirect = service.handleCallback(
+            String redirect = callback(
                     null, STATE, "access_denied", "The user has denied your application access.");
 
             assertThat(redirect)
@@ -320,7 +325,7 @@ class GithubOAuthServiceTest {
         void consumesStateOnError() {
             given(stateStore.consume(STATE)).willReturn(Optional.of(""));
 
-            service.handleCallback(null, STATE, "access_denied", null);
+            callback(null, STATE, "access_denied", null);
 
             verify(stateStore).consume(STATE);
         }
@@ -330,7 +335,7 @@ class GithubOAuthServiceTest {
         void preservesReturnPathOnError() {
             given(stateStore.consume(STATE)).willReturn(Optional.of("/projects/3"));
 
-            String redirect = service.handleCallback(null, STATE, "access_denied", null);
+            String redirect = callback(null, STATE, "access_denied", null);
 
             assertThat(redirect).contains("returnTo=%2Fprojects%2F3");
         }
@@ -340,7 +345,7 @@ class GithubOAuthServiceTest {
         void doesNotRejectOnUnknownState() {
             given(stateStore.consume(STATE)).willReturn(Optional.empty());
 
-            String redirect = service.handleCallback(null, STATE, "access_denied", null);
+            String redirect = callback(null, STATE, "access_denied", null);
 
             assertThat(redirect)
                     .startsWith("https://galpi.dev/auth/callback?error=")
@@ -360,7 +365,7 @@ class GithubOAuthServiceTest {
                     .willReturn(new GithubAccessTokenResponse(
                             USER_TOKEN, "bearer", null, null, null, null, null));
 
-            service.handleCallback(CODE, STATE, null, null);
+            callback(CODE, STATE, null, null);
 
             assertThat(expiryMonitor.isExpirationDisabled()).isTrue();
         }
@@ -373,7 +378,7 @@ class GithubOAuthServiceTest {
                     .willReturn(new GithubAccessTokenResponse(
                             USER_TOKEN, "bearer", null, null, null, null, null));
 
-            service.handleCallback(CODE, STATE, null, null);
+            callback(CODE, STATE, null, null);
 
             verify(userTokenService).save(any(User.class), eq(USER_TOKEN), eq((Duration) null));
         }
@@ -383,7 +388,7 @@ class GithubOAuthServiceTest {
         void doesNotFlagWhenExpiryPresent() {
             givenHappyPath();
 
-            service.handleCallback(CODE, STATE, null, null);
+            callback(CODE, STATE, null, null);
 
             assertThat(expiryMonitor.isExpirationDisabled()).isFalse();
         }
@@ -399,29 +404,89 @@ class GithubOAuthServiceTest {
             given(stateStore.issue("/projects")).willReturn(STATE);
             given(oAuthClient.buildAuthorizeUrl(STATE)).willReturn("https://github.com/login/oauth/authorize?state=" + STATE);
 
-            String url = service.buildAuthorizeRedirect("/projects");
+            AuthorizeRedirect redirect = service.buildAuthorizeRedirect("/projects");
 
-            assertThat(url).contains(STATE);
+            assertThat(redirect.url()).contains(STATE);
+            assertThat(redirect.state()).isEqualTo(STATE);
             verify(stateStore).issue("/projects");
         }
 
         @Test
         @DisplayName("허용되지 않은 복귀 대상은 오류 화면으로 넘기고 state를 발급하지 않는다")
         void rejectsOpenRedirect() {
-            String redirect = service.buildAuthorizeRedirect("https://evil.example.com/steal");
+            AuthorizeRedirect redirect = service.buildAuthorizeRedirect("https://evil.example.com/steal");
 
-            assertThat(redirect).isEqualTo(errorUrl(ErrorCode.GITHUB_REDIRECT_NOT_ALLOWED));
+            assertThat(redirect.url()).isEqualTo(errorUrl(ErrorCode.GITHUB_REDIRECT_NOT_ALLOWED));
             verify(stateStore, never()).issue(any());
+        }
+
+        @Test
+        @DisplayName("GitHub까지 가지 않는 오류 경로에는 심을 state가 없다")
+        void carriesNoStateOnErrorPath() {
+            AuthorizeRedirect redirect = service.buildAuthorizeRedirect("https://evil.example.com/steal");
+
+            assertThat(redirect.hasState()).isFalse();
         }
 
         @Test
         @DisplayName("거부된 복귀 대상은 오류 화면에도 싣지 않는다")
         void doesNotEchoRejectedTarget() {
-            String redirect = service.buildAuthorizeRedirect("https://evil.example.com/steal");
+            AuthorizeRedirect redirect = service.buildAuthorizeRedirect("https://evil.example.com/steal");
 
-            assertThat(redirect)
+            assertThat(redirect.url())
                     .doesNotContain("returnTo")
                     .doesNotContain("evil.example.com");
+        }
+    }
+
+    @Nested
+    @DisplayName("state의 브라우저 결속")
+    class BrowserBinding {
+
+        private static final String ATTACKER_STATE = "attacker-issued-state";
+
+        @Test
+        @DisplayName("쿼리 state가 브라우저 쿠키와 다르면 거부한다")
+        void rejectsStateFromAnotherBrowser() {
+            String redirect = service.handleCallback(CODE, ATTACKER_STATE, STATE, null, null);
+
+            assertThat(redirect).isEqualTo(errorUrl(ErrorCode.GITHUB_OAUTH_STATE_INVALID));
+            verify(oAuthClient, never()).exchangeCodeForToken(any());
+        }
+
+        @Test
+        @DisplayName("state 쿠키가 아예 없으면 거부한다")
+        void rejectsCallbackWithoutStateCookie() {
+            String redirect = service.handleCallback(CODE, STATE, null, null, null);
+
+            assertThat(redirect).isEqualTo(errorUrl(ErrorCode.GITHUB_OAUTH_STATE_INVALID));
+            verify(oAuthClient, never()).exchangeCodeForToken(any());
+        }
+
+        @Test
+        @DisplayName("결속이 깨지면 로그인 코드를 발급하지 않는다")
+        void issuesNoLoginCodeWhenBindingBroken() {
+            service.handleCallback(CODE, ATTACKER_STATE, STATE, null, null);
+
+            verify(loginCodeStore, never()).issue(anyLong(), any());
+        }
+
+        @Test
+        @DisplayName("결속이 깨진 콜백은 저장된 state를 소진하지 않는다 — 정상 흐름을 밖에서 깨뜨릴 수 없다")
+        void leavesStoredStateIntact() {
+            service.handleCallback(CODE, ATTACKER_STATE, STATE, null, null);
+
+            verify(stateStore, never()).consume(any());
+        }
+
+        @Test
+        @DisplayName("쿼리 state와 쿠키가 같으면 평소대로 진행한다")
+        void acceptsMatchingState() {
+            givenHappyPath();
+
+            String redirect = service.handleCallback(CODE, STATE, STATE, null, null);
+
+            assertThat(redirect).startsWith("https://galpi.dev/auth/callback?code=one-time-login-code");
         }
     }
 }

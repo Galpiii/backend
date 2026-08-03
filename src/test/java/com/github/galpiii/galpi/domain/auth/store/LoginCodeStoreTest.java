@@ -69,7 +69,6 @@ class LoginCodeStoreTest {
     @Test
     @DisplayName("추측하기 어려운 길이를 가진다")
     void issuesLongEnoughCode() {
-        // 32바이트를 URL-safe Base64로 인코딩하면 43자다.
         assertThat(store.issue(USER_ID, TTL)).hasSize(43);
     }
 
@@ -81,7 +80,6 @@ class LoginCodeStoreTest {
 
         assertThat(store.consume("code")).contains(USER_ID);
 
-        // get 후 delete로 나누면 그 사이에 같은 코드가 두 번 교환될 수 있다.
         verify(valueOperations).getAndDelete(key);
     }
 

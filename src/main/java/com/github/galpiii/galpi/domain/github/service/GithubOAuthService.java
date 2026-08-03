@@ -7,6 +7,7 @@ import com.github.galpiii.galpi.domain.github.client.GithubApiClient;
 import com.github.galpiii.galpi.domain.github.client.GithubOAuthClient;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubAccessTokenResponse;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubUserResponse;
+import com.github.galpiii.galpi.domain.github.dto.AuthorizeRedirect;
 import com.github.galpiii.galpi.domain.github.store.OAuthCodeGuard;
 import com.github.galpiii.galpi.domain.github.store.OAuthStateStore;
 import com.github.galpiii.galpi.domain.user.entity.User;
@@ -18,6 +19,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Optional;
 
 @Slf4j
@@ -36,30 +39,21 @@ public class GithubOAuthService {
     private final RedirectUriValidator redirectUriValidator;
     private final JwtProperties jwtProperties;
 
-    /**
-     * 브라우저를 보낼 URL을 만든다. returnTo가 허용 목록 밖이면 예외 대신 프론트 오류 화면 URL을
-     * 준다. 이 엔드포인트는 사용자가 직접 이동하는 곳이라, 실패해도 브라우저에 JSON을 띄우면 안 된다.
-     */
-    public String buildAuthorizeRedirect(String returnTo) {
+    public AuthorizeRedirect buildAuthorizeRedirect(String returnTo) {
         String validatedReturnTo;
         try {
             validatedReturnTo = redirectUriValidator.validate(returnTo);
         } catch (GlobalException e) {
-            // 거부된 returnTo는 오류 화면에도 싣지 않는다.
-            return errorRedirect(e, "");
+            return AuthorizeRedirect.withoutState(errorRedirect(e, ""));
         }
 
         String state = stateStore.issue(validatedReturnTo);
-        return oAuthClient.buildAuthorizeUrl(state);
+        return new AuthorizeRedirect(oAuthClient.buildAuthorizeUrl(state), state);
     }
 
-    /**
-     * 콜백은 GitHub이 브라우저를 되돌려 보내는 지점이다. 어떤 실패든 프론트 오류 화면으로 넘겨야
-     * 하므로 예외를 밖으로 던지지 않는다. 던지면 사용자가 백엔드 도메인의 JSON 응답에 착륙한다.
-     */
-    public String handleCallback(String code, String state, String error, String errorDescription) {
-        // 성공·실패와 무관하게 state는 먼저 소진한다. 복귀 경로는 여기서만 알 수 있다.
-        Optional<String> consumedState = stateStore.consume(state);
+    public String handleCallback(String code, String state, String browserState,
+                                 String error, String errorDescription) {
+        Optional<String> consumedState = consumeStateBoundTo(state, browserState);
         String returnTo = consumedState.orElse("");
 
         if (error != null && !error.isBlank()) {
@@ -78,6 +72,26 @@ public class GithubOAuthService {
             return redirectUriValidator.buildFrontendError(
                     ErrorCode.INTERNAL_SERVER_ERROR.getCode(), returnTo);
         }
+    }
+
+    private Optional<String> consumeStateBoundTo(String state, String browserState) {
+        if (state == null || state.isBlank()) {
+            return Optional.empty();
+        }
+        if (browserState == null || browserState.isBlank()) {
+            log.warn("[GitHub] state 쿠키 없이 콜백이 들어왔다. 이 브라우저가 시작한 흐름이 아니다");
+            return Optional.empty();
+        }
+        if (!constantTimeEquals(state, browserState)) {
+            log.warn("[GitHub] 콜백 state가 브라우저 쿠키와 다르다. 로그인 CSRF 시도일 수 있다");
+            return Optional.empty();
+        }
+        return stateStore.consume(state);
+    }
+
+    private static boolean constantTimeEquals(String left, String right) {
+        return MessageDigest.isEqual(
+                left.getBytes(StandardCharsets.UTF_8), right.getBytes(StandardCharsets.UTF_8));
     }
 
     private String issueLoginCode(String code, boolean stateValid) {

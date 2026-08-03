@@ -5,10 +5,6 @@ import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 
-/**
- * 테스트용 RSA 키. {@code GithubAppJwtGenerator}가 생성자에서 PEM을 파싱하므로 컨텍스트를 띄우려면
- * 진짜 키가 필요한데, 저장소에 개인키를 남기지 않으려고 실행 시점에 만들어 쓴다.
- */
 public final class TestRsaKeys {
 
     private TestRsaKeys() {

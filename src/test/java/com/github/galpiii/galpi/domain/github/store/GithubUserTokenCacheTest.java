@@ -133,7 +133,6 @@ class GithubUserTokenCacheTest {
     @Test
     @DisplayName("복호화할 수 없는 항목은 버리고 캐시 미스로 처리한다")
     void discardsUndecryptableEntry() {
-        // 키를 잃어버렸거나 값이 손상된 경우. 여기서 예외가 나가면 /auth/me 전체가 죽는다.
         given(valueOperations.get(KEY)).willReturn("1:not-a-valid-ciphertext");
 
         assertThat(cache.find(USER_ID)).isEmpty();
@@ -143,7 +142,6 @@ class GithubUserTokenCacheTest {
     @Test
     @DisplayName("버전 접두사가 없는 옛 형식 항목도 버린다")
     void discardsLegacyPlaintextEntry() {
-        // 이번 변경 전에 평문으로 캐시된 항목이 남아 있을 수 있다.
         given(valueOperations.get(KEY)).willReturn(TOKEN);
 
         assertThat(cache.find(USER_ID)).isEmpty();
@@ -157,7 +155,6 @@ class GithubUserTokenCacheTest {
         String storedWithV2 = capturedValue();
         given(valueOperations.get(KEY)).willReturn(storedWithV2);
 
-        // v2 키를 모르는 인스턴스가 읽으면 조용히 미스가 돼야 한다.
         assertThat(cacheWith(cipher(1, Map.of(1, KEY_V1))).find(USER_ID)).isEmpty();
     }
 }

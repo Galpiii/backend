@@ -65,7 +65,6 @@ class RedirectUriValidatorTest {
     })
     @DisplayName("백슬래시·제어문자로 //를 우회하려는 대상은 거부한다")
     void rejectsBackslashBypass(String target) {
-        // 브라우저가 \를 /로 정규화하므로 /\evil.com은 //evil.com과 같다.
         assertThatThrownBy(() -> validator.validate(target))
                 .isInstanceOf(BadRequestException.class)
                 .extracting(e -> ((GlobalException) e).getErrorCode())

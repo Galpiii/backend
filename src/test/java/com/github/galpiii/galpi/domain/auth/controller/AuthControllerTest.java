@@ -29,7 +29,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-// test 프로필은 로컬 HTTP 편의를 위해 secure=false다. 여기서는 운영 설정대로 켜고 검증한다.
 @TestPropertySource(properties = "galpi.jwt.cookie.secure=true")
 @DisplayName("AuthController — 세션 발급과 Refresh 쿠키")
 class AuthControllerTest extends WebMvcTestSupport {
@@ -68,7 +67,6 @@ class AuthControllerTest extends WebMvcTestSupport {
                     .andExpect(jsonPath("$.data.expiresIn").value(1800))
                     .andReturn();
 
-            // Refresh 토큰이 응답 본문에 실리면 JS가 읽을 수 있게 된다.
             assertThat(result.getResponse().getContentAsString()).doesNotContain("refresh-jwt");
             assertThat(setCookieOf(result)).contains(REFRESH_COOKIE + "=refresh-jwt");
         }

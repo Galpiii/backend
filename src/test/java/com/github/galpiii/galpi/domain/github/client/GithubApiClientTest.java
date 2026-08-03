@@ -205,7 +205,6 @@ class GithubApiClientTest {
         private static final String REVOKE_URL =
                 GithubTestClients.API_BASE_URL + "/applications/Iv1.testclient/token";
 
-        // "Iv1.testclient:test-client-secret"
         private static final String EXPECTED_BASIC =
                 "Basic SXYxLnRlc3RjbGllbnQ6dGVzdC1jbGllbnQtc2VjcmV0";
 
