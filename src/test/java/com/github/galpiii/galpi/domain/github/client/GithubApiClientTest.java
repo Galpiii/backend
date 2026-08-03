@@ -184,6 +184,40 @@ class GithubApiClientTest {
             server.verify();
         }
 
+        /**
+         * Spring의 인터셉터 체인은 요청당 iterator 하나를 공유한다. 재시도가 로깅보다 앞에 있으면
+         * 재시도분이 로깅을 건너뛰어, 정작 최종 응답의 rate limit 헤더가 기록되지 않는다.
+         */
+        @Test
+        @DisplayName("재시도 뒤 최종 응답의 rate limit도 기록된다")
+        void recordsRateLimitOfFinalResponse() {
+            RateLimitRecorder recorder = new RateLimitRecorder();
+            GithubAppProperties properties = GithubTestClients.properties();
+            RestClient.Builder builder = GithubTestClients.config().apiClientBuilder(properties, recorder);
+            MockRestServiceServer retryServer = MockRestServiceServer.bindTo(builder).build();
+            GithubApiClient retryClient = new GithubApiClient(builder.build(), properties);
+
+            retryServer.expect(requestTo(GithubTestClients.API_BASE_URL + "/user"))
+                    .andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+            retryServer.expect(requestTo(GithubTestClients.API_BASE_URL + "/user"))
+                    .andRespond(withSuccess("{\"id\":1,\"login\":\"octocat\"}", MediaType.APPLICATION_JSON)
+                            .headers(rateLimitHeaders("4321", "core")));
+
+            retryClient.getAuthenticatedUser(TOKEN);
+
+            assertThat(recorder.latest("core")).isNotNull();
+            assertThat(recorder.latest("core").remaining()).isEqualTo(4321);
+            retryServer.verify();
+        }
+
+        private static HttpHeaders rateLimitHeaders(String remaining, String resource) {
+            HttpHeaders headers = new HttpHeaders();
+            headers.add(RateLimitSnapshot.HEADER_LIMIT, "5000");
+            headers.add(RateLimitSnapshot.HEADER_REMAINING, remaining);
+            headers.add(RateLimitSnapshot.HEADER_RESOURCE, resource);
+            return headers;
+        }
+
         @Test
         @DisplayName("4xx는 재시도하지 않는다")
         void doesNotRetryClientErrors() {
