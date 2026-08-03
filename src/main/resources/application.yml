@@ -36,9 +36,6 @@ galpi:
   crypto:
     token:
       current-version: ${TOKEN_ENCRYPTION_CURRENT_VERSION:1}
-      # 다음 버전 슬롯을 미리 열어 둔다. 비워 두면 TokenCipher가 건너뛰므로, 키를 돌릴 때
-      # 이 파일을 고치고 재배포할 필요 없이 환경변수만 채우고 current-version을 올리면 된다.
-      # 이전 버전 키는 남겨 둬야 그 키로 암호화된 값을 계속 복호화할 수 있다.
       keys:
         1: ${TOKEN_ENCRYPTION_KEY_V1}
         2: ${TOKEN_ENCRYPTION_KEY_V2:}
@@ -58,8 +55,8 @@ galpi:
       name: ${JWT_COOKIE_NAME}
       path: ${JWT_COOKIE_PATH}
       secure: ${JWT_COOKIE_SECURE}
-      same-site: ${JWT_COOKIE_SAME_SITE} # 프론트와 백엔드가 다른 사이트면 None(+secure=true), 같은 사이트면 Lax
-      domain: ${JWT_COOKIE_DOMAIN:} # 비워두면 호스트 전용 쿠키. 위 REDIS_PASSWORD 주석 참고
+      same-site: ${JWT_COOKIE_SAME_SITE}
+      domain: ${JWT_COOKIE_DOMAIN:}
 
   github:
     app-id: ${GITHUB_APP_ID}

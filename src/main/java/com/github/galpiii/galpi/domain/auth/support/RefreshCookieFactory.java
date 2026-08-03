@@ -21,10 +21,6 @@ public class RefreshCookieFactory {
         return build("", Duration.ZERO);
     }
 
-    public String cookieName() {
-        return jwtProperties.cookie().name();
-    }
-
     private ResponseCookie build(String value, Duration maxAge) {
         JwtProperties.Cookie cookie = jwtProperties.cookie();
         ResponseCookie.ResponseCookieBuilder builder = ResponseCookie.from(cookie.name(), value)

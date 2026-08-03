@@ -189,11 +189,23 @@ class RefreshTokenStoreTest {
         @DisplayName("인덱스에 있는 모든 세션을 지우고 개수를 돌려준다")
         void deletesEverySession() {
             given(setOperations.members(INDEX_KEY)).willReturn(Set.of("hash-a", "hash-b"));
+            given(redisTemplate.delete(Set.of("auth:refresh:hash-a", "auth:refresh:hash-b")))
+                    .willReturn(2L);
 
             assertThat(store.revokeAll(USER_ID)).isEqualTo(2);
 
             verify(redisTemplate).delete(Set.of("auth:refresh:hash-a", "auth:refresh:hash-b"));
             verify(redisTemplate).delete(INDEX_KEY);
+        }
+
+        @Test
+        @DisplayName("만료돼 이미 사라진 세션은 폐기 개수에 넣지 않는다")
+        void countsOnlyKeysActuallyDeleted() {
+            given(setOperations.members(INDEX_KEY)).willReturn(Set.of("hash-a", "hash-stale"));
+            given(redisTemplate.delete(Set.of("auth:refresh:hash-a", "auth:refresh:hash-stale")))
+                    .willReturn(1L);
+
+            assertThat(store.revokeAll(USER_ID)).isEqualTo(1);
         }
 
         @Test

@@ -44,8 +44,6 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http
-                // 토큰 인증 API라 세션 기반 CSRF 토큰은 쓰지 않는다. 다만 쿠키만으로 인증하는
-                // /auth/refresh·/auth/logout은 표적이 되므로 CookieAuthCsrfFilter로 따로 막는다.
                 .csrf(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)

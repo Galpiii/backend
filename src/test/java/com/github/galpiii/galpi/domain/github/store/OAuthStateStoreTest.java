@@ -111,4 +111,14 @@ class OAuthStateStoreTest {
         verify(valueOperations).set(key.capture(), any(), any(Duration.class));
         assertThat(key.getValue()).isEqualTo("github:install-intent:7").doesNotStartWith("oauth:state:");
     }
+
+    @Test
+    @DisplayName("install-intent도 한 번 읽으면 사라진다")
+    void consumesInstallIntentOnce() {
+        given(valueOperations.getAndDelete("github:install-intent:7")).willReturn("/projects");
+
+        assertThat(store.consumeInstallIntent(7L)).contains("/projects");
+
+        verify(valueOperations).getAndDelete("github:install-intent:7");
+    }
 }

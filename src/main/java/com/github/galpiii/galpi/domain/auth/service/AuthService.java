@@ -57,7 +57,6 @@ public class AuthService {
 
         Instant sessionStartedAt = requireLivingSession(claims, storedUserId);
 
-        // 회전은 저장소만 보므로, 탈퇴한 사용자도 상한에 닿을 때까지 계속 토큰을 받아 간다.
         if (!userRepository.existsById(storedUserId)) {
             log.info("[Auth] 없는 사용자의 refresh 요청 userId={}", storedUserId);
             refreshTokenStore.revokeAll(storedUserId);
@@ -67,10 +66,6 @@ public class AuthService {
         return issue(storedUserId, sessionStartedAt);
     }
 
-    /**
-     * 회전할 때마다 refresh TTL이 새로 붙으므로, 상한이 없으면 활성 세션은 무한히 연장된다.
-     * 세션 시작 시각은 회전 사이에 그대로 물려받은 값이라 회전으로 늘릴 수 없다.
-     */
     private Instant requireLivingSession(TokenClaims claims, Long userId) {
         Instant sessionStartedAt = claims.sessionStartedAt();
         if (sessionStartedAt == null) {

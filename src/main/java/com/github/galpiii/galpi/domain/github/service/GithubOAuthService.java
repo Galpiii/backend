@@ -58,7 +58,6 @@ public class GithubOAuthService {
         String returnTo = consumedState.orElse("");
 
         if (error != null && !error.isBlank()) {
-            // 둘 다 콜백 쿼리 파라미터라 값을 공격자가 정한다. 그대로 찍으면 로그 인젝션이다.
             log.info("[GitHub] OAuth 거부 error={} description={}",
                     LogSafe.text(error), LogSafe.text(errorDescription));
             return redirectUriValidator.buildFrontendError(

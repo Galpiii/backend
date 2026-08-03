@@ -70,12 +70,12 @@ public class RefreshTokenStore {
             return 0;
         }
 
-        redisTemplate.delete(hashes.stream()
+        Long deleted = redisTemplate.delete(hashes.stream()
                 .map(hash -> KEY_PREFIX + hash)
                 .collect(Collectors.toSet()));
         hashes.forEach(this::markRevoked);
 
-        return hashes.size();
+        return deleted == null ? 0 : deleted.intValue();
     }
 
     private void markRevoked(String hash) {

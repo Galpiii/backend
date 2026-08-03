@@ -91,10 +91,6 @@ class SecurityConfigTest extends WebMvcTestSupport {
         }
     }
 
-    /**
-     * 쿠키 하나로 인증하는 엔드포인트는 교차 사이트에서 그대로 호출될 수 있다. 커스텀 헤더는
-     * 교차 사이트 폼으로 붙일 수 없고 fetch로 붙이면 프리플라이트가 CORS 허용 목록에 걸린다.
-     */
     @Nested
     @DisplayName("쿠키 인증 엔드포인트의 CSRF 방어")
     class CookieAuthCsrf {

@@ -89,11 +89,33 @@ class JwtTokenProviderTest {
     @DisplayName("만료된 토큰을 거부한다")
     void rejectsExpiredToken() {
         JwtTokenProvider shortLived = new JwtTokenProvider(
-                properties(SECRET, Duration.ofSeconds(-1)));
+                properties(SECRET, Duration.ofMinutes(-5)));
         String expired = shortLived.createAccessToken(1L);
 
         assertThatThrownBy(() -> tokenProvider.parse(expired, TokenType.ACCESS))
                 .isInstanceOf(UnauthorizedException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.EXPIRED_TOKEN);
+    }
+
+    @Test
+    @DisplayName("시계 오차 범위 안에서 갓 만료된 토큰은 받아들인다")
+    void toleratesClockSkew() {
+        JwtTokenProvider justExpired = new JwtTokenProvider(
+                properties(SECRET, Duration.ofSeconds(-1)));
+        String token = justExpired.createAccessToken(1L);
+
+        assertThat(tokenProvider.parse(token, TokenType.ACCESS).userId()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("시계 오차 여유를 넘긴 토큰은 그대로 거부한다")
+    void rejectsTokenPastSkewWindow() {
+        JwtTokenProvider wellExpired = new JwtTokenProvider(
+                properties(SECRET, Duration.ofSeconds(-31)));
+        String token = wellExpired.createAccessToken(1L);
+
+        assertThatThrownBy(() -> tokenProvider.parse(token, TokenType.ACCESS))
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.EXPIRED_TOKEN);
     }

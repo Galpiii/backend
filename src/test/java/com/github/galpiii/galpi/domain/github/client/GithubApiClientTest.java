@@ -184,10 +184,6 @@ class GithubApiClientTest {
             server.verify();
         }
 
-        /**
-         * Spring의 인터셉터 체인은 요청당 iterator 하나를 공유한다. 재시도가 로깅보다 앞에 있으면
-         * 재시도분이 로깅을 건너뛰어, 정작 최종 응답의 rate limit 헤더가 기록되지 않는다.
-         */
         @Test
         @DisplayName("재시도 뒤 최종 응답의 rate limit도 기록된다")
         void recordsRateLimitOfFinalResponse() {

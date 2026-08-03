@@ -173,10 +173,6 @@ class GithubUserTokenServiceTest {
             verify(cache).put(USER_ID, TOKEN, SESSION_TTL);
         }
 
-        /**
-         * 트랜잭션 안에서 캐시를 먼저 채우면 롤백됐을 때 DB에 없는 토큰이 Redis에만 남는다.
-         * find()는 캐시를 먼저 보므로 그 토큰을 계속 유효하다고 답하게 된다.
-         */
         @Test
         @DisplayName("캐시는 커밋된 뒤에 채운다 — 롤백되면 넣지 않는다")
         void fillsCacheOnlyAfterCommit() {

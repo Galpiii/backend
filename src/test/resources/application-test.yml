@@ -10,7 +10,7 @@ spring:
     hikari:
       maximum-pool-size: 2
       minimum-idle: 0
-      connection-timeout: 5000 # Hikari는 밀리초 정수만 받는다
+      connection-timeout: 5000
 
   jpa:
     hibernate:

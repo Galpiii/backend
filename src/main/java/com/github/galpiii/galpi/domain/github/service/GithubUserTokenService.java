@@ -47,13 +47,6 @@ public class GithubUserTokenService {
         cacheAfterCommit(user.getId(), accessToken, cacheTtl(expiresIn));
     }
 
-    /**
-     * 캐시는 커밋이 끝난 뒤에 채운다.
-     * <p>
-     * 트랜잭션 안에서 먼저 넣으면 뒤이어 롤백됐을 때 DB에 없는 토큰이 Redis에만 세션 수명만큼
-     * 남는다. {@link #find}는 캐시를 먼저 보므로 그 토큰을 계속 유효하다고 답하게 된다.
-     * 트랜잭션 밖에서 불린 경우에는 미룰 커밋이 없으니 그대로 넣는다.
-     */
     private void cacheAfterCommit(Long userId, String accessToken, Duration ttl) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             cache.put(userId, accessToken, ttl);

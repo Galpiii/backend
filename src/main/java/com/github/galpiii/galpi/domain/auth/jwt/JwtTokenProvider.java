@@ -26,6 +26,8 @@ public class JwtTokenProvider {
 
     private static final String CLAIM_TOKEN_TYPE = "typ";
     private static final String CLAIM_SESSION_STARTED_AT = "sst";
+
+    private static final Duration CLOCK_SKEW = Duration.ofSeconds(30);
     private static final int MIN_SECRET_BYTES = 32;
 
     private final JwtProperties properties;
@@ -51,14 +53,10 @@ public class JwtTokenProvider {
         return create(userId, TokenType.ACCESS, properties.accessTokenTtl(), null);
     }
 
-    /** 새 세션을 시작한다. 절대 수명은 지금부터 센다. */
     public String createRefreshToken(Long userId) {
         return createRefreshToken(userId, Instant.now());
     }
 
-    /**
-     * 회전용. 세션 시작 시각을 그대로 물려줘야 회전이 절대 수명을 늘리지 못한다.
-     */
     public String createRefreshToken(Long userId, Instant sessionStartedAt) {
         return create(userId, TokenType.REFRESH, properties.refreshTokenTtl(), sessionStartedAt);
     }
@@ -101,7 +99,7 @@ public class JwtTokenProvider {
         }
 
         Date expiration = claims.getExpirationTime();
-        if (expiration == null || expiration.toInstant().isBefore(Instant.now())) {
+        if (expiration == null || expiration.toInstant().plus(CLOCK_SKEW).isBefore(Instant.now())) {
             throw new UnauthorizedException(ErrorCode.EXPIRED_TOKEN);
         }
 
@@ -128,10 +126,6 @@ public class JwtTokenProvider {
                 sessionStartedAt(claims));
     }
 
-    /**
-     * 세션 시작 시각. 손상됐거나 없으면 null을 주고, 절대 수명을 재야 하는 쪽에서 거부하게 한다.
-     * 여기서 "지금"으로 메워 주면 상한이 조용히 무력화된다.
-     */
     private static Instant sessionStartedAt(JWTClaimsSet claims) {
         Object raw = claims.getClaim(CLAIM_SESSION_STARTED_AT);
         if (raw instanceof Number epochSeconds) {

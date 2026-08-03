@@ -87,24 +87,4 @@ class TokenMaskerTest {
         }
     }
 
-    @Nested
-    @DisplayName("hint()")
-    class Hint {
-
-        @Test
-        @DisplayName("접두어와 길이만 남기고 값은 노출하지 않는다")
-        void exposesOnlyPrefixAndLength() {
-            String hint = TokenMasker.hint("ghu_1234567890abcdef");
-
-            assertThat(hint).startsWith("ghu_").contains("len=20");
-            assertThat(hint).doesNotContain("1234567890abcdef");
-        }
-
-        @Test
-        @DisplayName("토큰이 없으면 표시용 문자열을 준다")
-        void handlesMissingToken() {
-            assertThat(TokenMasker.hint(null)).isEqualTo("<none>");
-            assertThat(TokenMasker.hint("  ")).isEqualTo("<none>");
-        }
-    }
 }

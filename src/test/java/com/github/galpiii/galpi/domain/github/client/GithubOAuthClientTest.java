@@ -46,10 +46,6 @@ class GithubOAuthClientTest {
     @DisplayName("재시도 정책")
     class RetryPolicy {
 
-        /**
-         * code는 일회용이라 5xx 뒤 재시도해도 GitHub이 이미 소비했다면 확정 실패다.
-         * 얻는 것 없이 사용자 대기 시간만 늘어나므로 이 클라이언트에는 재시도를 붙이지 않는다.
-         */
         @Test
         @DisplayName("code 교환은 5xx여도 재시도하지 않는다")
         void doesNotRetryCodeExchange() {

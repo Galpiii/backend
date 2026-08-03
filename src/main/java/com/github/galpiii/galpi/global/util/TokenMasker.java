@@ -34,12 +34,4 @@ public final class TokenMasker {
         masked = AUTHORIZATION.matcher(masked).replaceAll("$1" + MASK);
         return SENSITIVE_QUERY_PARAM.matcher(masked).replaceAll("$1" + MASK);
     }
-
-    public static String hint(String token) {
-        if (token == null || token.isBlank()) {
-            return "<none>";
-        }
-        int prefix = Math.min(4, token.length());
-        return token.substring(0, prefix) + MASK + "(len=" + token.length() + ")";
-    }
 }
