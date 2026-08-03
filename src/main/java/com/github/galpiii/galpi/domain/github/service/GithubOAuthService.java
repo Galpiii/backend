@@ -57,7 +57,7 @@ public class GithubOAuthService {
                 });
 
         if (!codeGuard.markUsed(code)) {
-            log.warn("[GitHub] 이미 사용된 code로 콜백이 재호출되었다");
+            log.warn("[GitHub] 이미 사용된 code로 콜백이 재호출됨");
             throw new BadRequestException(ErrorCode.GITHUB_OAUTH_CODE_REUSED);
         }
 
@@ -68,7 +68,7 @@ public class GithubOAuthService {
 
         GithubUserResponse githubUser = apiClient.getAuthenticatedUser(userAccessToken);
         if (githubUser == null || githubUser.id() == null) {
-            log.warn("[GitHub] /user 응답에 식별자가 없다");
+            log.warn("[GitHub] /user 응답에 식별자가 없음");
             throw new UnauthorizedException(ErrorCode.GITHUB_OAUTH_FAILED);
         }
 

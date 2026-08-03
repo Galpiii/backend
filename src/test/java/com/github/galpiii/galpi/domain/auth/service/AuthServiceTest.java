@@ -188,43 +188,42 @@ class AuthServiceTest {
     class Logout {
 
         @Test
-        @DisplayName("refresh 토큰과 GitHub user token을 함께 정리한다")
-        void revokesBoth() {
+        @DisplayName("제출된 refresh 토큰만 폐기한다")
+        void revokesPresentedRefreshToken() {
             given(refreshTokenStore.consume("refresh-token")).willReturn(Optional.of(USER_ID));
 
-            service.logout("refresh-token", USER_ID);
+            service.logout("refresh-token");
 
             verify(refreshTokenStore).consume("refresh-token");
-            verify(githubUserTokenService).delete(USER_ID);
         }
 
         @Test
-        @DisplayName("쿠키가 없어도 GitHub 토큰은 정리한다")
+        @DisplayName("GitHub 연결은 건드리지 않는다 — 다른 기기에서 계속 쓸 수 있어야 한다")
+        void keepsGithubConnection() {
+            given(refreshTokenStore.consume("refresh-token")).willReturn(Optional.of(USER_ID));
+
+            service.logout("refresh-token");
+
+            verify(githubUserTokenService, never()).delete(any());
+        }
+
+        @Test
+        @DisplayName("쿠키가 없으면 조용히 끝낸다")
         void toleratesMissingCookie() {
-            service.logout(null, USER_ID);
+            service.logout(null);
 
             verify(refreshTokenStore, never()).consume(any());
-            verify(githubUserTokenService).delete(USER_ID);
+            verify(githubUserTokenService, never()).delete(any());
         }
 
         @Test
-        @DisplayName("Access 토큰이 만료돼 principal이 없어도 쿠키의 주체로 GitHub 토큰을 정리한다")
-        void fallsBackToRefreshCookieSubject() {
-            given(refreshTokenStore.consume("refresh-token")).willReturn(Optional.of(USER_ID));
-
-            service.logout("refresh-token", null);
-
-            verify(refreshTokenStore).consume("refresh-token");
-            verify(githubUserTokenService).delete(USER_ID);
-        }
-
-        @Test
-        @DisplayName("principal도 없고 쿠키도 만료됐으면 조용히 끝낸다")
-        void toleratesUnknownSubject() {
+        @DisplayName("이미 만료된 쿠키여도 예외 없이 끝낸다")
+        void toleratesStaleCookie() {
             given(refreshTokenStore.consume("stale-token")).willReturn(Optional.empty());
 
-            service.logout("stale-token", null);
+            service.logout("stale-token");
 
+            verify(refreshTokenStore).consume("stale-token");
             verify(githubUserTokenService, never()).delete(any());
         }
     }

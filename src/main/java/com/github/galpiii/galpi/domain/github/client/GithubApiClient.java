@@ -60,7 +60,7 @@ public class GithubApiClient {
         }
 
         if (nextUri != null) {
-            log.warn("[GitHub] 페이지네이션 상한({}) 도달. 이후 페이지는 수집하지 않는다. uri={}",
+            log.warn("[GitHub] 페이지네이션 상한({}) 도달. 이후 페이지는 수집 x. uri={}",
                     properties.maxPages(), TokenMasker.mask(uri));
         }
 

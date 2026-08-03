@@ -57,17 +57,11 @@ public class AuthService {
         return issue(storedUserId);
     }
 
-    public void logout(String refreshToken, Long userId) {
-        Long resolvedUserId = userId;
-        if (refreshToken != null && !refreshToken.isBlank()) {
-            Long storedUserId = refreshTokenStore.consume(refreshToken).orElse(null);
-            if (resolvedUserId == null) {
-                resolvedUserId = storedUserId;
-            }
+    public void logout(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return;
         }
-        if (resolvedUserId != null) {
-            githubUserTokenService.delete(resolvedUserId);
-        }
+        refreshTokenStore.consume(refreshToken);
     }
 
     @Transactional(readOnly = true)

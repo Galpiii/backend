@@ -63,7 +63,7 @@ public class GithubUserTokenService {
 
         UserOAuthToken token = stored.get();
         if (token.isExpired()) {
-            log.info("[GitHub] user access token 만료. 재인증이 필요하다. userId={}", userId);
+            log.info("[GitHub] user access token 만료. 재인증이 필요 userId={}", userId);
             return Optional.empty();
         }
 
@@ -71,7 +71,7 @@ public class GithubUserTokenService {
         try {
             plaintext = tokenCipher.decrypt(token.getEncryptedAccessToken(), token.getTokenVersion());
         } catch (TokenCipherException e) {
-            log.warn("[GitHub] 저장된 토큰을 복호화하지 못했다. userId={} tokenVersion={}",
+            log.warn("[GitHub] 저장된 토큰을 복호화하지 못함 userId={} tokenVersion={}",
                     userId, token.getTokenVersion());
             return Optional.empty();
         }

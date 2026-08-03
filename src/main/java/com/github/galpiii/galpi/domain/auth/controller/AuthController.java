@@ -53,13 +53,16 @@ public class AuthController {
     }
 
     @Operation(summary = "로그아웃",
-            description = "Refresh 토큰과 GitHub user token을 폐기하고 쿠키를 만료시킨다.")
+            description = """
+                    이 기기의 Refresh 토큰만 폐기하고 쿠키를 만료시킨다.
+                    다른 기기의 세션과 GitHub 연결은 그대로 유지된다.
+                    GitHub 연결을 끊으려면 DELETE /auth/github/connection을 쓴다.""")
+    @SecurityRequirements
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<Void>> logout(
             @CookieValue(name = "${galpi.jwt.cookie.name:galpi_refresh}", required = false)
-            String refreshToken,
-            @AuthenticationPrincipal AuthPrincipal principal) {
-        authService.logout(refreshToken, principal == null ? null : principal.userId());
+            String refreshToken) {
+        authService.logout(refreshToken);
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, refreshCookieFactory.expired().toString())
                 .body(ApiResponse.success());
