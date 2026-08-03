@@ -8,12 +8,12 @@ import com.github.galpiii.galpi.domain.github.client.GithubOAuthClient;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubAccessTokenResponse;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubUserResponse;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
+import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.domain.github.store.OAuthCodeGuard;
 import com.github.galpiii.galpi.domain.github.store.OAuthStateStore;
 import com.github.galpiii.galpi.domain.user.entity.User;
 import com.github.galpiii.galpi.global.error.ErrorCode;
-import com.github.galpiii.galpi.global.error.exception.BadRequestException;
-import com.github.galpiii.galpi.global.error.exception.GlobalException;
+import com.github.galpiii.galpi.global.error.exception.UnauthorizedException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -31,7 +31,6 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -91,6 +90,10 @@ class GithubOAuthServiceTest {
         User user = User.ofGithub(1L, "octocat", "Octo", "dev@galpi.dev", "https://avatars/1");
         ReflectionTestUtils.setField(user, "id", id);
         return user;
+    }
+
+    private static String errorUrl(ErrorCode errorCode) {
+        return "https://galpi.dev/auth/callback?error=" + errorCode.getCode();
     }
 
     @BeforeEach
@@ -180,14 +183,13 @@ class GithubOAuthServiceTest {
     class StateValidation {
 
         @Test
-        @DisplayName("state 없이 콜백을 호출하면 거부한다")
+        @DisplayName("state 없이 콜백을 호출하면 오류 화면으로 넘긴다")
         void rejectsMissingState() {
             given(stateStore.consume(null)).willReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.handleCallback(CODE, null, null, null))
-                    .isInstanceOf(BadRequestException.class)
-                    .extracting(e -> ((GlobalException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.GITHUB_OAUTH_STATE_INVALID);
+            String redirect = service.handleCallback(CODE, null, null, null);
+
+            assertThat(redirect).isEqualTo(errorUrl(ErrorCode.GITHUB_OAUTH_STATE_INVALID));
         }
 
         @Test
@@ -203,10 +205,8 @@ class GithubOAuthServiceTest {
 
             service.handleCallback(CODE, STATE, null, null);
 
-            assertThatThrownBy(() -> service.handleCallback(CODE, STATE, null, null))
-                    .isInstanceOf(BadRequestException.class)
-                    .extracting(e -> ((GlobalException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.GITHUB_OAUTH_STATE_INVALID);
+            assertThat(service.handleCallback(CODE, STATE, null, null))
+                    .isEqualTo(errorUrl(ErrorCode.GITHUB_OAUTH_STATE_INVALID));
         }
 
         @Test
@@ -214,8 +214,7 @@ class GithubOAuthServiceTest {
         void doesNotExchangeCodeWhenStateInvalid() {
             given(stateStore.consume(STATE)).willReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.handleCallback(CODE, STATE, null, null))
-                    .isInstanceOf(BadRequestException.class);
+            service.handleCallback(CODE, STATE, null, null);
 
             verify(oAuthClient, never()).exchangeCodeForToken(any());
         }
@@ -226,24 +225,76 @@ class GithubOAuthServiceTest {
     class CodeReuse {
 
         @Test
-        @DisplayName("이미 사용된 code면 거부한다")
+        @DisplayName("이미 사용된 code면 오류 화면으로 넘긴다")
         void rejectsReusedCode() {
             given(stateStore.consume(STATE)).willReturn(Optional.of(""));
             given(codeGuard.markUsed(CODE)).willReturn(false);
 
-            assertThatThrownBy(() -> service.handleCallback(CODE, STATE, null, null))
-                    .isInstanceOf(BadRequestException.class)
-                    .extracting(e -> ((GlobalException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.GITHUB_OAUTH_CODE_REUSED);
+            String redirect = service.handleCallback(CODE, STATE, null, null);
 
+            assertThat(redirect).isEqualTo(errorUrl(ErrorCode.GITHUB_OAUTH_CODE_REUSED));
             verify(oAuthClient, never()).exchangeCodeForToken(any());
         }
 
         @Test
-        @DisplayName("code가 비어 있으면 거부한다")
+        @DisplayName("code가 비어 있으면 오류 화면으로 넘긴다")
         void rejectsBlankCode() {
-            assertThatThrownBy(() -> service.handleCallback("  ", STATE, null, null))
-                    .isInstanceOf(BadRequestException.class);
+            given(stateStore.consume(STATE)).willReturn(Optional.of(""));
+
+            assertThat(service.handleCallback("  ", STATE, null, null))
+                    .isEqualTo(errorUrl(ErrorCode.GITHUB_OAUTH_FAILED));
+        }
+    }
+
+    @Nested
+    @DisplayName("실패해도 브라우저에 JSON을 노출하지 않는다")
+    class NeverThrowsToBrowser {
+
+        @Test
+        @DisplayName("토큰 교환 실패는 오류 화면으로 넘긴다")
+        void redirectsWhenTokenExchangeFails() {
+            given(stateStore.consume(STATE)).willReturn(Optional.of(""));
+            given(codeGuard.markUsed(CODE)).willReturn(true);
+            given(oAuthClient.exchangeCodeForToken(CODE))
+                    .willThrow(new UnauthorizedException(ErrorCode.GITHUB_OAUTH_FAILED));
+
+            assertThat(service.handleCallback(CODE, STATE, null, null))
+                    .isEqualTo(errorUrl(ErrorCode.GITHUB_OAUTH_FAILED));
+        }
+
+        @Test
+        @DisplayName("GitHub API 오류도 오류 화면으로 넘긴다")
+        void redirectsWhenUserLookupFails() {
+            given(stateStore.consume(STATE)).willReturn(Optional.of(""));
+            given(codeGuard.markUsed(CODE)).willReturn(true);
+            given(oAuthClient.exchangeCodeForToken(CODE)).willReturn(tokenResponse(28800L));
+            given(apiClient.getAuthenticatedUser(USER_TOKEN)).willThrow(new GithubApiException());
+
+            assertThat(service.handleCallback(CODE, STATE, null, null))
+                    .isEqualTo(errorUrl(ErrorCode.GITHUB_API_ERROR));
+        }
+
+        @Test
+        @DisplayName("예상치 못한 런타임 오류도 오류 화면으로 넘긴다")
+        void redirectsOnUnexpectedFailure() {
+            given(stateStore.consume(STATE)).willReturn(Optional.of(""));
+            given(codeGuard.markUsed(CODE)).willReturn(true);
+            given(oAuthClient.exchangeCodeForToken(CODE))
+                    .willThrow(new IllegalStateException("boom"));
+
+            assertThat(service.handleCallback(CODE, STATE, null, null))
+                    .isEqualTo(errorUrl(ErrorCode.INTERNAL_SERVER_ERROR));
+        }
+
+        @Test
+        @DisplayName("실패해도 알아낸 복귀 경로는 유지한다")
+        void preservesReturnPathOnFailure() {
+            given(stateStore.consume(STATE)).willReturn(Optional.of("/projects/3"));
+            given(codeGuard.markUsed(CODE)).willReturn(false);
+
+            assertThat(service.handleCallback(CODE, STATE, null, null))
+                    .contains("error=" + ErrorCode.GITHUB_OAUTH_CODE_REUSED.getCode())
+                    .contains("returnTo=%2Fprojects%2F3");
         }
     }
 
@@ -348,19 +399,29 @@ class GithubOAuthServiceTest {
             given(stateStore.issue("/projects")).willReturn(STATE);
             given(oAuthClient.buildAuthorizeUrl(STATE)).willReturn("https://github.com/login/oauth/authorize?state=" + STATE);
 
-            String url = service.buildAuthorizeUrl("/projects");
+            String url = service.buildAuthorizeRedirect("/projects");
 
             assertThat(url).contains(STATE);
             verify(stateStore).issue("/projects");
         }
 
         @Test
-        @DisplayName("허용되지 않은 복귀 대상은 거부한다")
+        @DisplayName("허용되지 않은 복귀 대상은 오류 화면으로 넘기고 state를 발급하지 않는다")
         void rejectsOpenRedirect() {
-            assertThatThrownBy(() -> service.buildAuthorizeUrl("https://evil.example.com/steal"))
-                    .isInstanceOf(BadRequestException.class)
-                    .extracting(e -> ((GlobalException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.GITHUB_REDIRECT_NOT_ALLOWED);
+            String redirect = service.buildAuthorizeRedirect("https://evil.example.com/steal");
+
+            assertThat(redirect).isEqualTo(errorUrl(ErrorCode.GITHUB_REDIRECT_NOT_ALLOWED));
+            verify(stateStore, never()).issue(any());
+        }
+
+        @Test
+        @DisplayName("거부된 복귀 대상은 오류 화면에도 싣지 않는다")
+        void doesNotEchoRejectedTarget() {
+            String redirect = service.buildAuthorizeRedirect("https://evil.example.com/steal");
+
+            assertThat(redirect)
+                    .doesNotContain("returnTo")
+                    .doesNotContain("evil.example.com");
         }
     }
 }

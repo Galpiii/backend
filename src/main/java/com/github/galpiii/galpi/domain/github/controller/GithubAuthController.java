@@ -24,11 +24,13 @@ public class GithubAuthController {
     private final GithubOAuthService githubOAuthService;
 
     @Operation(summary = "GitHub 인증 시작",
-            description = "state를 발급해 Redis에 5분간 보관하고 GitHub 인증 페이지로 리다이렉트한다.")
+            description = """
+                    state를 발급해 Redis에 5분간 보관하고 GitHub 인증 페이지로 리다이렉트한다.
+                    returnTo가 허용 목록 밖이면 프론트 오류 화면으로 리다이렉트한다.""")
     @GetMapping("/authorize")
     public ResponseEntity<Void> authorize(
             @RequestParam(name = "returnTo", required = false) String returnTo) {
-        String authorizeUrl = githubOAuthService.buildAuthorizeUrl(returnTo);
+        String authorizeUrl = githubOAuthService.buildAuthorizeRedirect(returnTo);
         return ResponseEntity.status(302)
                 .location(URI.create(authorizeUrl))
                 .cacheControl(org.springframework.http.CacheControl.noStore())
@@ -39,7 +41,8 @@ public class GithubAuthController {
             description = """
                     state를 검증하고 code를 user access token으로 교환한 뒤,
                     일회용 로그인 코드만 실어 프론트로 리다이렉트한다.
-                    Access JWT는 쿼리스트링에 담지 않는다.""")
+                    Access JWT는 쿼리스트링에 담지 않는다.
+                    실패해도 JSON 대신 프론트 오류 화면(?error=코드)으로 리다이렉트한다.""")
     @GetMapping("/callback")
     public ResponseEntity<Void> callback(
             @RequestParam(name = "code", required = false) String code,
