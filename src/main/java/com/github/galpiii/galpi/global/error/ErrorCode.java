@@ -25,6 +25,8 @@ public enum ErrorCode {
     LOGIN_FAILED("AUTH-005", HttpStatus.UNAUTHORIZED, "로그인에 실패했습니다."),
     REFRESH_TOKEN_NOT_FOUND("AUTH-006", HttpStatus.UNAUTHORIZED, "만료되었거나 이미 사용된 리프레시 토큰입니다."),
     INVALID_LOGIN_CODE("AUTH-007", HttpStatus.UNAUTHORIZED, "유효하지 않거나 만료된 로그인 코드입니다."),
+    REFRESH_TOKEN_REUSED("AUTH-008", HttpStatus.UNAUTHORIZED,
+            "이미 사용된 리프레시 토큰이 다시 사용되어 모든 세션을 종료했습니다. 다시 로그인해 주세요."),
 
     GITHUB_REAUTH_REQUIRED("GITHUB-001", HttpStatus.UNAUTHORIZED, "GitHub 재연결이 필요합니다."),
     GITHUB_OAUTH_STATE_INVALID("GITHUB-002", HttpStatus.BAD_REQUEST, "유효하지 않거나 만료된 state입니다."),

@@ -138,15 +138,46 @@ class AuthServiceTest {
         }
 
         @Test
-        @DisplayName("이미 소비된 refresh 토큰은 거부한다 (재사용 차단)")
-        void rejectsAlreadyConsumedToken() {
+        @DisplayName("살아 있는 토큰이 저장소에 없으면 재사용으로 보고 모든 세션을 폐기한다")
+        void revokesEverySessionOnReuse() {
             String refresh = tokenProvider.createRefreshToken(USER_ID);
             given(refreshTokenStore.consume(refresh)).willReturn(Optional.empty());
+            given(refreshTokenStore.wasRevoked(refresh)).willReturn(false);
+
+            assertThatThrownBy(() -> service.refresh(refresh))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .extracting(e -> ((GlobalException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.REFRESH_TOKEN_REUSED);
+
+            verify(refreshTokenStore).revokeAll(USER_ID);
+        }
+
+        @Test
+        @DisplayName("재사용이면 새 토큰을 발급하지 않는다")
+        void issuesNothingOnReuse() {
+            String refresh = tokenProvider.createRefreshToken(USER_ID);
+            given(refreshTokenStore.consume(refresh)).willReturn(Optional.empty());
+            given(refreshTokenStore.wasRevoked(refresh)).willReturn(false);
+
+            assertThatThrownBy(() -> service.refresh(refresh));
+
+            verify(refreshTokenStore, never()).save(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("로그아웃으로 폐기된 토큰은 재사용으로 오판하지 않는다")
+        void doesNotTreatLoggedOutTokenAsReuse() {
+            String refresh = tokenProvider.createRefreshToken(USER_ID);
+            given(refreshTokenStore.consume(refresh)).willReturn(Optional.empty());
+            given(refreshTokenStore.wasRevoked(refresh)).willReturn(true);
 
             assertThatThrownBy(() -> service.refresh(refresh))
                     .isInstanceOf(UnauthorizedException.class)
                     .extracting(e -> ((GlobalException) e).getErrorCode())
                     .isEqualTo(ErrorCode.REFRESH_TOKEN_NOT_FOUND);
+
+            // 로그아웃한 기기 하나 때문에 다른 기기까지 끊기면 안 된다.
+            verify(refreshTokenStore, never()).revokeAll(any());
         }
 
         @Test
@@ -190,18 +221,15 @@ class AuthServiceTest {
         @Test
         @DisplayName("제출된 refresh 토큰만 폐기한다")
         void revokesPresentedRefreshToken() {
-            given(refreshTokenStore.consume("refresh-token")).willReturn(Optional.of(USER_ID));
-
             service.logout("refresh-token");
 
-            verify(refreshTokenStore).consume("refresh-token");
+            verify(refreshTokenStore).revoke("refresh-token");
+            verify(refreshTokenStore, never()).revokeAll(any());
         }
 
         @Test
         @DisplayName("GitHub 연결은 건드리지 않는다 — 다른 기기에서 계속 쓸 수 있어야 한다")
         void keepsGithubConnection() {
-            given(refreshTokenStore.consume("refresh-token")).willReturn(Optional.of(USER_ID));
-
             service.logout("refresh-token");
 
             verify(githubUserTokenService, never()).delete(any());
@@ -212,18 +240,16 @@ class AuthServiceTest {
         void toleratesMissingCookie() {
             service.logout(null);
 
-            verify(refreshTokenStore, never()).consume(any());
+            verify(refreshTokenStore, never()).revoke(any());
             verify(githubUserTokenService, never()).delete(any());
         }
 
         @Test
         @DisplayName("이미 만료된 쿠키여도 예외 없이 끝낸다")
         void toleratesStaleCookie() {
-            given(refreshTokenStore.consume("stale-token")).willReturn(Optional.empty());
-
             service.logout("stale-token");
 
-            verify(refreshTokenStore).consume("stale-token");
+            verify(refreshTokenStore).revoke("stale-token");
             verify(githubUserTokenService, never()).delete(any());
         }
     }
