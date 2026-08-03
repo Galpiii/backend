@@ -25,6 +25,29 @@ class TokenCipherTest {
         return new TokenCipher(new TokenEncryptionProperties(currentVersion, keys));
     }
 
+    /**
+     * 설정에 다음 버전 슬롯을 미리 비워 두고 열어야, 키를 돌릴 때 설정 파일을 고쳐 재배포하지 않고
+     * 환경변수만 채워서 올릴 수 있다.
+     */
+    @Test
+    @DisplayName("비어 있는 키 슬롯은 아직 쓰지 않는 버전으로 보고 건너뛴다")
+    void ignoresBlankKeySlots() {
+        String key = randomKey();
+        TokenCipher cipher = cipher(1, Map.of(1, key, 2, "", 3, "   "));
+
+        assertThat(cipher.decrypt(cipher.encrypt(TOKEN), 1)).isEqualTo(TOKEN);
+        assertThatThrownBy(() -> cipher.decrypt("irrelevant", 2))
+                .isInstanceOf(TokenCipherException.class);
+    }
+
+    @Test
+    @DisplayName("현재 버전 슬롯이 비어 있으면 기동에 실패한다")
+    void failsWhenCurrentVersionSlotIsBlank() {
+        assertThatThrownBy(() -> cipher(2, Map.of(1, randomKey(), 2, "")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("current-version=2");
+    }
+
     @Test
     @DisplayName("암호화한 값을 그대로 복호화한다")
     void roundTrips() {

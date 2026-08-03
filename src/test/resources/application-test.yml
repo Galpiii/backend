@@ -38,6 +38,8 @@ galpi:
       current-version: 1
       keys:
         1: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
+        2: ""
+        3: ""
 
   cors:
     allowed-origins:
@@ -48,6 +50,7 @@ galpi:
     issuer: galpi
     access-token-ttl: 30m
     refresh-token-ttl: 14d
+    session-absolute-ttl: 90d
     login-code-ttl: 60s
     cookie:
       name: galpi_refresh

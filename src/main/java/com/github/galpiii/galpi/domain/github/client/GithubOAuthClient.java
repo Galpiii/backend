@@ -5,6 +5,7 @@ import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.config.GithubClientConfig;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.UnauthorizedException;
+import com.github.galpiii.galpi.global.util.LogSafe;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
@@ -60,8 +61,8 @@ public class GithubOAuthClient {
 
         if (response == null || response.isError()) {
             log.warn("[GitHub] access_token 응답 오류 error={} description={}",
-                    response == null ? "null" : response.error(),
-                    response == null ? "null" : response.errorDescription());
+                    response == null ? "null" : LogSafe.text(response.error()),
+                    response == null ? "null" : LogSafe.text(response.errorDescription()));
             throw new UnauthorizedException(ErrorCode.GITHUB_OAUTH_FAILED);
         }
 

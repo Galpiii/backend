@@ -33,8 +33,13 @@ public class TokenCipher {
     public TokenCipher(TokenEncryptionProperties properties) {
         this.currentVersion = properties.currentVersion();
         this.keysByVersion = new HashMap<>();
-        properties.keys().forEach((version, encoded) ->
-                keysByVersion.put(version, toSecretKey(version, encoded)));
+        // 비어 있는 슬롯은 "아직 쓰지 않는 키 버전"이라는 뜻이므로 건너뛴다. 이렇게 해야 다음
+        // 로테이션 때 설정 파일을 고치지 않고 환경변수만 채워서 키를 올릴 수 있다.
+        properties.keys().forEach((version, encoded) -> {
+            if (encoded != null && !encoded.isBlank()) {
+                keysByVersion.put(version, toSecretKey(version, encoded));
+            }
+        });
 
         if (!keysByVersion.containsKey(currentVersion)) {
             throw new IllegalStateException(

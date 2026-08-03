@@ -15,6 +15,7 @@ import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.BadRequestException;
 import com.github.galpiii.galpi.global.error.exception.GlobalException;
 import com.github.galpiii.galpi.global.error.exception.UnauthorizedException;
+import com.github.galpiii.galpi.global.util.LogSafe;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -57,7 +58,9 @@ public class GithubOAuthService {
         String returnTo = consumedState.orElse("");
 
         if (error != null && !error.isBlank()) {
-            log.info("[GitHub] OAuth 거부 error={} description={}", error, errorDescription);
+            // 둘 다 콜백 쿼리 파라미터라 값을 공격자가 정한다. 그대로 찍으면 로그 인젝션이다.
+            log.info("[GitHub] OAuth 거부 error={} description={}",
+                    LogSafe.text(error), LogSafe.text(errorDescription));
             return redirectUriValidator.buildFrontendError(
                     ErrorCode.GITHUB_OAUTH_FAILED.getCode(), returnTo);
         }
