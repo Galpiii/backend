@@ -20,7 +20,9 @@ import org.springframework.web.client.RestClient;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -193,6 +195,70 @@ class GithubApiClientTest {
                     .isInstanceOf(GithubReauthRequiredException.class);
 
             server.verify();
+        }
+    }
+
+    @Nested
+    @DisplayName("user token 폐기")
+    class TokenRevocation {
+
+        private static final String REVOKE_URL =
+                GithubTestClients.API_BASE_URL + "/applications/Iv1.testclient/token";
+
+        // "Iv1.testclient:test-client-secret"
+        private static final String EXPECTED_BASIC =
+                "Basic SXYxLnRlc3RjbGllbnQ6dGVzdC1jbGllbnQtc2VjcmV0";
+
+        @Test
+        @DisplayName("client 자격증명으로 DELETE 하고 본문에 폐기할 토큰을 담는다")
+        void revokesWithClientCredentials() {
+            server.expect(requestTo(REVOKE_URL))
+                    .andExpect(method(org.springframework.http.HttpMethod.DELETE))
+                    .andExpect(header(HttpHeaders.AUTHORIZATION, EXPECTED_BASIC))
+                    .andExpect(content().json("{\"access_token\":\"" + TOKEN + "\"}"))
+                    .andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+            client.revokeUserToken(TOKEN);
+
+            server.verify();
+        }
+
+        @Test
+        @DisplayName("user token을 Bearer로 보내지 않는다")
+        void neverAuthenticatesWithUserToken() {
+            server.expect(requestTo(REVOKE_URL))
+                    .andExpect(header(HttpHeaders.AUTHORIZATION, EXPECTED_BASIC))
+                    .andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+            client.revokeUserToken(TOKEN);
+
+            server.verify();
+        }
+
+        @Test
+        @DisplayName("404는 이미 폐기된 토큰이므로 성공으로 본다")
+        void treatsNotFoundAsAlreadyRevoked() {
+            server.expect(requestTo(REVOKE_URL))
+                    .andRespond(withStatus(HttpStatus.NOT_FOUND)
+                            .body("{\"message\":\"Not Found\"}")
+                            .contentType(MediaType.APPLICATION_JSON));
+
+            assertThatCode(() -> client.revokeUserToken(TOKEN)).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("401은 App 자격증명 문제이므로 재인증 요구로 바꾸지 않는다")
+        void doesNotMapUnauthorizedToReauth() {
+            server.expect(requestTo(REVOKE_URL))
+                    .andRespond(withStatus(HttpStatus.UNAUTHORIZED)
+                            .body("{\"message\":\"Bad credentials\"}")
+                            .contentType(MediaType.APPLICATION_JSON));
+
+            assertThatThrownBy(() -> client.revokeUserToken(TOKEN))
+                    .isInstanceOf(GithubApiException.class)
+                    .isNotInstanceOf(GithubReauthRequiredException.class)
+                    .extracting(e -> ((GlobalException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.GITHUB_API_ERROR);
         }
     }
 

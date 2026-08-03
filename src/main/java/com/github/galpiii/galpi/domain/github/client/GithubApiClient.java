@@ -11,14 +11,20 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Component
@@ -35,6 +41,36 @@ public class GithubApiClient {
 
     public GithubUserResponse getAuthenticatedUser(String userAccessToken) {
         return get("/user", userAccessToken, GithubUserResponse.class).getBody();
+    }
+
+    /**
+     * user access token을 GitHub에서 폐기한다. 저장소에서 지우는 것만으로는 GitHub 쪽 인가가
+     * 남아 만료 시점까지 토큰이 살아 있으므로, 연결 해제 시 반드시 함께 호출한다.
+     * <p>
+     * 이 엔드포인트는 user token이 아니라 App의 client 자격증명으로 인증한다.
+     */
+    public void revokeUserToken(String userAccessToken) {
+        try {
+            restClient.method(HttpMethod.DELETE)
+                    .uri("/applications/{clientId}/token", properties.clientId())
+                    .header(HttpHeaders.AUTHORIZATION, basicCredentials())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("access_token", userAccessToken))
+                    .retrieve()
+                    .onStatus(HttpStatusCode::isError, (req, res) -> {
+                        // 404는 GitHub이 이미 모르는 토큰이라는 뜻이다. 폐기 목적은 달성됐다.
+                        if (res.getStatusCode().value() == HttpStatus.NOT_FOUND.value()) {
+                            return;
+                        }
+                        throw toRevokeException(res.getStatusCode());
+                    })
+                    .toBodilessEntity();
+        } catch (GithubApiException e) {
+            throw e;
+        } catch (RestClientException e) {
+            log.warn("[GitHub] 토큰 폐기 호출 실패 cause={}", e.getClass().getSimpleName());
+            throw new GithubApiException();
+        }
     }
 
     public <T> ResponseEntity<T> get(String uri, String token, Class<T> responseType) {
@@ -108,6 +144,22 @@ public class GithubApiClient {
 
         log.warn("[GitHub] 호출 실패 status={} uri={}", status.value(), TokenMasker.mask(uri));
         return new GithubApiException();
+    }
+
+    private RuntimeException toRevokeException(HttpStatusCode status) {
+        if (status.value() == HttpStatus.UNAUTHORIZED.value()) {
+            // user token이 아니라 App client 자격증명이 거부된 것이므로 재인증 요구로 바꾸지 않는다.
+            log.error("[GitHub] 토큰 폐기 401 — GITHUB_CLIENT_ID/SECRET 설정을 확인하세요");
+        } else {
+            log.warn("[GitHub] 토큰 폐기 실패 status={}", status.value());
+        }
+        return new GithubApiException();
+    }
+
+    private String basicCredentials() {
+        String raw = properties.clientId() + ":" + properties.clientSecret();
+        return "Basic " + Base64.getEncoder()
+                .encodeToString(raw.getBytes(StandardCharsets.UTF_8));
     }
 
     @FunctionalInterface
