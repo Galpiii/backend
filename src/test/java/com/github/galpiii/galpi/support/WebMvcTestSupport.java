@@ -10,6 +10,7 @@ import com.github.galpiii.galpi.domain.auth.support.RefreshCookieFactory;
 import com.github.galpiii.galpi.domain.github.service.GithubConnectionService;
 import com.github.galpiii.galpi.domain.github.service.GithubOAuthService;
 import com.github.galpiii.galpi.domain.github.support.OAuthStateCookieFactory;
+import com.github.galpiii.galpi.global.config.ApiDocsProperties;
 import com.github.galpiii.galpi.global.config.CorsProperties;
 import com.github.galpiii.galpi.global.config.SecurityConfig;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,7 +32,7 @@ import org.springframework.test.web.servlet.MockMvc;
         RefreshCookieFactory.class,
         OAuthStateCookieFactory.class
 })
-@EnableConfigurationProperties({JwtProperties.class, CorsProperties.class})
+@EnableConfigurationProperties({JwtProperties.class, CorsProperties.class, ApiDocsProperties.class})
 public abstract class WebMvcTestSupport {
 
     @Autowired

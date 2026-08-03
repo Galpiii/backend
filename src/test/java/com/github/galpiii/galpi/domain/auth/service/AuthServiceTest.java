@@ -34,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -126,6 +127,11 @@ class AuthServiceTest {
     @DisplayName("Refresh 회전")
     class Refresh {
 
+        @BeforeEach
+        void rotationSucceedsByDefault() {
+            given(refreshTokenStore.saveRotated(anyString(), anyLong(), any())).willReturn(true);
+        }
+
         @Test
         @DisplayName("기존 토큰을 소비하고 새 토큰 쌍을 발급한다")
         void rotatesRefreshToken() {
@@ -137,7 +143,21 @@ class AuthServiceTest {
 
             assertThat(tokens.refreshToken()).isNotEqualTo(oldRefresh);
             verify(refreshTokenStore).consume(oldRefresh);
-            verify(refreshTokenStore).save(eq(tokens.refreshToken()), eq(USER_ID), any());
+            verify(refreshTokenStore).saveRotated(eq(tokens.refreshToken()), eq(USER_ID), any());
+        }
+
+        @Test
+        @DisplayName("회전 도중 세션이 일괄 폐기되면 새 토큰을 내주지 않는다")
+        void refusesWhenSessionWasRevokedMidRotation() {
+            String oldRefresh = tokenProvider.createRefreshToken(USER_ID);
+            given(refreshTokenStore.consume(oldRefresh)).willReturn(Optional.of(USER_ID));
+            given(userRepository.existsById(USER_ID)).willReturn(true);
+            given(refreshTokenStore.saveRotated(anyString(), anyLong(), any())).willReturn(false);
+
+            assertThatThrownBy(() -> service.refresh(oldRefresh))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .extracting(e -> ((GlobalException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.REFRESH_TOKEN_NOT_FOUND);
         }
 
         @Test

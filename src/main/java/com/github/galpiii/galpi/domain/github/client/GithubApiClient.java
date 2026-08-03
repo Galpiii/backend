@@ -6,6 +6,7 @@ import com.github.galpiii.galpi.domain.github.config.GithubClientConfig;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.global.error.ErrorCode;
+import com.github.galpiii.galpi.global.util.LogSafe;
 import com.github.galpiii.galpi.global.util.TokenMasker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -20,6 +21,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -85,6 +88,7 @@ public class GithubApiClient {
             }
             page++;
             nextUri = LinkHeaderParser.next(response.getHeaders().getFirst(HttpHeaders.LINK))
+                    .filter(this::withinApiOrigin)
                     .orElse(null);
         }
 
@@ -94,6 +98,40 @@ public class GithubApiClient {
         }
 
         return collected;
+    }
+
+    /**
+     * Link 헤더가 가리키는 다음 페이지가 API 오리진 안에 있는지 확인한다.
+     *
+     * <p>다음 요청에는 사용자 access token이 Bearer로 붙는다. 절대 URL을 검증 없이 따라가면
+     * 응답 헤더 하나로 자격증명을 임의의 호스트에 흘릴 수 있다. RestClient는 절대 URL이면
+     * baseUrl을 무시하고, followRedirects(NEVER)도 이 경로는 막지 못하므로 여기서 강제한다.
+     */
+    private boolean withinApiOrigin(String nextUri) {
+        URI next;
+        URI apiBase;
+        try {
+            next = new URI(nextUri);
+            apiBase = new URI(properties.apiBaseUrl());
+        } catch (URISyntaxException e) {
+            log.warn("[GitHub] Link 헤더를 URI로 읽을 수 없어 페이지네이션을 멈춘다");
+            return false;
+        }
+
+        if (!next.isAbsolute()) {
+            return true;
+        }
+
+        boolean sameOrigin = next.getScheme().equalsIgnoreCase(apiBase.getScheme())
+                && next.getHost() != null
+                && next.getHost().equalsIgnoreCase(apiBase.getHost())
+                && next.getPort() == apiBase.getPort();
+
+        if (!sameOrigin) {
+            log.warn("[GitHub] Link 헤더가 API 오리진 밖을 가리켜 페이지네이션을 멈춘다 host={}",
+                    LogSafe.text(next.getHost()));
+        }
+        return sameOrigin;
     }
 
     private <T> ResponseEntity<T> execute(String uri,

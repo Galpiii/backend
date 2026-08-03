@@ -1,6 +1,5 @@
 package com.github.galpiii.galpi.domain.github.service;
 
-import com.github.galpiii.galpi.domain.github.client.GithubApiClient;
 import com.github.galpiii.galpi.domain.user.repository.UserRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.UnauthorizedException;
@@ -15,27 +14,25 @@ public class GithubConnectionService {
 
     private final GithubUserTokenService userTokenService;
     private final GithubUserWriter userWriter;
-    private final GithubApiClient apiClient;
+    private final GithubTokenRevoker tokenRevoker;
     private final UserRepository userRepository;
 
+    /**
+     * GitHub 연결을 끊는다.
+     *
+     * <p>로컬 원본을 지우기 전에 폐기를 확정하거나 재시도 큐에 넘긴다. 순서가 뒤집히면
+     * 외부에 살아 있는 토큰을 회수할 수단이 사라진다.
+     */
     public void disconnect(Long userId) {
         if (!userRepository.existsById(userId)) {
             throw new UnauthorizedException(ErrorCode.UNAUTHORIZED);
         }
 
-        userTokenService.find(userId).ifPresent(this::revokeAtGithub);
+        userTokenService.find(userId)
+                .ifPresent(accessToken -> tokenRevoker.revokeOrEnqueue(userId, accessToken));
         userTokenService.delete(userId);
         userWriter.disconnectGithub(userId);
 
         log.info("[GitHub] 사용자 요청으로 연결을 해제 userId={}", userId);
-    }
-
-    private void revokeAtGithub(String accessToken) {
-        try {
-            apiClient.revokeUserToken(accessToken);
-        } catch (RuntimeException e) {
-            log.warn("[GitHub] 토큰 폐기 요청 실패. 로컬 연결 해제는 계속 진행한다. cause={}",
-                    e.getClass().getSimpleName());
-        }
     }
 }

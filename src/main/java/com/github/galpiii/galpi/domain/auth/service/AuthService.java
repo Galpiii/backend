@@ -38,7 +38,7 @@ public class AuthService {
                     log.info("[Auth] 유효하지 않은 로그인 코드 교환 시도");
                     return new UnauthorizedException(ErrorCode.INVALID_LOGIN_CODE);
                 });
-        return issue(userId, Instant.now());
+        return issueNewSession(userId, Instant.now());
     }
 
     public IssuedTokens refresh(String refreshToken) {
@@ -63,7 +63,7 @@ public class AuthService {
             throw new UnauthorizedException(ErrorCode.UNAUTHORIZED);
         }
 
-        return issue(storedUserId, sessionStartedAt);
+        return rotate(storedUserId, sessionStartedAt);
     }
 
     private Instant requireLivingSession(TokenClaims claims, Long userId) {
@@ -111,10 +111,23 @@ public class AuthService {
         return MeResponse.of(user, githubUserTokenService.isValid(userId));
     }
 
-    private IssuedTokens issue(Long userId, Instant sessionStartedAt) {
-        String accessToken = tokenProvider.createAccessToken(userId);
+    private IssuedTokens issueNewSession(Long userId, Instant sessionStartedAt) {
         String refreshToken = tokenProvider.createRefreshToken(userId, sessionStartedAt);
         refreshTokenStore.save(refreshToken, userId, jwtProperties.refreshTokenTtl());
+        return tokensFor(userId, refreshToken);
+    }
+
+    private IssuedTokens rotate(Long userId, Instant sessionStartedAt) {
+        String refreshToken = tokenProvider.createRefreshToken(userId, sessionStartedAt);
+        if (!refreshTokenStore.saveRotated(refreshToken, userId, jwtProperties.refreshTokenTtl())) {
+            log.warn("[Auth] 회전 도중 세션이 일괄 폐기됐다. 새 토큰을 심지 않는다 userId={}", userId);
+            throw new UnauthorizedException(ErrorCode.REFRESH_TOKEN_NOT_FOUND);
+        }
+        return tokensFor(userId, refreshToken);
+    }
+
+    private IssuedTokens tokensFor(Long userId, String refreshToken) {
+        String accessToken = tokenProvider.createAccessToken(userId);
         return new IssuedTokens(accessToken, refreshToken, jwtProperties.accessTokenTtl().toSeconds());
     }
 }

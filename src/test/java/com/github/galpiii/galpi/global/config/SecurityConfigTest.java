@@ -155,4 +155,18 @@ class SecurityConfigTest extends WebMvcTestSupport {
                     .andExpect(jsonPath("$.data").doesNotExist());
         }
     }
+
+    @Nested
+    @DisplayName("API 문서 — 기본은 닫혀 있다")
+    class ApiDocs {
+
+        @ParameterizedTest(name = "GET {0} 은 401이다")
+        @ValueSource(strings = {"/swagger-ui/index.html", "/swagger-ui.html", "/v3/api-docs"})
+        @DisplayName("환경변수를 켜지 않으면 인증 스펙이 공개되지 않는다")
+        void closedByDefault(String path) throws Exception {
+            mockMvc.perform(get(path))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value(ErrorCode.UNAUTHORIZED.getCode()));
+        }
+    }
 }

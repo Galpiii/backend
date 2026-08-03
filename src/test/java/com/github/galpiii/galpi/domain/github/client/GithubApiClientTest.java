@@ -332,6 +332,49 @@ class GithubApiClientTest {
             server.verify();
         }
 
+        @Test
+        @DisplayName("Link가 API 오리진 밖을 가리키면 따라가지 않는다 — Bearer 토큰이 외부로 나가면 안 된다")
+        void refusesToFollowOffOriginNextLink() {
+            server.expect(requestTo(PAGE_1))
+                    .andRespond(withSuccess("[\"a\"]", MediaType.APPLICATION_JSON)
+                            .headers(linkHeader("<https://evil.example/user/repos?page=2>; rel=\"next\"")));
+
+            List<String> all = client.getAllPages(
+                    "/user/repos", TOKEN, new ParameterizedTypeReference<>() {
+                    });
+
+            assertThat(all).containsExactly("a");
+            // 두 번째 요청이 나갔다면 MockRestServiceServer가 예상치 못한 호출로 실패시킨다.
+            server.verify();
+        }
+
+        @Test
+        @DisplayName("호스트만 비슷한 곳도 막는다")
+        void refusesLookalikeHost() {
+            server.expect(requestTo(PAGE_1))
+                    .andRespond(withSuccess("[\"a\"]", MediaType.APPLICATION_JSON)
+                            .headers(linkHeader(
+                                    "<https://api.github.com.evil.example/user/repos>; rel=\"next\"")));
+
+            assertThat(client.getAllPages("/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
+            })).containsExactly("a");
+            server.verify();
+        }
+
+        @Test
+        @DisplayName("같은 오리진의 절대 URL은 그대로 따라간다")
+        void followsAbsoluteUrlOnSameOrigin() {
+            server.expect(requestTo(PAGE_1))
+                    .andRespond(withSuccess("[\"a\"]", MediaType.APPLICATION_JSON)
+                            .headers(linkHeader("<" + PAGE_2 + ">; rel=\"next\"")));
+            server.expect(requestTo(PAGE_2))
+                    .andRespond(withSuccess("[\"b\"]", MediaType.APPLICATION_JSON));
+
+            assertThat(client.getAllPages("/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
+            })).containsExactly("a", "b");
+            server.verify();
+        }
+
         private HttpHeaders linkHeader(String value) {
             HttpHeaders headers = new HttpHeaders();
             headers.add(HttpHeaders.LINK, value);

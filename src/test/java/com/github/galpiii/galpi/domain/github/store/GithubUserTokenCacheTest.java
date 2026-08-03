@@ -4,6 +4,7 @@ import com.github.galpiii.galpi.global.crypto.TokenCipher;
 import com.github.galpiii.galpi.global.crypto.TokenEncryptionProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -11,6 +12,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
@@ -20,9 +23,12 @@ import java.util.Base64;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -156,5 +162,46 @@ class GithubUserTokenCacheTest {
         given(valueOperations.get(KEY)).willReturn(storedWithV2);
 
         assertThat(cacheWith(cipher(1, Map.of(1, KEY_V1))).find(USER_ID)).isEmpty();
+    }
+
+    @Nested
+    @DisplayName("Redis 장애 — 캐시는 단일 장애점이 되면 안 된다")
+    class RedisOutage {
+
+        private static final DataAccessException DOWN =
+                new RedisConnectionFailureException("connection refused");
+
+        @Test
+        @DisplayName("조회가 실패하면 캐시 미스로 낮춘다 — DB 정본으로 폴백할 수 있어야 한다")
+        void findDegradesToMiss() {
+            given(valueOperations.get(KEY)).willThrow(DOWN);
+
+            assertThat(cache.find(USER_ID)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("적재가 실패해도 호출부로 번지지 않는다 — 로그인이 캐시 때문에 실패하면 안 된다")
+        void putSwallowsFailure() {
+            willThrow(DOWN).given(valueOperations).set(anyString(), anyString(), any(Duration.class));
+
+            assertThatCode(() -> cache.put(USER_ID, TOKEN, TTL)).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("손상된 항목 정리가 실패해도 조회는 캐시 미스로 끝난다")
+        void cleanupFailureDoesNotBreakRead() {
+            given(valueOperations.get(KEY)).willReturn("1:not-a-valid-ciphertext");
+            given(redisTemplate.delete(KEY)).willThrow(DOWN);
+
+            assertThat(cache.find(USER_ID)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("evict 실패는 삼키지 않는다 — 무효 토큰이 캐시에 남는 걸 성공으로 볼 수 없다")
+        void evictPropagatesFailure() {
+            given(redisTemplate.delete(KEY)).willThrow(DOWN);
+
+            assertThatThrownBy(() -> cache.evict(USER_ID)).isSameAs(DOWN);
+        }
     }
 }

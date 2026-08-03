@@ -24,10 +24,9 @@ import java.util.List;
 @EnableWebSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
+
+    /** 아직 Access 토큰이 없는 상태에서 불러야 하는 곳들. */
     private static final String[] PUBLIC_ENDPOINTS = {
-            "/swagger-ui/**",
-            "/swagger-ui.html",
-            "/v3/api-docs/**",
             "/auth/github/authorize",
             "/auth/github/callback",
             "/auth/token",
@@ -35,11 +34,19 @@ public class SecurityConfig {
             "/auth/logout"
     };
 
+    /** galpi.api-docs.enabled가 켜져 있을 때만 열린다. */
+    private static final String[] API_DOCS_ENDPOINTS = {
+            "/swagger-ui/**",
+            "/swagger-ui.html",
+            "/v3/api-docs/**"
+    };
+
     private final CookieAuthCsrfFilter cookieAuthCsrfFilter;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
     private final JwtAccessDeniedHandler accessDeniedHandler;
     private final CorsProperties corsProperties;
+    private final ApiDocsProperties apiDocsProperties;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -53,11 +60,14 @@ public class SecurityConfig {
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
-                        .anyRequest().authenticated()
-                )
+                .authorizeHttpRequests(auth -> {
+                    auth.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                            .requestMatchers(PUBLIC_ENDPOINTS).permitAll();
+                    if (apiDocsProperties.enabled()) {
+                        auth.requestMatchers(API_DOCS_ENDPOINTS).permitAll();
+                    }
+                    auth.anyRequest().authenticated();
+                })
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(cookieAuthCsrfFilter, JwtAuthenticationFilter.class)
                 .build();
