@@ -29,7 +29,9 @@ spring:
     redis:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT}
-      password: ${REDIS_PASSWORD}
+      # 비어 있는 게 정상인 값은 기본값을 준다. 없으면 치환되지 않은 "${REDIS_PASSWORD}" 문자열이
+      # 그대로 바인딩돼 기동은 성공하고 런타임에 터진다.
+      password: ${REDIS_PASSWORD:}
       timeout: ${REDIS_TIMEOUT}
 
 galpi:
@@ -53,7 +55,7 @@ galpi:
       path: ${JWT_COOKIE_PATH}
       secure: ${JWT_COOKIE_SECURE}
       same-site: ${JWT_COOKIE_SAME_SITE} # 프론트와 백엔드가 다른 사이트면 None(+secure=true), 같은 사이트면 Lax
-      domain: ${JWT_COOKIE_DOMAIN}
+      domain: ${JWT_COOKIE_DOMAIN:} # 비워두면 호스트 전용 쿠키. 위 REDIS_PASSWORD 주석 참고
 
   github:
     app-id: ${GITHUB_APP_ID}
