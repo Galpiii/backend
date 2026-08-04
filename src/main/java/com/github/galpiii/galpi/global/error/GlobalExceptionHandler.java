@@ -11,6 +11,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
@@ -80,6 +81,24 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(ErrorCode.INVALID_REQUEST_BODY.getStatus())
                 .body(ApiResponse.error(ErrorCode.INVALID_REQUEST_BODY.getCode(), ErrorCode.INVALID_REQUEST_BODY.getMessage()));
+    }
+
+    // multipart 요청의 파일 크기 제한 초과
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMaxUploadSizeExceededException(
+            MaxUploadSizeExceededException e
+    ) {
+        log.warn(
+                "[MaxUploadSizeExceededException] maxUploadSize: {}",
+                e.getMaxUploadSize()
+        );
+
+        return ResponseEntity
+                .status(ErrorCode.FEATURE_SPEC_FILE_SIZE_EXCEEDED.getStatus())
+                .body(ApiResponse.error(
+                        ErrorCode.FEATURE_SPEC_FILE_SIZE_EXCEEDED.getCode(),
+                        ErrorCode.FEATURE_SPEC_FILE_SIZE_EXCEEDED.getMessage()
+                ));
     }
 
     // 그 외 모든 예외
