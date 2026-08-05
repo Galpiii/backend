@@ -7,6 +7,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingRequestValueException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -65,13 +67,22 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(ErrorCode.INVALID_TYPE_VALUE.getCode(), ErrorCode.INVALID_TYPE_VALUE.getMessage()));
     }
 
-    // 필수 요청 파라미터 누락
-    @ExceptionHandler(MissingServletRequestParameterException.class)
-    public ResponseEntity<ApiResponse<Void>> handleMissingServletRequestParameterException(MissingServletRequestParameterException e) {
-        log.warn("[MissingServletRequestParameterException] message: {}", e.getMessage());
+    // 필수 요청 파라미터 또는 헤더 누락
+    @ExceptionHandler({
+            MissingServletRequestParameterException.class,
+            MissingRequestHeaderException.class
+    })
+    public ResponseEntity<ApiResponse<Void>> handleMissingRequestValueException(
+            MissingRequestValueException e
+    ) {
+        log.warn("[MissingRequestValueException] message: {}", e.getMessage());
+
         return ResponseEntity
-                .status(ErrorCode.MISSING_REQUEST_PARAMETER.getStatus())
-                .body(ApiResponse.error(ErrorCode.MISSING_REQUEST_PARAMETER.getCode(), ErrorCode.MISSING_REQUEST_PARAMETER.getMessage()));
+                .status(ErrorCode.MISSING_REQUEST_VALUE.getStatus())
+                .body(ApiResponse.error(
+                        ErrorCode.MISSING_REQUEST_VALUE.getCode(),
+                        ErrorCode.MISSING_REQUEST_VALUE.getMessage()
+                ));
     }
 
     // 요청 본문 파싱 실패

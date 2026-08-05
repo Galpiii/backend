@@ -14,7 +14,7 @@ public enum ErrorCode {
     METHOD_NOT_ALLOWED("COMMON-003", HttpStatus.METHOD_NOT_ALLOWED, "허용되지 않은 HTTP 메서드입니다."),
     RESOURCE_NOT_FOUND("COMMON-004", HttpStatus.NOT_FOUND, "요청한 리소스를 찾을 수 없습니다."),
     INVALID_TYPE_VALUE("COMMON-005", HttpStatus.BAD_REQUEST, "요청 값의 타입이 올바르지 않습니다."),
-    MISSING_REQUEST_PARAMETER("COMMON-006", HttpStatus.BAD_REQUEST, "필수 요청 파라미터가 누락되었습니다."),
+    MISSING_REQUEST_VALUE("COMMON-006", HttpStatus.BAD_REQUEST, "필수 요청 값이 누락되었습니다."),
     INVALID_REQUEST_BODY("COMMON-007", HttpStatus.BAD_REQUEST, "요청 본문을 읽을 수 없습니다."),
     CONFLICT("COMMON-008", HttpStatus.CONFLICT, "이미 존재하는 리소스입니다."),
     BAD_REQUEST("COMMON-009", HttpStatus.BAD_REQUEST, "잘못된 요청입니다."),
