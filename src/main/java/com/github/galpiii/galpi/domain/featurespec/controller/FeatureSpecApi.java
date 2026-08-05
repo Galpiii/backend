@@ -79,8 +79,24 @@ public interface FeatureSpecApi {
                             )
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "403",
+                            description = "AUTH-002: 프로젝트 접근 권한 없음",
+                            content = @Content(
+                                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                    examples = @ExampleObject(
+                                            name = "프로젝트 접근 권한 없음",
+                                            value = """
+                                                    {
+                                                      "code": "AUTH-002",
+                                                      "message": "접근 권한이 없습니다."
+                                                    }
+                                                    """
+                                    )
+                            )
+                    ),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
-                            description = "COMMON-004: 프로젝트 또는 사용자를 찾을 수 없음",
+                            description = "COMMON-004: 프로젝트를 찾을 수 없음",
                             content = @Content(
                                     mediaType = MediaType.APPLICATION_JSON_VALUE,
                                     examples = @ExampleObject(

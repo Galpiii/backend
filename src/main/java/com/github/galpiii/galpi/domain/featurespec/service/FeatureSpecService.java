@@ -7,7 +7,7 @@ import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileVali
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.domain.user.entity.User;
-import com.github.galpiii.galpi.domain.user.repository.UserRepository;
+import com.github.galpiii.galpi.global.error.exception.ForbiddenException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +21,6 @@ import org.springframework.web.multipart.MultipartFile;
 public class FeatureSpecService {
 
     private final ProjectRepository projectRepository;
-    private final UserRepository userRepository;
     private final SpecDocumentRepository specDocumentRepository;
     private final FeatureSpecFileValidator featureSpecFileValidator;
 
@@ -44,21 +43,22 @@ public class FeatureSpecService {
                     return new NotFoundException();
                 });
 
-        // 추후 리팩토링 예정
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> {
-                    log.warn(
-                            "[기능명세서 업로드] 유저를 찾을 수 없습니다.. userId: {}",
-                            userId
-                    );
-                    return new NotFoundException();
-                });
+        User projectOwner = project.getUser();
+
+        if (!projectOwner.getId().equals(userId)) {
+            log.warn(
+                    "[기능명세서 업로드] 프로젝트 접근 권한이 없습니다. projectId: {}, userId: {}",
+                    projectId,
+                    userId
+            );
+            throw new ForbiddenException();
+        }
 
         featureSpecFileValidator.validate(file);
 
         SpecDocument specDocument = SpecDocument.builder()
                 .project(project)
-                .user(user)
+                .user(projectOwner)
                 .fileName(file.getOriginalFilename())
                 .build();
 
