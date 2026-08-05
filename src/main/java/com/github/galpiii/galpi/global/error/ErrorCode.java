@@ -30,7 +30,7 @@ public enum ErrorCode {
     FEATURE_SPEC_FILE_EMPTY(
             "FEATURE-SPEC-FILE-001",
             HttpStatus.BAD_REQUEST,
-            "업로드된 파일이 없거나 비어 있습니다."
+            "업로드된 파일이 비어 있습니다."
     ),
     FEATURE_SPEC_FILE_NAME_MISSING(
             "FEATURE-SPEC-FILE-002",

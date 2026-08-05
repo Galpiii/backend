@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
@@ -76,6 +77,24 @@ public class GlobalExceptionHandler {
             MissingRequestValueException e
     ) {
         log.warn("[MissingRequestValueException] message: {}", e.getMessage());
+
+        return ResponseEntity
+                .status(ErrorCode.MISSING_REQUEST_VALUE.getStatus())
+                .body(ApiResponse.error(
+                        ErrorCode.MISSING_REQUEST_VALUE.getCode(),
+                        ErrorCode.MISSING_REQUEST_VALUE.getMessage()
+                ));
+    }
+
+    // 필수 multipart 요청 파트 누락
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingServletRequestPartException(
+            MissingServletRequestPartException e
+    ) {
+        log.warn(
+                "[MissingServletRequestPartException] requestPartName: {}",
+                e.getRequestPartName()
+        );
 
         return ResponseEntity
                 .status(ErrorCode.MISSING_REQUEST_VALUE.getStatus())
