@@ -55,7 +55,7 @@ public interface FeatureSpecApi {
                             responseCode = "400",
                             description = """
                                     파일 검증 실패:
-                                    - FEATURE-SPEC-FILE-001: 파일이 없거나 비어 있음
+                                    - FEATURE-SPEC-FILE-001: 비어 있음
                                     - FEATURE-SPEC-FILE-002: 원본 파일명 없음
                                     - FEATURE-SPEC-FILE-003: PDF 확장자가 아님
                                     - FEATURE-SPEC-FILE-004: Content-Type이 application/pdf가 아님
