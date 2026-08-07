@@ -27,58 +27,18 @@ public enum ErrorCode {
     LOGIN_FAILED("AUTH-005", HttpStatus.UNAUTHORIZED, "로그인에 실패했습니다."),
 
     // Feature Spec File
-    FEATURE_SPEC_FILE_EMPTY(
-            "FEATURE-SPEC-FILE-001",
-            HttpStatus.BAD_REQUEST,
-            "업로드된 파일이 비어 있습니다."
-    ),
-    FEATURE_SPEC_FILE_NAME_MISSING(
-            "FEATURE-SPEC-FILE-002",
-            HttpStatus.BAD_REQUEST,
-            "원본 파일명이 존재하지 않습니다."
-    ),
-    FEATURE_SPEC_FILE_EXTENSION_INVALID(
-            "FEATURE-SPEC-FILE-003",
-            HttpStatus.BAD_REQUEST,
-            "PDF 확장자 파일만 업로드할 수 있습니다."
-    ),
-    FEATURE_SPEC_FILE_CONTENT_TYPE_INVALID(
-            "FEATURE-SPEC-FILE-004",
-            HttpStatus.BAD_REQUEST,
-            "파일의 Content-Type이 application/pdf가 아닙니다."
-    ),
-    FEATURE_SPEC_FILE_SIZE_EXCEEDED(
-            "FEATURE-SPEC-FILE-005",
-            HttpStatus.BAD_REQUEST,
-            "파일 크기는 20MB를 초과할 수 없습니다."
-    ),
-    FEATURE_SPEC_FILE_NAME_TOO_LONG(
-            "FEATURE-SPEC-FILE-006",
-            HttpStatus.BAD_REQUEST,
-            "파일명은 255자를 초과할 수 없습니다."
-    ),
+    FEATURE_SPEC_FILE_EMPTY("FEATURE-SPEC-FILE-001", HttpStatus.BAD_REQUEST, "업로드된 파일이 비어 있습니다."),
+    FEATURE_SPEC_FILE_NAME_MISSING("FEATURE-SPEC-FILE-002", HttpStatus.BAD_REQUEST, "원본 파일명이 존재하지 않습니다."),
+    FEATURE_SPEC_FILE_EXTENSION_INVALID("FEATURE-SPEC-FILE-003", HttpStatus.BAD_REQUEST, "PDF 확장자 파일만 업로드할 수 있습니다."),
+    FEATURE_SPEC_FILE_CONTENT_TYPE_INVALID("FEATURE-SPEC-FILE-004", HttpStatus.BAD_REQUEST, "파일의 Content-Type이 application/pdf가 아닙니다."),
+    FEATURE_SPEC_FILE_SIZE_EXCEEDED("FEATURE-SPEC-FILE-005", HttpStatus.BAD_REQUEST, "파일 크기는 20MB를 초과할 수 없습니다."),
+    FEATURE_SPEC_FILE_NAME_TOO_LONG("FEATURE-SPEC-FILE-006", HttpStatus.BAD_REQUEST, "파일명은 255자를 초과할 수 없습니다."),
 
     // Feature Spec PDF
-    FEATURE_SPEC_PDF_INVALID(
-            "FEATURE-SPEC-PDF-001",
-            HttpStatus.BAD_REQUEST,
-            "정상적으로 열 수 있는 PDF 파일이 아닙니다."
-    ),
-    FEATURE_SPEC_PDF_ENCRYPTED(
-            "FEATURE-SPEC-PDF-002",
-            HttpStatus.BAD_REQUEST,
-            "암호화되거나 비밀번호로 보호된 PDF는 업로드할 수 없습니다."
-    ),
-    FEATURE_SPEC_PDF_PAGE_MISSING(
-            "FEATURE-SPEC-PDF-003",
-            HttpStatus.BAD_REQUEST,
-            "PDF 문서에는 한 페이지 이상이 필요합니다."
-    ),
-    FEATURE_SPEC_PDF_PAGE_LIMIT_EXCEEDED(
-            "FEATURE-SPEC-PDF-004",
-            HttpStatus.BAD_REQUEST,
-            "PDF 문서는 100페이지를 초과할 수 없습니다."
-    );
+    FEATURE_SPEC_PDF_INVALID("FEATURE-SPEC-PDF-001", HttpStatus.BAD_REQUEST, "정상적으로 열 수 있는 PDF 파일이 아닙니다."),
+    FEATURE_SPEC_PDF_ENCRYPTED("FEATURE-SPEC-PDF-002", HttpStatus.BAD_REQUEST, "암호화되거나 비밀번호로 보호된 PDF는 업로드할 수 없습니다."),
+    FEATURE_SPEC_PDF_PAGE_MISSING("FEATURE-SPEC-PDF-003", HttpStatus.BAD_REQUEST, "PDF 문서에는 한 페이지 이상이 필요합니다."),
+    FEATURE_SPEC_PDF_PAGE_LIMIT_EXCEEDED("FEATURE-SPEC-PDF-004", HttpStatus.BAD_REQUEST, "PDF 문서는 100페이지를 초과할 수 없습니다.");
 
     private final String code;
     private final HttpStatus status;
