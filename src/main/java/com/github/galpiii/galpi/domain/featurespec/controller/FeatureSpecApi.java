@@ -60,6 +60,7 @@ public interface FeatureSpecApi {
                                     - FEATURE-SPEC-FILE-003: PDF 확장자가 아님
                                     - FEATURE-SPEC-FILE-004: Content-Type이 application/pdf가 아님
                                     - FEATURE-SPEC-FILE-005: 파일 크기가 20MB를 초과함
+                                    - FEATURE-SPEC-FILE-006: 파일명이 255자를 초과함
                                     - FEATURE-SPEC-PDF-001: 정상적으로 열 수 없는 PDF
                                     - FEATURE-SPEC-PDF-002: 암호화 또는 비밀번호 보호된 PDF
                                     - FEATURE-SPEC-PDF-003: PDF 페이지가 없음

@@ -16,6 +16,7 @@ import java.io.IOException;
 public class FeatureSpecFileValidator {
 
     private static final long MAX_FILE_SIZE = 20L * 1024 * 1024;
+    private static final int MAX_FILE_NAME_LENGTH = 255;
     private static final int MIN_PAGE_COUNT = 1;
     private static final int MAX_PAGE_COUNT = 100;
     private static final String PDF_EXTENSION = "pdf";
@@ -36,6 +37,10 @@ public class FeatureSpecFileValidator {
 
         if (!StringUtils.hasText(originalFilename)) {
             throw new BadRequestException(ErrorCode.FEATURE_SPEC_FILE_NAME_MISSING);
+        }
+
+        if (originalFilename.length() > MAX_FILE_NAME_LENGTH) {
+            throw new BadRequestException(ErrorCode.FEATURE_SPEC_FILE_NAME_TOO_LONG);
         }
 
         String extension = StringUtils.getFilenameExtension(originalFilename);

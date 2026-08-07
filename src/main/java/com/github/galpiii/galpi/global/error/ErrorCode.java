@@ -52,6 +52,11 @@ public enum ErrorCode {
             HttpStatus.BAD_REQUEST,
             "파일 크기는 20MB를 초과할 수 없습니다."
     ),
+    FEATURE_SPEC_FILE_NAME_TOO_LONG(
+            "FEATURE-SPEC-FILE-006",
+            HttpStatus.BAD_REQUEST,
+            "파일명은 255자를 초과할 수 없습니다."
+    ),
 
     // Feature Spec PDF
     FEATURE_SPEC_PDF_INVALID(
