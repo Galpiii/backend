@@ -31,17 +31,8 @@ public class FeatureSpecService {
             Long userId,
             MultipartFile file
     ) {
-        log.info("[기능명세서 업로드] 업로드 시도.");
-
-        // 추후 리팩토링 예정
         Project project = projectRepository.findById(projectId)
-                .orElseThrow(() -> {
-                    log.warn(
-                            "[기능명세서 업로드] 프로젝트를 찾을 수 없습니다. projectId: {}",
-                            projectId
-                    );
-                    return new NotFoundException();
-                });
+                .orElseThrow(NotFoundException::new);
 
         User projectOwner = project.getUser();
 
@@ -56,13 +47,13 @@ public class FeatureSpecService {
 
         featureSpecFileValidator.validate(file);
 
-        SpecDocument specDocument = SpecDocument.builder()
-                .project(project)
-                .user(projectOwner)
-                .fileName(file.getOriginalFilename())
-                .build();
-
-        SpecDocument savedSpecDocument = specDocumentRepository.save(specDocument);
+        SpecDocument savedSpecDocument = specDocumentRepository.save(
+                SpecDocument.builder()
+                        .project(project)
+                        .user(projectOwner)
+                        .fileName(file.getOriginalFilename())
+                        .build()
+        );
 
         log.info(
                 "[기능명세서 업로드] 업로드 완료. specDocumentId: {}, projectId: {}, userId: {}",
