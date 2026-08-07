@@ -33,12 +33,4 @@ public class Project {
         this.name = name;
         this.user = user;
     }
-
-    // 실제 Project 도메인 구현이 병합되기 전 로컬 개발에만 사용하는 임시 생성 메서드입니다.
-    public static Project createTemporary(String name, User user) {
-        return Project.builder()
-                .name(name)
-                .user(user)
-                .build();
-    }
 }

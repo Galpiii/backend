@@ -26,11 +26,4 @@ public class User {
     private User(String nickname) {
         this.nickname = nickname;
     }
-
-    // 실제 User 도메인 구현이 병합되기 전 로컬 개발에만 사용하는 임시 생성 메서드입니다.
-    public static User createTemporary(String nickname) {
-        return User.builder()
-                .nickname(nickname)
-                .build();
-    }
 }
