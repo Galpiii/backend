@@ -1,0 +1,56 @@
+package com.github.galpiii.galpi.global.util;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@DisplayName("LogSafe — 외부 문자열을 로그에 남기기 전 손질")
+class LogSafeTest {
+
+    @Test
+    @DisplayName("개행을 지워 가짜 로그 줄을 심지 못하게 한다")
+    void stripsNewlines() {
+        String injected = "access_denied\n2026-08-03 INFO  [Auth] 관리자 권한 부여됨";
+
+        assertThat(LogSafe.text(injected))
+                .doesNotContain("\n")
+                .doesNotContain("\r")
+                .contains("access_denied");
+    }
+
+    @Test
+    @DisplayName("캐리지 리턴과 탭 등 제어문자도 함께 지운다")
+    void stripsOtherControlChars() {
+        assertThat(LogSafe.text("a\r\nb\tc\u0000d")).isEqualTo("a b c d");
+    }
+
+    @Test
+    @DisplayName("긴 값은 잘라 로그를 밀어내지 못하게 한다")
+    void truncatesLongValues() {
+        String flood = "x".repeat(10_000);
+
+        assertThat(LogSafe.text(flood)).hasSizeLessThan(300);
+    }
+
+    @Test
+    @DisplayName("섞여 들어온 토큰은 가린다")
+    void masksTokens() {
+        String withToken = "failed for ghu_abcdefghijklmnopqrstuvwxyz012345";
+
+        assertThat(LogSafe.text(withToken)).doesNotContain("ghu_abcdefghijklmnopqrstuvwxyz012345");
+    }
+
+    @Test
+    @DisplayName("null과 빈 값은 표시용 문자열로 바꾼다")
+    void normalizesEmptyValues() {
+        assertThat(LogSafe.text(null)).isEqualTo("<none>");
+        assertThat(LogSafe.text("   ")).isEqualTo("<none>");
+    }
+
+    @Test
+    @DisplayName("평범한 값은 그대로 둔다")
+    void leavesPlainTextAlone() {
+        assertThat(LogSafe.text("access_denied")).isEqualTo("access_denied");
+    }
+}

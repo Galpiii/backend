@@ -1,0 +1,87 @@
+
+server:
+  port: 0
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/galpi-test
+    username: galpi
+    password: galpi
+    hikari:
+      maximum-pool-size: 2
+      minimum-idle: 0
+      connection-timeout: 5000
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        default_batch_fetch_size: 100
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        boot:
+          allow_jdbc_metadata_access: false
+
+  flyway:
+    enabled: false
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: ""
+      timeout: 3s
+
+galpi:
+  crypto:
+    token:
+      current-version: 1
+      keys:
+        1: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
+        2: ""
+        3: ""
+
+  cors:
+    allowed-origins:
+      - http://localhost:5173
+
+  jwt:
+    secret: galpi-test-secret-key-must-be-at-least-32-bytes
+    issuer: galpi
+    access-token-ttl: 30m
+    refresh-token-ttl: 14d
+    session-absolute-ttl: 90d
+    login-code-ttl: 60s
+    cookie:
+      name: galpi_refresh
+      path: /auth
+      secure: false
+      same-site: Lax
+      domain: ""
+
+  github:
+    app-id: "12345"
+    client-id: Iv1.test-client-id
+    client-secret: test-client-secret
+    base-url: http://localhost:8080
+    api-version: 2022-11-28
+    api-base-url: https://api.github.com
+    oauth-base-url: https://github.com
+    user-agent: Galpi
+    allowed-redirect-origins:
+      - http://localhost:5173
+    default-redirect-uri: http://localhost:5173/auth/callback
+    connect-timeout: 5s
+    read-timeout: 15s
+    max-retries: 2
+    max-pages: 10
+
+logging:
+  level:
+    org.hibernate.SQL: warn
+
+swagger:
+  servers:
+    - http://localhost:8080
+
+APP_SERVER_URL: http://localhost:8080

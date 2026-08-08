@@ -21,6 +21,69 @@ spring:
         default_batch_fetch_size: ${JPA_BATCH_FETCH_SIZE}
     open-in-view: false
 
+  flyway:
+    enabled: ${FLYWAY_ENABLED}
+    baseline-on-migrate: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD:}
+      timeout: ${REDIS_TIMEOUT}
+
+galpi:
+  api-docs:
+    enabled: ${API_DOCS_ENABLED:false}
+
+  crypto:
+    token:
+      current-version: ${TOKEN_ENCRYPTION_CURRENT_VERSION:1}
+      keys:
+        1: ${TOKEN_ENCRYPTION_KEY_V1}
+        2: ${TOKEN_ENCRYPTION_KEY_V2:}
+        3: ${TOKEN_ENCRYPTION_KEY_V3:}
+
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
+
+  jwt:
+    secret: ${JWT_SECRET}
+    issuer: ${JWT_ISSUER}
+    access-token-ttl: ${JWT_ACCESS_TTL}
+    refresh-token-ttl: ${JWT_REFRESH_TTL}
+    session-absolute-ttl: ${JWT_SESSION_ABSOLUTE_TTL}
+    login-code-ttl: ${JWT_LOGIN_CODE_TTL}
+    cookie:
+      name: ${JWT_COOKIE_NAME}
+      path: ${JWT_COOKIE_PATH}
+      secure: ${JWT_COOKIE_SECURE}
+      same-site: ${JWT_COOKIE_SAME_SITE}
+      domain: ${JWT_COOKIE_DOMAIN:}
+
+  github:
+    app-id: ${GITHUB_APP_ID}
+    client-id: ${GITHUB_CLIENT_ID}
+    client-secret: ${GITHUB_CLIENT_SECRET}
+    private-key: ${GITHUB_PRIVATE_KEY}
+    base-url: ${GITHUB_APP_BASE_URL}
+    api-version: ${GITHUB_API_VERSION}
+    api-base-url: ${GITHUB_API_BASE_URL}
+    oauth-base-url: ${GITHUB_OAUTH_BASE_URL}
+    user-agent: ${GITHUB_USER_AGENT}
+    allowed-redirect-origins: ${GITHUB_ALLOWED_REDIRECT_ORIGINS}
+    default-redirect-uri: ${GITHUB_DEFAULT_REDIRECT_URI}
+    connect-timeout: ${GITHUB_CONNECT_TIMEOUT}
+    read-timeout: ${GITHUB_READ_TIMEOUT}
+    max-retries: ${GITHUB_MAX_RETRIES}
+    max-pages: ${GITHUB_MAX_PAGES}
+
+springdoc:
+  api-docs:
+    enabled: ${API_DOCS_ENABLED:false}
+  swagger-ui:
+    enabled: ${API_DOCS_ENABLED:false}
+
 logging:
   level:
     org.hibernate.SQL: ${LOG_LEVEL_SQL}
