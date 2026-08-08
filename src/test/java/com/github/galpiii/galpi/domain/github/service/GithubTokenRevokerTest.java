@@ -18,6 +18,7 @@ import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.data.domain.Limit;
 
 import java.security.SecureRandom;
+import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -99,6 +100,37 @@ class GithubTokenRevokerTest {
             assertThat(saved.getValue().getEncryptedAccessToken())
                     .doesNotContain(TOKEN)
                     .doesNotContain("ghu_");
+        }
+    }
+
+    @Nested
+    @DisplayName("재로그인 시점")
+    class OnRelogin {
+
+        @Test
+        @DisplayName("GitHub을 부르지 않고 큐에만 넣는다 — 로그인을 기다리게 하지 않는다")
+        void enqueuesWithoutCallingGithub() {
+            revoker.enqueueSuperseded(USER_ID, "ciphertext", 1);
+
+            verify(apiClient, never()).revokeUserToken(any());
+            verify(revocationRepository).save(any());
+        }
+
+        @Test
+        @DisplayName("시도한 적 없는 건으로 남긴다 — 실패 건과 구분되고 다음 회차에 바로 나간다")
+        void marksAsNeverAttempted() {
+            revoker.enqueueSuperseded(USER_ID, "ciphertext", 2);
+
+            ArgumentCaptor<GithubTokenRevocation> saved =
+                    ArgumentCaptor.forClass(GithubTokenRevocation.class);
+            verify(revocationRepository).save(saved.capture());
+            assertThat(saved.getValue().getUserId()).isEqualTo(USER_ID);
+            assertThat(saved.getValue().getEncryptedAccessToken()).isEqualTo("ciphertext");
+            assertThat(saved.getValue().getTokenVersion()).isEqualTo(2);
+            assertThat(saved.getValue().getAttempts()).isZero();
+            assertThat(saved.getValue().getLastError()).isNull();
+            assertThat(saved.getValue().getNextAttemptAt())
+                    .isBeforeOrEqualTo(OffsetDateTime.now());
         }
     }
 

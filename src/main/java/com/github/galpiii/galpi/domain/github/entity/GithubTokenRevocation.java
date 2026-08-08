@@ -20,6 +20,10 @@ import java.time.OffsetDateTime;
  * 살아 있는 토큰을 다시는 회수할 수 없다. 그래서 폐기에 실패한 토큰은 암호문 상태로 여기에
  * 남겨 두고 배치가 재시도한다.
  *
+ * <p>들어오는 경로는 둘이다. 폐기를 시도했다가 실패한 토큰({@link #pending})과, 재로그인으로
+ * 밀려나 아직 폐기를 시도해 보지도 않은 토큰({@link #superseded})이다. {@code attempts}가 0이면
+ * 후자다 — 실패한 적이 없으므로 폐기율 같은 지표에서 실패로 세면 안 된다.
+ *
  * <p>재시도를 포기하더라도 행은 지우지 않는다. 재시도 중단과 회수 포기는 다른 결정이고,
  * 암호문을 잃으면 후자가 강제된다. 키 설정 누락처럼 나중에 복구되는 원인도 있으므로
  * {@link GithubTokenRevocationStatus#DEAD}로 표시만 하고 데이터는 남긴다.
@@ -59,19 +63,37 @@ public class GithubTokenRevocation extends BaseEntity {
     private String lastError;
 
     private GithubTokenRevocation(Long userId, String encryptedAccessToken, int tokenVersion,
-                                  String lastError) {
+                                  int attempts, OffsetDateTime nextAttemptAt, String lastError) {
         this.userId = userId;
         this.encryptedAccessToken = encryptedAccessToken;
         this.tokenVersion = tokenVersion;
-        this.attempts = 1;
+        this.attempts = attempts;
         this.status = GithubTokenRevocationStatus.PENDING;
         this.lastError = lastError;
-        this.nextAttemptAt = OffsetDateTime.now().plus(FIRST_BACKOFF);
+        this.nextAttemptAt = nextAttemptAt;
     }
 
+    /**
+     * 폐기를 시도했으나 실패했다. 한 번 실패한 원인은 대개 바로 사라지지 않으므로 첫 재시도를
+     * 조금 미룬다.
+     */
     public static GithubTokenRevocation pending(Long userId, String encryptedAccessToken,
                                                 int tokenVersion, String lastError) {
-        return new GithubTokenRevocation(userId, encryptedAccessToken, tokenVersion, lastError);
+        return new GithubTokenRevocation(userId, encryptedAccessToken, tokenVersion,
+                1, OffsetDateTime.now().plus(FIRST_BACKOFF), lastError);
+    }
+
+    /**
+     * 재로그인으로 새 토큰이 발급돼 밀려난 이전 토큰이다. 아직 폐기를 시도한 적이 없으니
+     * {@code attempts}는 0이고, 미룰 이유도 없으니 다음 배치 회차에 바로 나간다.
+     *
+     * <p>로그인 응답을 기다리게 하지 않으려고 폐기 호출을 배치로 넘긴다. 로그인은 사용자가
+     * 기다리는 경로이고, 이전 토큰 폐기가 몇 분 늦는 것은 감수할 수 있다.
+     */
+    public static GithubTokenRevocation superseded(Long userId, String encryptedAccessToken,
+                                                   int tokenVersion) {
+        return new GithubTokenRevocation(userId, encryptedAccessToken, tokenVersion,
+                0, OffsetDateTime.now(), null);
     }
 
     /**

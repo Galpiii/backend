@@ -35,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -53,6 +54,8 @@ class GithubUserTokenServiceTest {
     private UserOAuthTokenRepository tokenRepository;
     @Mock
     private GithubUserTokenCache cache;
+    @Mock
+    private GithubTokenRevoker tokenRevoker;
 
     private TokenCipher tokenCipher;
     private GithubUserTokenService service;
@@ -84,7 +87,8 @@ class GithubUserTokenServiceTest {
     @BeforeEach
     void setUp() {
         tokenCipher = new TokenCipher(new TokenEncryptionProperties(1, Map.of(1, randomKey())));
-        service = new GithubUserTokenService(tokenRepository, cache, tokenCipher, jwtProperties());
+        service = new GithubUserTokenService(
+                tokenRepository, cache, tokenCipher, jwtProperties(), tokenRevoker);
     }
 
     @Nested
@@ -146,6 +150,45 @@ class GithubUserTokenServiceTest {
             verify(tokenRepository, never()).save(any());
             assertThat(tokenCipher.decrypt(existing.getEncryptedAccessToken(), existing.getTokenVersion()))
                     .isEqualTo(TOKEN);
+        }
+
+        @Test
+        @DisplayName("덮어쓰기 전에 이전 암호문을 폐기 큐로 넘긴다 — 재로그인해도 이전 토큰은 GitHub에 살아 있다")
+        void enqueuesSupersededTokenBeforeReplacing() {
+            UserOAuthToken existing = storedToken("ghu_old", OffsetDateTime.now().plusHours(1));
+            given(tokenRepository.findByUserIdAndProvider(USER_ID, OAuthProvider.GITHUB))
+                    .willReturn(Optional.of(existing));
+
+            service.save(user(), TOKEN, Duration.ofHours(8));
+
+            ArgumentCaptor<String> ciphertext = ArgumentCaptor.forClass(String.class);
+            ArgumentCaptor<Integer> version = ArgumentCaptor.forClass(Integer.class);
+            verify(tokenRevoker).enqueueSuperseded(eq(USER_ID), ciphertext.capture(), version.capture());
+            assertThat(tokenCipher.decrypt(ciphertext.getValue(), version.getValue()))
+                    .isEqualTo("ghu_old");
+        }
+
+        @Test
+        @DisplayName("이미 만료된 이전 토큰은 큐에 넣지 않는다 — 폐기할 것이 없다")
+        void skipsEnqueueWhenSupersededTokenAlreadyExpired() {
+            given(tokenRepository.findByUserIdAndProvider(USER_ID, OAuthProvider.GITHUB))
+                    .willReturn(Optional.of(
+                            storedToken("ghu_old", OffsetDateTime.now().minusMinutes(1))));
+
+            service.save(user(), TOKEN, Duration.ofHours(8));
+
+            verify(tokenRevoker, never()).enqueueSuperseded(any(), any(), anyInt());
+        }
+
+        @Test
+        @DisplayName("첫 로그인이면 폐기할 이전 토큰이 없다")
+        void skipsEnqueueOnFirstLogin() {
+            given(tokenRepository.findByUserIdAndProvider(USER_ID, OAuthProvider.GITHUB))
+                    .willReturn(Optional.empty());
+
+            service.save(user(), TOKEN, Duration.ofHours(8));
+
+            verify(tokenRevoker, never()).enqueueSuperseded(any(), any(), anyInt());
         }
 
         @Test

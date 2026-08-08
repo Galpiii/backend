@@ -51,6 +51,22 @@ public class GithubTokenRevoker {
     }
 
     /**
+     * 재로그인으로 밀려난 이전 토큰을 폐기 큐에 넣기만 한다.
+     *
+     * <p>여기서 GitHub을 부르지 않는 이유는 호출자가 로그인 경로이기 때문이다. 폐기 호출은
+     * 로그인 성공과 아무 상관이 없는데, 여기에 붙이면 GitHub이 느린 만큼 로그인이 느려지고
+     * 실패 경로도 하나 는다. 배치가 최대 5분 뒤에 가져간다.
+     *
+     * <p>이미 암호문을 받으므로 복호화 없이 그대로 옮긴다. 호출자의 트랜잭션에 참여해
+     * 원본 교체와 함께 커밋된다 — 이 순서가 깨지면 회수할 수 없는 토큰이 생긴다.
+     */
+    public void enqueueSuperseded(Long userId, String encryptedAccessToken, int tokenVersion) {
+        revocationRepository.save(
+                GithubTokenRevocation.superseded(userId, encryptedAccessToken, tokenVersion));
+        log.info("[GitHub] 재로그인으로 밀려난 이전 토큰을 폐기 큐에 넣는다 userId={}", userId);
+    }
+
+    /**
      * 밀린 폐기를 재시도한다. 각 건은 독립된 트랜잭션이라 한 건의 실패가 나머지를 되돌리지 않는다.
      *
      * @return 이번 회차에 폐기에 성공한 건수

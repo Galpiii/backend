@@ -31,7 +31,16 @@ public class GithubUserTokenService {
     private final GithubUserTokenCache cache;
     private final TokenCipher tokenCipher;
     private final JwtProperties jwtProperties;
+    private final GithubTokenRevoker tokenRevoker;
 
+    /**
+     * 새로 받은 user access token을 원본으로 저장한다.
+     *
+     * <p>기존 행이 있으면 덮어쓰는데, 그 전에 이전 암호문을 폐기 큐로 옮긴다. 재로그인은
+     * 이전 토큰을 무효화하지 않아서 GitHub에는 최대 만료 시각까지 그대로 살아 있고, 암호문을
+     * 덮어쓰고 나면 복호화할 원본이 없어 회수할 수단 자체가 사라진다. 폐기 호출을 큐에 넘기는
+     * 것은 로그인을 GitHub 응답만큼 느리게 만들지 않기 위해서다.
+     */
     @Transactional
     public void save(User user, String accessToken, Duration expiresIn) {
         OffsetDateTime expiresAt = expiresIn == null ? null : OffsetDateTime.now().plus(expiresIn);
@@ -40,11 +49,27 @@ public class GithubUserTokenService {
 
         tokenRepository.findByUserIdAndProvider(user.getId(), PROVIDER)
                 .ifPresentOrElse(
-                        existing -> existing.replace(encrypted, expiresAt, version),
+                        existing -> {
+                            enqueueSupersededRevocation(user.getId(), existing);
+                            existing.replace(encrypted, expiresAt, version);
+                        },
                         () -> tokenRepository.save(
                                 UserOAuthToken.issue(user, PROVIDER, encrypted, expiresAt, version)));
 
         cacheAfterCommit(user.getId(), accessToken, cacheTtl(expiresIn));
+    }
+
+    /**
+     * 덮어쓰기 직전의 암호문을 폐기 큐로 넘긴다. 반드시 {@code replace} 전에 읽어야 한다.
+     *
+     * <p>이미 만료된 토큰은 넘기지 않는다. GitHub이 어차피 거부할 호출이라 큐만 쌓인다.
+     */
+    private void enqueueSupersededRevocation(Long userId, UserOAuthToken existing) {
+        if (existing.isExpired()) {
+            return;
+        }
+        tokenRevoker.enqueueSuperseded(
+                userId, existing.getEncryptedAccessToken(), existing.getTokenVersion());
     }
 
     private void cacheAfterCommit(Long userId, String accessToken, Duration ttl) {

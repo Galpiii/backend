@@ -15,13 +15,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
 import java.util.List;
 
-/**
- * 폐기 큐의 행 하나를 자기 트랜잭션 안에서 처리한다.
- *
- * <p>배치 전체를 한 트랜잭션으로 묶으면 마지막 행의 실패가 앞서 성공한 폐기의 삭제와
- * 시도 횟수 기록까지 되돌린다. 그래서 행 단위로 커밋한다. 프록시를 거쳐야 트랜잭션이
- * 걸리므로 호출자와 다른 빈으로 분리했다(GithubUserService/GithubUserWriter와 같은 이유).
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -37,15 +30,6 @@ class GithubTokenRevocationWriter {
                 GithubTokenRevocationStatus.PENDING, OffsetDateTime.now(), limit);
     }
 
-    /**
-     * 한 건을 폐기한다.
-     *
-     * <p>GitHub 호출이 트랜잭션 안에서 일어나 그동안 커넥션을 쥔다. 배치가 5분에 한 번,
-     * 최대 50건을 순차 처리하므로 한 번에 한 커넥션이고 풀(기본 10)에 여유가 있다.
-     * 배치가 커지면 호출을 트랜잭션 밖으로 빼야 한다.
-     *
-     * @return 이번에 폐기에 성공했으면 true
-     */
     @Transactional
     boolean revokeOne(Long id) {
         GithubTokenRevocation pending = revocationRepository.findById(id).orElse(null);

@@ -17,12 +17,6 @@ public class GithubConnectionService {
     private final GithubTokenRevoker tokenRevoker;
     private final UserRepository userRepository;
 
-    /**
-     * GitHub 연결을 끊는다.
-     *
-     * <p>로컬 원본을 지우기 전에 폐기를 확정하거나 재시도 큐에 넘긴다. 순서가 뒤집히면
-     * 외부에 살아 있는 토큰을 회수할 수단이 사라진다.
-     */
     public void disconnect(Long userId) {
         if (!userRepository.existsById(userId)) {
             throw new UnauthorizedException(ErrorCode.UNAUTHORIZED);
