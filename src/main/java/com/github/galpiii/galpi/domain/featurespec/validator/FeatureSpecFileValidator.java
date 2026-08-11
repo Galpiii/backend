@@ -2,6 +2,7 @@ package com.github.galpiii.galpi.domain.featurespec.validator;
 
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.BadRequestException;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
@@ -12,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 
+@Slf4j
 @Component
 public class FeatureSpecFileValidator {
 
@@ -60,17 +62,24 @@ public class FeatureSpecFileValidator {
 
     // PDF 파일을 열어 구조와 암호화 여부 검증
     private void validatePdfStructure(MultipartFile file) {
-        try (PDDocument document = Loader.loadPDF(file.getBytes())) {
-            if (document.isEncrypted()) {
-                throw new BadRequestException(ErrorCode.FEATURE_SPEC_PDF_ENCRYPTED);
-            }
+        boolean encrypted;
+        int pageCount;
 
-            validatePageCount(document.getNumberOfPages());
+        try (PDDocument document = Loader.loadPDF(file.getBytes())) {
+            encrypted = document.isEncrypted();
+            pageCount = document.getNumberOfPages();
         } catch (InvalidPasswordException e) {
             throw new BadRequestException(ErrorCode.FEATURE_SPEC_PDF_ENCRYPTED);
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException | StackOverflowError e) {
+            log.warn("[기능명세서 업로드] PDF 파싱 실패. type: {}", e.getClass().getSimpleName());
             throw new BadRequestException(ErrorCode.FEATURE_SPEC_PDF_INVALID);
         }
+
+        if (encrypted) {
+            throw new BadRequestException(ErrorCode.FEATURE_SPEC_PDF_ENCRYPTED);
+        }
+
+        validatePageCount(pageCount);
     }
 
     // PDF 페이지 수가 1페이지 이상 100페이지 이하인지 검증
