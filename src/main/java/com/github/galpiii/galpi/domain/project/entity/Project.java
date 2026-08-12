@@ -33,8 +33,4 @@ public class Project extends BaseEntity {
     public static Project create(User user, String name) {
         return new Project(user, name);
     }
-
-    public boolean isOwnedBy(Long userId) {
-        return user != null && user.getId().equals(userId);
-    }
 }

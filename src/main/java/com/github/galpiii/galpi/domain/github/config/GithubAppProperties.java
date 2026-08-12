@@ -39,10 +39,6 @@ public record GithubAppProperties(
         return trimTrailingSlash(baseUrl) + "/auth/github/callback";
     }
 
-    public String setupCallbackUrl() {
-        return trimTrailingSlash(baseUrl) + "/auth/github/setup/callback";
-    }
-
     /**
      * App 설치 페이지. {@code /installations/new}가 맞는 엔드포인트다.
      *
