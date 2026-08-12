@@ -1,5 +1,9 @@
 package com.github.galpiii.galpi.domain.github.client;
 
+import com.github.galpiii.galpi.domain.github.client.dto.GithubInstallationResponse;
+import com.github.galpiii.galpi.domain.github.client.dto.GithubInstallationsPage;
+import com.github.galpiii.galpi.domain.github.client.dto.GithubRepositoriesPage;
+import com.github.galpiii.galpi.domain.github.client.dto.GithubRepositoryResponse;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubUserResponse;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.config.GithubClientConfig;
@@ -30,6 +34,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 
 @Slf4j
 @Component
@@ -76,17 +81,38 @@ public class GithubApiClient {
     }
 
     public <T> List<T> getAllPages(String uri, String token, ParameterizedTypeReference<List<T>> pageType) {
+        return paginate(uri, token, spec -> spec.toEntity(pageType), body -> body);
+    }
+
+    /**
+     * 페이지 본문이 배열이 아니라 감싼 객체인 엔드포인트용.
+     *
+     * <p>{@code /user/installations}와 {@code /user/installations/{id}/repositories}가
+     * {@code total_count}와 목록을 함께 담은 객체를 돌려준다. Link 헤더 기반 순회는 같으므로
+     * 목록을 꺼내는 방법만 받는다.
+     */
+    public <P, T> List<T> getAllPagesWrapped(String uri,
+                                             String token,
+                                             Class<P> pageType,
+                                             Function<P, List<T>> itemsOf) {
+        return paginate(uri, token, spec -> spec.toEntity(pageType),
+                body -> body == null ? List.of() : itemsOf.apply(body));
+    }
+
+    private <B, T> List<T> paginate(String uri,
+                                    String token,
+                                    ResponseExtractor<B> extractor,
+                                    Function<B, List<T>> itemsOf) {
         List<T> collected = new ArrayList<>();
         String nextUri = uri;
         int page = 0;
 
         while (nextUri != null && page < properties.maxPages()) {
-            ResponseEntity<List<T>> response =
-                    execute(nextUri, token, spec -> spec.toEntity(pageType));
-            List<T> body = response.getBody();
+            ResponseEntity<B> response = execute(nextUri, token, extractor);
+            List<T> items = itemsOf.apply(response.getBody());
 
-            if (body != null) {
-                collected.addAll(body);
+            if (items != null) {
+                collected.addAll(items);
             }
             page++;
             nextUri = LinkHeaderParser.next(response.getHeaders().getFirst(HttpHeaders.LINK))
@@ -100,6 +126,19 @@ public class GithubApiClient {
         }
 
         return collected;
+    }
+
+    /** 설치 범위 ∩ 사용자 접근 권한이 이미 적용된 목록이다. 교집합을 따로 계산하지 마라. */
+    public List<GithubInstallationResponse> getUserInstallations(String userAccessToken) {
+        return getAllPagesWrapped("/user/installations?per_page=100", userAccessToken,
+                GithubInstallationsPage.class, GithubInstallationsPage::items);
+    }
+
+    public List<GithubRepositoryResponse> getInstallationRepositories(String userAccessToken,
+                                                                     Long installationId) {
+        return getAllPagesWrapped(
+                "/user/installations/" + installationId + "/repositories?per_page=100",
+                userAccessToken, GithubRepositoriesPage.class, GithubRepositoriesPage::items);
     }
 
     /**
