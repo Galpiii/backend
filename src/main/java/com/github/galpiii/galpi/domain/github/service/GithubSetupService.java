@@ -74,13 +74,33 @@ public class GithubSetupService {
             return buildResult(RESULT_UNVERIFIED, returnTo);
         }
 
-        if (!installationService.ownsInstallation(resolved.userId(), installationId)) {
+        if (!ownsInstallationOrUnverified(resolved.userId(), installationId)) {
             return buildResult(RESULT_UNVERIFIED, returnTo);
         }
 
         log.info("[GitHub] 설치 확인 완료 userId={} installationId={}",
                 resolved.userId(), installationId);
         return buildResult(RESULT_VERIFIED, returnTo);
+    }
+
+    /**
+     * 설치 대조가 실패해도 리다이렉트를 유지한다.
+     *
+     * <p>이 경로는 GitHub이 브라우저를 직접 보낸 곳이라 무엇이 잘못되든 프론트로 돌려보내야
+     * 한다. 토큰 만료·GitHub 장애·목록 상한처럼 대조 자체가 안 되는 경우를 예외로 흘리면
+     * 사용자는 리다이렉트 대신 JSON 오류 화면을 본다.
+     *
+     * <p>확인이 안 된 것과 확인에 실패한 것은 사용자가 할 일이 같다 — 새로고침이다. 스펙의
+     * "설치 확인 안 됨" 화면이 그대로 맞고, 원인은 로그로만 구분한다.
+     */
+    private boolean ownsInstallationOrUnverified(Long userId, Long installationId) {
+        try {
+            return installationService.ownsInstallation(userId, installationId);
+        } catch (GlobalException e) {
+            log.warn("[GitHub] 설치 대조에 실패해 확인 안 됨으로 보낸다 userId={} code={}",
+                    userId, e.getErrorCode().getCode());
+            return false;
+        }
     }
 
     /**

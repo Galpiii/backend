@@ -4,6 +4,8 @@ import com.github.galpiii.galpi.domain.auth.store.RefreshTokenStore;
 import com.github.galpiii.galpi.domain.auth.support.RedirectUriValidator;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.dto.InstallUrlResponse;
+import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
+import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.domain.github.store.GithubInstallStateStore;
 import com.github.galpiii.galpi.domain.github.store.GithubInstallStateStore.InstallIntent;
 import com.github.galpiii.galpi.global.error.ErrorCode;
@@ -167,6 +169,32 @@ class GithubSetupServiceTest {
         void rejectsForgedInstallationId() {
             given(installStateStore.consumeState(STATE)).willReturn(Optional.of(intent(RETURN_TO)));
             given(installationService.ownsInstallation(USER_ID, INSTALLATION_ID)).willReturn(false);
+
+            String redirect = service.handleSetupCallback(
+                    INSTALLATION_ID, "install", STATE, REFRESH_TOKEN);
+
+            assertThat(redirect).contains("installation=unverified");
+        }
+
+        @Test
+        @DisplayName("대조 자체가 실패해도 리다이렉트를 유지한다 — 콜백에서 JSON 오류가 나가면 안 된다")
+        void keepsRedirectWhenVerificationFails() {
+            given(installStateStore.consumeState(STATE)).willReturn(Optional.of(intent(RETURN_TO)));
+            given(installationService.ownsInstallation(USER_ID, INSTALLATION_ID))
+                    .willThrow(new GithubApiException(ErrorCode.GITHUB_REPOSITORY_LIST_INCOMPLETE));
+
+            String redirect = service.handleSetupCallback(
+                    INSTALLATION_ID, "install", STATE, REFRESH_TOKEN);
+
+            assertThat(redirect).contains("installation=unverified");
+        }
+
+        @Test
+        @DisplayName("재연결이 필요해도 리다이렉트를 유지한다")
+        void keepsRedirectWhenTokenExpired() {
+            given(installStateStore.consumeState(STATE)).willReturn(Optional.of(intent(RETURN_TO)));
+            given(installationService.ownsInstallation(USER_ID, INSTALLATION_ID))
+                    .willThrow(new GithubReauthRequiredException());
 
             String redirect = service.handleSetupCallback(
                     INSTALLATION_ID, "install", STATE, REFRESH_TOKEN);
