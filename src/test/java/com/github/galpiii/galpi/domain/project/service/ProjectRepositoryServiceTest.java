@@ -1,0 +1,198 @@
+package com.github.galpiii.galpi.domain.project.service;
+
+import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
+import com.github.galpiii.galpi.domain.github.entity.GithubRepository;
+import com.github.galpiii.galpi.domain.github.entity.RepositoryAccessStatus;
+import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
+import com.github.galpiii.galpi.domain.github.service.GithubInstallationService;
+import com.github.galpiii.galpi.domain.project.dto.LinkedRepositoryResponse;
+import com.github.galpiii.galpi.domain.project.entity.Project;
+import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
+import com.github.galpiii.galpi.domain.user.entity.User;
+import com.github.galpiii.galpi.global.error.ErrorCode;
+import com.github.galpiii.galpi.global.error.exception.ConflictException;
+import com.github.galpiii.galpi.global.error.exception.ForbiddenException;
+import com.github.galpiii.galpi.global.error.exception.NotFoundException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+@DisplayName("ProjectRepositoryService — 프로젝트-저장소 연결")
+class ProjectRepositoryServiceTest {
+
+    private static final long USER_ID = 7L;
+    private static final long PROJECT_ID = 3L;
+    private static final long PERSONAL_INSTALLATION = 100L;
+    private static final long ORG_INSTALLATION = 200L;
+
+    @Mock
+    private ProjectRepository projectRepository;
+    @Mock
+    private GithubRepositoryRepository repositoryRepository;
+    @Mock
+    private GithubInstallationService installationService;
+
+    private ProjectRepositoryService service;
+    private Project project;
+
+    @BeforeEach
+    void setUp() {
+        service = new ProjectRepositoryService(
+                projectRepository, repositoryRepository, installationService);
+        project = Project.create(mock(User.class), "갈피");
+        given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID)).willReturn(Optional.of(project));
+        given(repositoryRepository.findAllByProjectIdAndGithubRepositoryIdIn(any(), any()))
+                .willReturn(List.of());
+        given(repositoryRepository.saveAll(any()))
+                .willAnswer(invocation -> List.copyOf(invocation.getArgument(0)));
+    }
+
+    private static RepositorySnapshot snapshot(long id, long installationId, String fullName) {
+        String owner = fullName.substring(0, fullName.indexOf('/'));
+        String name = fullName.substring(fullName.indexOf('/') + 1);
+        return new RepositorySnapshot(id, installationId, owner, name, fullName, true, "main",
+                "https://github.com/" + fullName);
+    }
+
+    private static Map<Long, RepositorySnapshot> accessible(RepositorySnapshot... snapshots) {
+        Map<Long, RepositorySnapshot> map = new LinkedHashMap<>();
+        for (RepositorySnapshot snapshot : snapshots) {
+            map.put(snapshot.githubRepositoryId(), snapshot);
+        }
+        return map;
+    }
+
+    @Nested
+    @DisplayName("연결")
+    class Link {
+
+        @Test
+        @DisplayName("서로 다른 installation의 저장소를 한 프로젝트에 함께 연결한다")
+        void linksAcrossInstallations() {
+            given(installationService.accessibleSnapshots(USER_ID)).willReturn(accessible(
+                    snapshot(1L, PERSONAL_INSTALLATION, "wb/notes"),
+                    snapshot(2L, ORG_INSTALLATION, "galpiii/backend")));
+
+            List<LinkedRepositoryResponse> linked =
+                    service.link(USER_ID, PROJECT_ID, List.of(1L, 2L));
+
+            assertThat(linked).hasSize(2)
+                    .extracting(LinkedRepositoryResponse::installationId)
+                    .containsExactly(PERSONAL_INSTALLATION, ORG_INSTALLATION);
+        }
+
+        @Test
+        @DisplayName("접근 권한이 없는 저장소 id는 저장 전에 거부한다")
+        void rejectsInaccessibleRepository() {
+            given(installationService.accessibleSnapshots(USER_ID))
+                    .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
+
+            assertThatThrownBy(() -> service.link(USER_ID, PROJECT_ID, List.of(1L, 999L)))
+                    .isInstanceOf(ForbiddenException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.GITHUB_REPOSITORY_ACCESS_DENIED);
+
+            verify(repositoryRepository, never()).saveAll(any());
+        }
+
+        @Test
+        @DisplayName("저장 값은 요청 본문이 아니라 GitHub 조회 결과에서 가져온다")
+        void storesServerSideSnapshot() {
+            given(installationService.accessibleSnapshots(USER_ID))
+                    .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
+
+            LinkedRepositoryResponse linked =
+                    service.link(USER_ID, PROJECT_ID, List.of(1L)).getFirst();
+
+            assertThat(linked.fullName()).isEqualTo("wb/notes");
+            assertThat(linked.owner()).isEqualTo("wb");
+            assertThat(linked.defaultBranch()).isEqualTo("main");
+            assertThat(linked.accessStatus()).isEqualTo(RepositoryAccessStatus.ACCESSIBLE.name());
+        }
+
+        @Test
+        @DisplayName("이미 추가된 저장소가 섞여 있으면 409로 안내한다")
+        void rejectsAlreadyLinked() {
+            given(installationService.accessibleSnapshots(USER_ID))
+                    .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
+            given(repositoryRepository.findAllByProjectIdAndGithubRepositoryIdIn(any(), any()))
+                    .willReturn(List.of(GithubRepository.link(
+                            project, snapshot(1L, PERSONAL_INSTALLATION, "wb/notes"))));
+
+            assertThatThrownBy(() -> service.link(USER_ID, PROJECT_ID, List.of(1L)))
+                    .isInstanceOf(ConflictException.class)
+                    .hasFieldOrPropertyWithValue("errorCode",
+                            ErrorCode.PROJECT_REPOSITORY_ALREADY_LINKED);
+        }
+
+        @Test
+        @DisplayName("같은 id가 중복으로 와도 한 번만 저장한다")
+        void deduplicatesRequestedIds() {
+            given(installationService.accessibleSnapshots(USER_ID))
+                    .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
+
+            assertThat(service.link(USER_ID, PROJECT_ID, List.of(1L, 1L, 1L))).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("남의 프로젝트에는 연결할 수 없다")
+        void rejectsForeignProject() {
+            given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID)).willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.link(USER_ID, PROJECT_ID, List.of(1L)))
+                    .isInstanceOf(NotFoundException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_FOUND);
+
+            verify(installationService, never()).accessibleSnapshots(anyLong());
+        }
+    }
+
+    @Nested
+    @DisplayName("연결 해제")
+    class Unlink {
+
+        @Test
+        @DisplayName("프로젝트에 속한 저장소만 끊을 수 있다")
+        void unlinksOwnRepository() {
+            GithubRepository repository = GithubRepository.link(
+                    project, snapshot(1L, PERSONAL_INSTALLATION, "wb/notes"));
+            given(repositoryRepository.findByIdAndProjectId(any(), any()))
+                    .willReturn(Optional.of(repository));
+
+            service.unlink(USER_ID, PROJECT_ID, 55L);
+
+            verify(repositoryRepository).delete(repository);
+        }
+
+        @Test
+        @DisplayName("다른 프로젝트의 저장소 id는 찾지 못한다")
+        void rejectsRepositoryOfAnotherProject() {
+            given(repositoryRepository.findByIdAndProjectId(any(), any())).willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.unlink(USER_ID, PROJECT_ID, 55L))
+                    .isInstanceOf(NotFoundException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_REPOSITORY_NOT_FOUND);
+        }
+    }
+}
