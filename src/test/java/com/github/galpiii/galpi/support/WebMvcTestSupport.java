@@ -8,7 +8,10 @@ import com.github.galpiii.galpi.domain.auth.jwt.JwtTokenProvider;
 import com.github.galpiii.galpi.domain.auth.service.AuthService;
 import com.github.galpiii.galpi.domain.auth.support.RefreshCookieFactory;
 import com.github.galpiii.galpi.domain.github.service.GithubConnectionService;
+import com.github.galpiii.galpi.domain.github.service.GithubInstallationService;
 import com.github.galpiii.galpi.domain.github.service.GithubOAuthService;
+import com.github.galpiii.galpi.domain.github.service.GithubSetupService;
+import com.github.galpiii.galpi.domain.project.service.ProjectRepositoryService;
 import com.github.galpiii.galpi.domain.github.support.OAuthStateCookieFactory;
 import com.github.galpiii.galpi.global.config.ApiDocsProperties;
 import com.github.galpiii.galpi.global.config.CorsProperties;
@@ -44,4 +47,10 @@ public abstract class WebMvcTestSupport {
     protected GithubOAuthService githubOAuthService;
     @MockitoBean
     protected GithubConnectionService githubConnectionService;
+    @MockitoBean
+    protected GithubSetupService githubSetupService;
+    @MockitoBean
+    protected GithubInstallationService githubInstallationService;
+    @MockitoBean
+    protected ProjectRepositoryService projectRepositoryService;
 }
