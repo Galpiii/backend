@@ -135,6 +135,25 @@ public class RefreshTokenStore {
         return Optional.ofNullable(userId).map(Long::valueOf);
     }
 
+    /**
+     * 토큰을 소비하지 않고 소유자만 읽는다.
+     *
+     * <p>GitHub 설치 콜백처럼 state가 유실될 수 있는 브라우저 리다이렉트에서 "이 브라우저가
+     * 누구인가"만 알면 되는 곳에 쓴다. 여기서 회전시키면 사용자가 보던 탭의 Refresh 토큰이
+     * 갈려 나가 멀쩡한 세션이 끊긴다.
+     *
+     * <p>이것만으로 인증하지 마라. 재사용·폐기 흔적을 보지 않으므로 탈취된 토큰도 통과한다.
+     * 부수 효과가 없는 동작을 사용자에게 귀속시킬 때만 쓴다.
+     */
+    public Optional<Long> peek(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return Optional.empty();
+        }
+        String userId = redisTemplate.opsForValue()
+                .get(KEY_PREFIX + Hashes.sha256Hex(refreshToken));
+        return Optional.ofNullable(userId).map(Long::valueOf);
+    }
+
     public boolean wasRecentlyConsumed(String refreshToken) {
         return Boolean.TRUE.equals(
                 redisTemplate.hasKey(CONSUMED_PREFIX + Hashes.sha256Hex(refreshToken)));
