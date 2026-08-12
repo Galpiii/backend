@@ -1,5 +1,6 @@
 package com.github.galpiii.galpi.domain.featurespec.controller;
 
+import com.github.galpiii.galpi.domain.auth.jwt.AuthPrincipal;
 import com.github.galpiii.galpi.domain.featurespec.dto.response.FeatureSpecUploadResponse;
 import com.github.galpiii.galpi.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -112,14 +113,8 @@ public interface FeatureSpecApi {
             )
             Long projectId,
 
-            @Parameter(
-                    name = "X-USER-ID",
-                    description = "인증 기능 통합 전 사용하는 임시 사용자 식별 헤더",
-                    in = ParameterIn.HEADER,
-                    required = true,
-                    example = "1"
-            )
-            Long userId,
+            @Parameter(hidden = true)
+            AuthPrincipal principal,
 
             @Parameter(
                     name = "file",
