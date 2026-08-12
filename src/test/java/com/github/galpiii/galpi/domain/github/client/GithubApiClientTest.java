@@ -333,6 +333,27 @@ class GithubApiClientTest {
         }
 
         @Test
+        @DisplayName("권한 판정용 조회는 상한에 걸리면 잘린 목록 대신 예외를 낸다")
+        void failsInsteadOfReturningTruncatedListForPermissionChecks() {
+            initClient(GithubTestClients.properties(2, 1));
+
+            String firstPage = GithubTestClients.API_BASE_URL + "/user/installations?per_page=100";
+            server.expect(requestTo(firstPage))
+                    .andRespond(withSuccess("""
+                            {"total_count":2,"installations":[
+                              {"id":100,"account":{"id":1,"login":"wb","type":"User"},
+                               "repository_selection":"selected"}]}""",
+                            MediaType.APPLICATION_JSON)
+                            .headers(linkHeader("<" + firstPage + "&page=2>; rel=\"next\"")));
+
+            assertThatThrownBy(() -> client.getUserInstallationsComplete(TOKEN))
+                    .isInstanceOf(GithubApiException.class)
+                    .hasFieldOrPropertyWithValue("errorCode",
+                            ErrorCode.GITHUB_REPOSITORY_LIST_INCOMPLETE);
+            server.verify();
+        }
+
+        @Test
         @DisplayName("Link가 API 오리진 밖을 가리키면 따라가지 않는다 — Bearer 토큰이 외부로 나가면 안 된다")
         void refusesToFollowOffOriginNextLink() {
             server.expect(requestTo(PAGE_1))

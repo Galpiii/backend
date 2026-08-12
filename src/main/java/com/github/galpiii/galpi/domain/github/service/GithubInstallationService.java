@@ -101,14 +101,17 @@ public class GithubInstallationService {
     /**
      * 지금 이 사용자가 실제로 접근할 수 있는 저장소를 {@code githubRepositoryId} 기준으로 모은다.
      * 프론트가 보낸 id를 저장 전에 대조하는 데 쓴다.
+     *
+     * <p>목록 조회와 달리 잘린 결과를 받지 않는다. 이 맵에 없는 id는 "권한 없음"으로 거부되므로,
+     * 페이지네이션 상한에 걸린 목록으로 판정하면 정당한 저장소가 403이 된다.
      */
     public Map<Long, RepositorySnapshot> accessibleSnapshots(Long userId) {
         String token = userTokenService.require(userId);
         Map<Long, RepositorySnapshot> snapshots = new LinkedHashMap<>();
 
-        for (GithubInstallationResponse installation : apiClient.getUserInstallations(token)) {
+        for (GithubInstallationResponse installation : apiClient.getUserInstallationsComplete(token)) {
             for (GithubRepositoryResponse repository
-                    : apiClient.getInstallationRepositories(token, installation.id())) {
+                    : apiClient.getInstallationRepositoriesComplete(token, installation.id())) {
                 snapshots.putIfAbsent(repository.id(),
                         toSnapshot(repository, installation.id()));
             }

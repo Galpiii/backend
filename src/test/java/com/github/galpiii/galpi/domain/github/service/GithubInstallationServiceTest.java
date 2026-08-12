@@ -6,6 +6,7 @@ import com.github.galpiii.galpi.domain.github.client.dto.GithubRepositoryRespons
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.dto.InstallationRepositoriesResponse;
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
+import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
@@ -36,6 +37,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -210,12 +212,12 @@ class GithubInstallationServiceTest {
         @Test
         @DisplayName("여러 installation의 저장소를 하나의 맵으로 모은다")
         void collectsAcrossInstallations() {
-            given(apiClient.getUserInstallations(TOKEN)).willReturn(List.of(
+            given(apiClient.getUserInstallationsComplete(TOKEN)).willReturn(List.of(
                     installation(PERSONAL_INSTALLATION, "wb", "User"),
                     installation(ORG_INSTALLATION, "galpiii", "Organization")));
-            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION))
+            given(apiClient.getInstallationRepositoriesComplete(TOKEN, PERSONAL_INSTALLATION))
                     .willReturn(List.of(repository(1L, "wb/notes", true)));
-            given(apiClient.getInstallationRepositories(TOKEN, ORG_INSTALLATION))
+            given(apiClient.getInstallationRepositoriesComplete(TOKEN, ORG_INSTALLATION))
                     .willReturn(List.of(repository(2L, "galpiii/backend", true)));
 
             Map<Long, RepositorySnapshot> snapshots = service.accessibleSnapshots(USER_ID);
@@ -223,6 +225,20 @@ class GithubInstallationServiceTest {
             assertThat(snapshots).containsOnlyKeys(1L, 2L);
             assertThat(snapshots.get(1L).installationId()).isEqualTo(PERSONAL_INSTALLATION);
             assertThat(snapshots.get(2L).installationId()).isEqualTo(ORG_INSTALLATION);
+        }
+
+        @Test
+        @DisplayName("잘린 목록으로는 권한을 판정하지 않는다 — 부분 결과를 허용하지 않는 경로를 쓴다")
+        void refusesTruncatedList() {
+            given(apiClient.getUserInstallationsComplete(TOKEN))
+                    .willThrow(new GithubApiException(ErrorCode.GITHUB_REPOSITORY_LIST_INCOMPLETE));
+
+            assertThatThrownBy(() -> service.accessibleSnapshots(USER_ID))
+                    .isInstanceOf(GithubApiException.class)
+                    .hasFieldOrPropertyWithValue("errorCode",
+                            ErrorCode.GITHUB_REPOSITORY_LIST_INCOMPLETE);
+
+            verify(apiClient, never()).getUserInstallations(TOKEN);
         }
     }
 

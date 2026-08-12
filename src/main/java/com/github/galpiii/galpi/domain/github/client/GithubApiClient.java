@@ -81,7 +81,7 @@ public class GithubApiClient {
     }
 
     public <T> List<T> getAllPages(String uri, String token, ParameterizedTypeReference<List<T>> pageType) {
-        return paginate(uri, token, spec -> spec.toEntity(pageType), body -> body);
+        return paginate(uri, token, spec -> spec.toEntity(pageType), body -> body, true);
     }
 
     /**
@@ -95,14 +95,32 @@ public class GithubApiClient {
                                              String token,
                                              Class<P> pageType,
                                              Function<P, List<T>> itemsOf) {
-        return paginate(uri, token, spec -> spec.toEntity(pageType),
-                body -> body == null ? List.of() : itemsOf.apply(body));
+        return getAllPagesWrapped(uri, token, pageType, itemsOf, true);
     }
 
+    /**
+     * @param partialAllowed 상한에 걸려 잘린 목록을 정상 결과로 볼지 여부.
+     */
+    public <P, T> List<T> getAllPagesWrapped(String uri,
+                                             String token,
+                                             Class<P> pageType,
+                                             Function<P, List<T>> itemsOf,
+                                             boolean partialAllowed) {
+        return paginate(uri, token, spec -> spec.toEntity(pageType),
+                body -> body == null ? List.of() : itemsOf.apply(body), partialAllowed);
+    }
+
+    /**
+     * <p>상한에 걸렸을 때의 처리를 호출 쪽이 정한다. 화면에 뿌리는 목록이라면 잘린 결과라도
+     * 없는 것보다 낫지만, 권한 판정에 쓰는 목록이라면 이야기가 다르다. 뒤쪽 페이지에 있던
+     * 저장소가 "접근 권한 없음"이 되어 정당한 요청을 403으로 막는다. 조용히 잘린 목록으로
+     * 권한을 판단하느니 실패하는 편이 낫다.
+     */
     private <B, T> List<T> paginate(String uri,
                                     String token,
                                     ResponseExtractor<B> extractor,
-                                    Function<B, List<T>> itemsOf) {
+                                    Function<B, List<T>> itemsOf,
+                                    boolean partialAllowed) {
         List<T> collected = new ArrayList<>();
         String nextUri = uri;
         int page = 0;
@@ -121,6 +139,11 @@ public class GithubApiClient {
         }
 
         if (nextUri != null) {
+            if (!partialAllowed) {
+                log.error("[GitHub] 페이지네이션 상한({}) 도달. 잘린 목록으로 권한을 판단할 수 없다. uri={}",
+                        properties.maxPages(), TokenMasker.mask(uri));
+                throw new GithubApiException(ErrorCode.GITHUB_REPOSITORY_LIST_INCOMPLETE);
+            }
             log.warn("[GitHub] 페이지네이션 상한({}) 도달. 이후 페이지는 수집 x. uri={}",
                     properties.maxPages(), TokenMasker.mask(uri));
         }
@@ -130,15 +153,44 @@ public class GithubApiClient {
 
     /** 설치 범위 ∩ 사용자 접근 권한이 이미 적용된 목록이다. 교집합을 따로 계산하지 마라. */
     public List<GithubInstallationResponse> getUserInstallations(String userAccessToken) {
-        return getAllPagesWrapped("/user/installations?per_page=100", userAccessToken,
-                GithubInstallationsPage.class, GithubInstallationsPage::items);
+        return userInstallations(userAccessToken, true);
     }
 
     public List<GithubRepositoryResponse> getInstallationRepositories(String userAccessToken,
                                                                      Long installationId) {
+        return installationRepositories(userAccessToken, installationId, true);
+    }
+
+    /**
+     * 권한 판정용. 상한에 걸려 목록이 잘리면 예외를 던진다.
+     *
+     * <p>화면용 {@link #getUserInstallations}와 나눈 이유는 잘린 목록의 의미가 다르기 때문이다.
+     * 목록 화면은 일부라도 보여주는 편이 낫지만, 이 결과로 "접근할 수 없는 저장소"를 판정하면
+     * 뒤쪽 페이지의 정당한 저장소가 403이 된다.
+     */
+    public List<GithubInstallationResponse> getUserInstallationsComplete(String userAccessToken) {
+        return userInstallations(userAccessToken, false);
+    }
+
+    /** 권한 판정용. 상한에 걸려 목록이 잘리면 예외를 던진다. */
+    public List<GithubRepositoryResponse> getInstallationRepositoriesComplete(String userAccessToken,
+                                                                             Long installationId) {
+        return installationRepositories(userAccessToken, installationId, false);
+    }
+
+    private List<GithubInstallationResponse> userInstallations(String userAccessToken,
+                                                               boolean partialAllowed) {
+        return getAllPagesWrapped("/user/installations?per_page=100", userAccessToken,
+                GithubInstallationsPage.class, GithubInstallationsPage::items, partialAllowed);
+    }
+
+    private List<GithubRepositoryResponse> installationRepositories(String userAccessToken,
+                                                                    Long installationId,
+                                                                    boolean partialAllowed) {
         return getAllPagesWrapped(
                 "/user/installations/" + installationId + "/repositories?per_page=100",
-                userAccessToken, GithubRepositoriesPage.class, GithubRepositoriesPage::items);
+                userAccessToken, GithubRepositoriesPage.class, GithubRepositoriesPage::items,
+                partialAllowed);
     }
 
     /**
