@@ -10,6 +10,7 @@ import com.github.galpiii.galpi.global.error.exception.ConflictException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +31,10 @@ import java.util.Map;
 @Component
 @RequiredArgsConstructor
 public class ProjectRepositoryLinkWriter {
+
+    /** V3 마이그레이션의 제약 이름. 바꾸면 409가 조용히 500으로 돌아간다. */
+    private static final String UNIQUE_PROJECT_REPOSITORY =
+            "uk_repositories_project_github_repository";
 
     private final ProjectRepository projectRepository;
     private final GithubRepositoryRepository repositoryRepository;
@@ -68,13 +73,31 @@ public class ProjectRepositoryLinkWriter {
      * <p>같은 저장소를 두 요청이 동시에 연결하면 사전 조회는 둘 다 통과한다. 마지막 방어선은
      * {@code uk_repositories_project_github_repository}인데, 그대로 두면 제약 위반이 500이 된다.
      * 커밋까지 미루면 이 메서드 밖에서 터지므로 여기서 flush해 잡아 409로 바꾼다.
+     *
+     * <p>바꾸는 대상은 그 제약 하나뿐이다. 여기서 나올 수 있는 무결성 위반은 이것 말고도
+     * 프로젝트 동시 삭제로 인한 FK 위반, GitHub 응답의 빈 값으로 인한 NOT NULL 위반,
+     * 앞으로 늘어날 제약이 있다. 그것까지 "이미 추가된 저장소"로 바꾸면 서버 결함이 사용자
+     * 실수로 둔갑해 조용히 묻힌다. 나머지는 그대로 올려보내 500으로 드러내는 것이 맞다.
      */
     private List<GithubRepository> saveOrConflict(List<GithubRepository> linked, Long projectId) {
         try {
             return repositoryRepository.saveAllAndFlush(linked);
         } catch (DataIntegrityViolationException e) {
+            if (!isAlreadyLinked(e)) {
+                throw e;
+            }
             log.info("[GitHub] 저장소 연결이 동시에 들어와 UNIQUE 제약에서 갈렸다 projectId={}", projectId);
             throw new ConflictException(ErrorCode.PROJECT_REPOSITORY_ALREADY_LINKED);
         }
+    }
+
+    /** 제약 이름으로만 판단한다. 드라이버 메시지 문구는 버전에 따라 달라진다. */
+    private static boolean isAlreadyLinked(DataIntegrityViolationException e) {
+        for (Throwable cause = e.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation) {
+                return UNIQUE_PROJECT_REPOSITORY.equalsIgnoreCase(violation.getConstraintName());
+            }
+        }
+        return false;
     }
 }

@@ -3,7 +3,6 @@ package com.github.galpiii.galpi.global.error;
 import com.github.galpiii.galpi.global.error.exception.GlobalException;
 import com.github.galpiii.galpi.global.response.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -77,20 +76,13 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * DB 제약 위반이 500으로 새는 것을 막는 마지막 그물이다.
+     * DB 무결성 위반은 여기서 409로 바꾸지 않는다.
      *
-     * <p>어떤 제약이 걸렸는지 아는 곳에서 자기 에러 코드로 바꾸는 것이 원칙이다. 저장소 연결은
-     * {@code ProjectRepositoryLinkWriter}가 409로 바꾼다. 여기까지 온 것은 아직 그런 처리가
-     * 없는 경로라는 뜻이라, 안전한 409로만 내보내고 원인은 로그로 남긴다.
+     * <p>어떤 제약이 걸렸는지 아는 곳에서만 자기 에러 코드로 바꾼다 — 저장소 연결은
+     * {@code ProjectRepositoryLinkWriter}가 제약 이름을 확인해 409로 바꾼다. 전역에서 뭉뚱그려
+     * 409로 내보내면 FK·NOT NULL 위반 같은 서버 결함이 "이미 존재하는 리소스"로 둔갑한다.
+     * 알 수 없는 무결성 위반은 사용자 충돌이 아니라 서버 오류이므로 아래 500 경로로 간다.
      */
-    @ExceptionHandler(DataIntegrityViolationException.class)
-    public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolationException(DataIntegrityViolationException e) {
-        log.warn("[DataIntegrityViolationException] message: {}", e.getMostSpecificCause().getMessage());
-        return ResponseEntity
-                .status(ErrorCode.CONFLICT.getStatus())
-                .body(ApiResponse.error(ErrorCode.CONFLICT.getCode(), ErrorCode.CONFLICT.getMessage()));
-    }
-
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleException(Exception e) {
         log.error("[Exception] message: {}", e.getMessage(), e);
