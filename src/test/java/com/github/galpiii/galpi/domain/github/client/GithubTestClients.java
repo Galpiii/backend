@@ -22,6 +22,7 @@ final class GithubTestClients {
     static GithubAppProperties properties(int maxRetries, int maxPages) {
         return new GithubAppProperties(
                 "12345",
+                "galpi-app",
                 "Iv1.testclient",
                 "test-client-secret",
                 "-----BEGIN PRIVATE KEY-----\nunused\n-----END PRIVATE KEY-----",

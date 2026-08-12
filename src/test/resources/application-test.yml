@@ -61,6 +61,7 @@ galpi:
 
   github:
     app-id: "12345"
+    app-slug: galpi-test-app
     client-id: Iv1.test-client-id
     client-secret: test-client-secret
     base-url: http://localhost:8080

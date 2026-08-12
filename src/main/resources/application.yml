@@ -63,6 +63,7 @@ galpi:
 
   github:
     app-id: ${GITHUB_APP_ID}
+    app-slug: ${GITHUB_APP_SLUG}
     client-id: ${GITHUB_CLIENT_ID}
     client-secret: ${GITHUB_CLIENT_SECRET}
     private-key: ${GITHUB_PRIVATE_KEY}
