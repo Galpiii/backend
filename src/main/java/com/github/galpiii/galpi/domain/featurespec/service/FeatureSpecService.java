@@ -7,7 +7,6 @@ import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileVali
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.domain.user.entity.User;
-import com.github.galpiii.galpi.global.error.exception.ForbiddenException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,11 +37,12 @@ public class FeatureSpecService {
 
         if (!projectOwner.getId().equals(userId)) {
             log.warn(
-                    "[기능명세서 업로드] 프로젝트 접근 권한이 없습니다. projectId: {}, userId: {}",
+                    "[기능명세서 업로드] 타인 프로젝트 접근 시도. projectId: {}, userId: {}, ownerId: {}",
                     projectId,
-                    userId
+                    userId,
+                    projectOwner.getId()
             );
-            throw new ForbiddenException();
+            throw new NotFoundException();
         }
 
         featureSpecFileValidator.validate(file);

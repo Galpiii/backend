@@ -80,24 +80,13 @@ public interface FeatureSpecApi {
                             )
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                            responseCode = "403",
-                            description = "AUTH-002: 프로젝트 접근 권한 없음",
-                            content = @Content(
-                                    mediaType = MediaType.APPLICATION_JSON_VALUE,
-                                    examples = @ExampleObject(
-                                            name = "프로젝트 접근 권한 없음",
-                                            value = """
-                                                    {
-                                                      "code": "AUTH-002",
-                                                      "message": "접근 권한이 없습니다."
-                                                    }
-                                                    """
-                                    )
-                            )
-                    ),
-                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
-                            description = "COMMON-004: 프로젝트를 찾을 수 없음",
+                            description = """
+                                    COMMON-004: 프로젝트를 찾을 수 없음
+
+                                    프로젝트가 존재하지 않는 경우와 다른 사용자의 프로젝트인 경우를
+                                    구분하지 않고 동일하게 응답합니다.
+                                    """,
                             content = @Content(
                                     mediaType = MediaType.APPLICATION_JSON_VALUE,
                                     examples = @ExampleObject(
