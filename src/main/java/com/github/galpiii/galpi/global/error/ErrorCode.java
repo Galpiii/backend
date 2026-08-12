@@ -26,6 +26,9 @@ public enum ErrorCode {
     INVALID_TOKEN("AUTH-004", HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다."),
     LOGIN_FAILED("AUTH-005", HttpStatus.UNAUTHORIZED, "로그인에 실패했습니다."),
 
+    // Project
+    PROJECT_NOT_FOUND("PROJECT-001", HttpStatus.NOT_FOUND, "프로젝트를 찾을 수 없습니다."),
+
     // Feature Spec File
     FEATURE_SPEC_FILE_EMPTY("FEATURE-SPEC-FILE-001", HttpStatus.BAD_REQUEST, "업로드된 파일이 비어 있습니다."),
     FEATURE_SPEC_FILE_NAME_MISSING("FEATURE-SPEC-FILE-002", HttpStatus.BAD_REQUEST, "원본 파일명이 존재하지 않습니다."),

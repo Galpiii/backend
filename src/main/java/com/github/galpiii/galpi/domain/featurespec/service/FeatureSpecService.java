@@ -7,6 +7,7 @@ import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileVali
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.domain.user.entity.User;
+import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,7 +32,13 @@ public class FeatureSpecService {
             MultipartFile file
     ) {
         Project project = projectRepository.findById(projectId)
-                .orElseThrow(NotFoundException::new);
+                .orElseThrow(() -> {
+                    log.warn(
+                            "[기능명세서 업로드] 프로젝트를 찾을 수 없습니다. projectId: {}",
+                            projectId
+                    );
+                    return new NotFoundException(ErrorCode.PROJECT_NOT_FOUND);
+                });
 
         User projectOwner = project.getUser();
 
@@ -42,7 +49,7 @@ public class FeatureSpecService {
                     userId,
                     projectOwner.getId()
             );
-            throw new NotFoundException();
+            throw new NotFoundException(ErrorCode.PROJECT_NOT_FOUND);
         }
 
         featureSpecFileValidator.validate(file);

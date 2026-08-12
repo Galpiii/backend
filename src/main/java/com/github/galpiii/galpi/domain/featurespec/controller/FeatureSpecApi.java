@@ -82,7 +82,7 @@ public interface FeatureSpecApi {
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
                             description = """
-                                    COMMON-004: 프로젝트를 찾을 수 없음
+                                    PROJECT-001: 프로젝트를 찾을 수 없음
 
                                     프로젝트가 존재하지 않는 경우와 다른 사용자의 프로젝트인 경우를
                                     구분하지 않고 동일하게 응답합니다.
@@ -90,11 +90,11 @@ public interface FeatureSpecApi {
                             content = @Content(
                                     mediaType = MediaType.APPLICATION_JSON_VALUE,
                                     examples = @ExampleObject(
-                                            name = "리소스 조회 실패",
+                                            name = "프로젝트 조회 실패",
                                             value = """
                                                     {
-                                                      "code": "COMMON-004",
-                                                      "message": "요청한 리소스를 찾을 수 없습니다."
+                                                      "code": "PROJECT-001",
+                                                      "message": "프로젝트를 찾을 수 없습니다."
                                                     }
                                                     """
                                     )
