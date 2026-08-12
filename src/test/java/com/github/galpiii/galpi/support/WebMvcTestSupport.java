@@ -7,6 +7,7 @@ import com.github.galpiii.galpi.domain.auth.jwt.JwtAuthenticationFilter;
 import com.github.galpiii.galpi.domain.auth.jwt.JwtTokenProvider;
 import com.github.galpiii.galpi.domain.auth.service.AuthService;
 import com.github.galpiii.galpi.domain.auth.support.RefreshCookieFactory;
+import com.github.galpiii.galpi.domain.featurespec.service.FeatureSpecService;
 import com.github.galpiii.galpi.domain.github.service.GithubConnectionService;
 import com.github.galpiii.galpi.domain.github.service.GithubInstallationService;
 import com.github.galpiii.galpi.domain.github.service.GithubOAuthService;
@@ -53,4 +54,8 @@ public abstract class WebMvcTestSupport {
     protected GithubInstallationService githubInstallationService;
     @MockitoBean
     protected ProjectRepositoryService projectRepositoryService;
+    // @WebMvcTest는 슬라이스를 좁히지 않아 컨트롤러를 전부 올린다. 컨트롤러가 늘면 그 의존도
+    // 여기 추가해야 하며, 빠뜨리면 이 클래스를 쓰는 모든 테스트가 함께 죽는다.
+    @MockitoBean
+    protected FeatureSpecService featureSpecService;
 }
