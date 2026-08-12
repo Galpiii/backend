@@ -52,13 +52,13 @@ public class FeatureSpecService {
             throw new NotFoundException(ErrorCode.PROJECT_NOT_FOUND);
         }
 
-        featureSpecFileValidator.validate(file);
+        String fileName = featureSpecFileValidator.validate(file);
 
         SpecDocument savedSpecDocument = specDocumentRepository.save(
                 SpecDocument.builder()
                         .project(project)
                         .user(projectOwner)
-                        .fileName(file.getOriginalFilename())
+                        .fileName(fileName)
                         .build()
         );
 
