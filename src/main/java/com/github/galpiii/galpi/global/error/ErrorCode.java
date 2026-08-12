@@ -36,7 +36,15 @@ public enum ErrorCode {
     GITHUB_OAUTH_FAILED("GITHUB-004", HttpStatus.UNAUTHORIZED, "GitHub 인증에 실패했습니다."),
     GITHUB_API_ERROR("GITHUB-005", HttpStatus.BAD_GATEWAY, "GitHub API 호출에 실패했습니다."),
     GITHUB_RATE_LIMITED("GITHUB-006", HttpStatus.TOO_MANY_REQUESTS, "GitHub API 호출 한도를 초과했습니다."),
-    GITHUB_REDIRECT_NOT_ALLOWED("GITHUB-007", HttpStatus.BAD_REQUEST, "허용되지 않은 리다이렉트 대상입니다.");
+    GITHUB_REDIRECT_NOT_ALLOWED("GITHUB-007", HttpStatus.BAD_REQUEST, "허용되지 않은 리다이렉트 대상입니다."),
+    GITHUB_INSTALL_NOT_STARTED("GITHUB-008", HttpStatus.BAD_REQUEST, "설치를 시작한 기록이 없습니다."),
+    GITHUB_INSTALLATION_NOT_VERIFIED("GITHUB-009", HttpStatus.BAD_REQUEST,
+            "설치가 아직 확인되지 않았습니다. 조직 관리자 승인이 필요할 수 있습니다."),
+    GITHUB_REPOSITORY_ACCESS_DENIED("GITHUB-010", HttpStatus.FORBIDDEN, "접근 권한이 없는 저장소입니다."),
+
+    PROJECT_NOT_FOUND("PROJECT-001", HttpStatus.NOT_FOUND, "프로젝트를 찾을 수 없습니다."),
+    PROJECT_REPOSITORY_NOT_FOUND("PROJECT-002", HttpStatus.NOT_FOUND, "프로젝트에 연결된 저장소가 아닙니다."),
+    PROJECT_REPOSITORY_ALREADY_LINKED("PROJECT-003", HttpStatus.CONFLICT, "이미 추가된 저장소입니다.");
 
     private final String code;
     private final HttpStatus status;
