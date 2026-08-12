@@ -8,7 +8,6 @@ import com.github.galpiii.galpi.domain.project.dto.LinkedRepositoryResponse;
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
-import com.github.galpiii.galpi.global.error.exception.ConflictException;
 import com.github.galpiii.galpi.global.error.exception.ForbiddenException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +34,7 @@ public class ProjectRepositoryService {
     private final ProjectRepository projectRepository;
     private final GithubRepositoryRepository repositoryRepository;
     private final GithubInstallationService installationService;
+    private final ProjectRepositoryLinkWriter linkWriter;
 
     @Transactional(readOnly = true)
     public List<LinkedRepositoryResponse> list(Long userId, Long projectId) {
@@ -50,11 +50,15 @@ public class ProjectRepositoryService {
      * <p>프론트가 보낸 {@code githubRepositoryId}는 믿지 않는다. 지금 이 사용자가 실제로
      * 접근 가능한 목록을 GitHub에서 새로 받아 대조하고, 없는 id가 하나라도 있으면 거부한다.
      * 저장하는 값도 요청 본문이 아니라 그 조회 결과에서 가져온다.
+     *
+     * <p>이 메서드에는 트랜잭션을 걸지 않는다. 권한 재검증이 installation 수만큼 GitHub을
+     * 호출하므로, 전체를 감싸면 외부 응답을 기다리는 내내 DB 커넥션이 묶인다. 쓰기는
+     * {@link ProjectRepositoryLinkWriter}가 짧게 처리한다.
      */
-    @Transactional
     public List<LinkedRepositoryResponse> link(Long userId, Long projectId,
                                                List<Long> githubRepositoryIds) {
-        Project project = ownedProject(userId, projectId);
+        // GitHub을 부르기 전에 소유권부터 본다. 남의 프로젝트면 외부 호출 없이 여기서 끝난다.
+        ownedProject(userId, projectId);
         Set<Long> requested = new LinkedHashSet<>(githubRepositoryIds);
 
         Map<Long, RepositorySnapshot> accessible = installationService.accessibleSnapshots(userId);
@@ -67,17 +71,7 @@ public class ProjectRepositoryService {
             throw new ForbiddenException(ErrorCode.GITHUB_REPOSITORY_ACCESS_DENIED);
         }
 
-        List<GithubRepository> already = repositoryRepository
-                .findAllByProjectIdAndGithubRepositoryIdIn(project.getId(), requested);
-        if (!already.isEmpty()) {
-            throw new ConflictException(ErrorCode.PROJECT_REPOSITORY_ALREADY_LINKED);
-        }
-
-        List<GithubRepository> linked = requested.stream()
-                .map(id -> GithubRepository.link(project, accessible.get(id)))
-                .toList();
-
-        return repositoryRepository.saveAll(linked).stream()
+        return linkWriter.link(userId, projectId, requested, accessible).stream()
                 .map(LinkedRepositoryResponse::from)
                 .toList();
     }

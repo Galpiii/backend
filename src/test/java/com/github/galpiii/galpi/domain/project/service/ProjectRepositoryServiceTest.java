@@ -22,6 +22,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,8 +34,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -59,13 +62,16 @@ class ProjectRepositoryServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 쓰기 구간만 분리한 협력자라 진짜 객체를 쓴다. @Transactional은 프록시 밖이라 동작하지
+        // 않지만, 검증하려는 것은 트랜잭션 경계가 아니라 저장 전 순서다.
         service = new ProjectRepositoryService(
-                projectRepository, repositoryRepository, installationService);
+                projectRepository, repositoryRepository, installationService,
+                new ProjectRepositoryLinkWriter(projectRepository, repositoryRepository));
         project = Project.create(mock(User.class), "갈피");
         given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID)).willReturn(Optional.of(project));
         given(repositoryRepository.findAllByProjectIdAndGithubRepositoryIdIn(any(), any()))
                 .willReturn(List.of());
-        given(repositoryRepository.saveAll(any()))
+        given(repositoryRepository.saveAllAndFlush(any()))
                 .willAnswer(invocation -> List.copyOf(invocation.getArgument(0)));
     }
 
@@ -113,7 +119,7 @@ class ProjectRepositoryServiceTest {
                     .isInstanceOf(ForbiddenException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.GITHUB_REPOSITORY_ACCESS_DENIED);
 
-            verify(repositoryRepository, never()).saveAll(any());
+            verify(repositoryRepository, never()).saveAllAndFlush(any());
         }
 
         @Test
@@ -165,6 +171,36 @@ class ProjectRepositoryServiceTest {
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_FOUND);
 
             verify(installationService, never()).accessibleSnapshots(anyLong());
+        }
+
+        @Test
+        @DisplayName("GitHub 조회 중에 프로젝트를 잃으면 저장하지 않는다 — 소유권을 저장 직전 다시 본다")
+        void rechecksOwnershipBeforeSaving() {
+            given(installationService.accessibleSnapshots(USER_ID))
+                    .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
+            given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID))
+                    .willReturn(Optional.of(project), Optional.empty());
+
+            assertThatThrownBy(() -> service.link(USER_ID, PROJECT_ID, List.of(1L)))
+                    .isInstanceOf(NotFoundException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_FOUND);
+
+            verify(projectRepository, times(2)).findByIdAndUserId(PROJECT_ID, USER_ID);
+            verify(repositoryRepository, never()).saveAllAndFlush(any());
+        }
+
+        @Test
+        @DisplayName("동시 연결로 UNIQUE 제약에 걸리면 500이 아니라 409로 안내한다")
+        void translatesUniqueViolationToConflict() {
+            given(installationService.accessibleSnapshots(USER_ID))
+                    .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
+            willThrow(new DataIntegrityViolationException("uk_repositories_project_github_repository"))
+                    .given(repositoryRepository).saveAllAndFlush(any());
+
+            assertThatThrownBy(() -> service.link(USER_ID, PROJECT_ID, List.of(1L)))
+                    .isInstanceOf(ConflictException.class)
+                    .hasFieldOrPropertyWithValue("errorCode",
+                            ErrorCode.PROJECT_REPOSITORY_ALREADY_LINKED);
         }
     }
 

@@ -3,6 +3,7 @@ package com.github.galpiii.galpi.global.error;
 import com.github.galpiii.galpi.global.error.exception.GlobalException;
 import com.github.galpiii.galpi.global.response.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -73,6 +74,21 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(ErrorCode.INVALID_REQUEST_BODY.getStatus())
                 .body(ApiResponse.error(ErrorCode.INVALID_REQUEST_BODY.getCode(), ErrorCode.INVALID_REQUEST_BODY.getMessage()));
+    }
+
+    /**
+     * DB 제약 위반이 500으로 새는 것을 막는 마지막 그물이다.
+     *
+     * <p>어떤 제약이 걸렸는지 아는 곳에서 자기 에러 코드로 바꾸는 것이 원칙이다. 저장소 연결은
+     * {@code ProjectRepositoryLinkWriter}가 409로 바꾼다. 여기까지 온 것은 아직 그런 처리가
+     * 없는 경로라는 뜻이라, 안전한 409로만 내보내고 원인은 로그로 남긴다.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolationException(DataIntegrityViolationException e) {
+        log.warn("[DataIntegrityViolationException] message: {}", e.getMostSpecificCause().getMessage());
+        return ResponseEntity
+                .status(ErrorCode.CONFLICT.getStatus())
+                .body(ApiResponse.error(ErrorCode.CONFLICT.getCode(), ErrorCode.CONFLICT.getMessage()));
     }
 
     @ExceptionHandler(Exception.class)
