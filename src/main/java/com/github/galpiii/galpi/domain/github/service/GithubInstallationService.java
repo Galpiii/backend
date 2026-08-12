@@ -16,6 +16,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -99,21 +101,38 @@ public class GithubInstallationService {
     }
 
     /**
-     * 지금 이 사용자가 실제로 접근할 수 있는 저장소를 {@code githubRepositoryId} 기준으로 모은다.
+     * 요청한 저장소가 지금 이 사용자에게 실제로 보이는지 GitHub에 물어 확인한다.
      * 프론트가 보낸 id를 저장 전에 대조하는 데 쓴다.
      *
      * <p>목록 조회와 달리 잘린 결과를 받지 않는다. 이 맵에 없는 id는 "권한 없음"으로 거부되므로,
      * 페이지네이션 상한에 걸린 목록으로 판정하면 정당한 저장소가 403이 된다.
+     *
+     * <p>요청한 id만 남기고 다 찾으면 즉시 멈춘다. 저장소 하나를 연결하려고 사용자의 모든
+     * installation을 끝까지 읽으면 요청 하나가 수천 번의 외부 호출로 번지고, 그동안 servlet
+     * 스레드와 GitHub rate limit이 함께 묶인다. 대부분의 요청은 installation 한둘에서 끝난다.
+     *
+     * <p>다만 존재하지 않는 id가 섞이면 여전히 끝까지 훑는다. 여기서 더 줄이려면 요청 전체에
+     * 페이지 budget과 사용자별 동시 실행 제한을 걸어야 한다.
      */
-    public Map<Long, RepositorySnapshot> accessibleSnapshots(Long userId) {
+    public Map<Long, RepositorySnapshot> accessibleSnapshots(Long userId, Collection<Long> requestedIds) {
+        if (requestedIds.isEmpty()) {
+            return Map.of();
+        }
+
         String token = userTokenService.require(userId);
+        Set<Long> remaining = new HashSet<>(requestedIds);
         Map<Long, RepositorySnapshot> snapshots = new LinkedHashMap<>();
 
         for (GithubInstallationResponse installation : apiClient.getUserInstallationsComplete(token)) {
             for (GithubRepositoryResponse repository
                     : apiClient.getInstallationRepositoriesComplete(token, installation.id())) {
-                snapshots.putIfAbsent(repository.id(),
-                        toSnapshot(repository, installation.id()));
+                // 처음 본 id일 때만 remove가 true다. 뒤 installation의 같은 저장소는 덮지 않는다.
+                if (remaining.remove(repository.id())) {
+                    snapshots.put(repository.id(), toSnapshot(repository, installation.id()));
+                }
+            }
+            if (remaining.isEmpty()) {
+                break;
             }
         }
         return snapshots;
@@ -127,6 +146,10 @@ public class GithubInstallationService {
      *
      * <p>설치 직후에는 목록 반영이 조금 늦을 수 있어 짧게 다시 본다. rate limit 대기와 달리
      * 초 단위 전파 지연이므로 요청 안에서 기다려도 된다.
+     *
+     * <p>이것도 권한 판정이라 잘린 목록을 쓰지 않는다. 상한 뒤쪽에 있다는 이유로 정당한 설치가
+     * 남의 것으로 판정되면 안 된다. 대신 조회 자체가 실패할 수 있으므로, 콜백은 그 예외를
+     * "확인 안 됨"으로 받아 리다이렉트를 유지해야 한다.
      */
     public boolean ownsInstallation(Long userId, Long installationId) {
         String token = userTokenService.require(userId);
@@ -135,7 +158,7 @@ public class GithubInstallationService {
             if (attempt > 0 && !sleepBeforeRetry()) {
                 return false;
             }
-            boolean found = apiClient.getUserInstallations(token).stream()
+            boolean found = apiClient.getUserInstallationsComplete(token).stream()
                     .anyMatch(installation -> installationId.equals(installation.id()));
             if (found) {
                 return true;

@@ -220,11 +220,47 @@ class GithubInstallationServiceTest {
             given(apiClient.getInstallationRepositoriesComplete(TOKEN, ORG_INSTALLATION))
                     .willReturn(List.of(repository(2L, "galpiii/backend", true)));
 
-            Map<Long, RepositorySnapshot> snapshots = service.accessibleSnapshots(USER_ID);
+            Map<Long, RepositorySnapshot> snapshots =
+                    service.accessibleSnapshots(USER_ID, Set.of(1L, 2L));
 
             assertThat(snapshots).containsOnlyKeys(1L, 2L);
             assertThat(snapshots.get(1L).installationId()).isEqualTo(PERSONAL_INSTALLATION);
             assertThat(snapshots.get(2L).installationId()).isEqualTo(ORG_INSTALLATION);
+        }
+
+        @Test
+        @DisplayName("요청한 저장소를 다 찾으면 남은 installation은 조회하지 않는다")
+        void stopsOnceEveryRequestedRepositoryIsFound() {
+            given(apiClient.getUserInstallationsComplete(TOKEN)).willReturn(List.of(
+                    installation(PERSONAL_INSTALLATION, "wb", "User"),
+                    installation(ORG_INSTALLATION, "galpiii", "Organization")));
+            given(apiClient.getInstallationRepositoriesComplete(TOKEN, PERSONAL_INSTALLATION))
+                    .willReturn(List.of(repository(1L, "wb/notes", true)));
+
+            assertThat(service.accessibleSnapshots(USER_ID, Set.of(1L))).containsOnlyKeys(1L);
+
+            verify(apiClient, never()).getInstallationRepositoriesComplete(TOKEN, ORG_INSTALLATION);
+        }
+
+        @Test
+        @DisplayName("요청하지 않은 저장소는 담지 않는다 — 전체 목록을 메모리에 올리지 않는다")
+        void keepsOnlyRequestedRepositories() {
+            given(apiClient.getUserInstallationsComplete(TOKEN))
+                    .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
+            given(apiClient.getInstallationRepositoriesComplete(TOKEN, PERSONAL_INSTALLATION))
+                    .willReturn(List.of(repository(1L, "wb/notes", true),
+                            repository(2L, "wb/other", false),
+                            repository(3L, "wb/third", false)));
+
+            assertThat(service.accessibleSnapshots(USER_ID, Set.of(2L))).containsOnlyKeys(2L);
+        }
+
+        @Test
+        @DisplayName("빈 요청은 GitHub을 부르지 않는다")
+        void skipsGithubForEmptyRequest() {
+            assertThat(service.accessibleSnapshots(USER_ID, Set.of())).isEmpty();
+
+            verify(apiClient, never()).getUserInstallationsComplete(TOKEN);
         }
 
         @Test
@@ -233,7 +269,7 @@ class GithubInstallationServiceTest {
             given(apiClient.getUserInstallationsComplete(TOKEN))
                     .willThrow(new GithubApiException(ErrorCode.GITHUB_REPOSITORY_LIST_INCOMPLETE));
 
-            assertThatThrownBy(() -> service.accessibleSnapshots(USER_ID))
+            assertThatThrownBy(() -> service.accessibleSnapshots(USER_ID, Set.of(1L)))
                     .isInstanceOf(GithubApiException.class)
                     .hasFieldOrPropertyWithValue("errorCode",
                             ErrorCode.GITHUB_REPOSITORY_LIST_INCOMPLETE);
@@ -249,32 +285,32 @@ class GithubInstallationServiceTest {
         @Test
         @DisplayName("사용자 설치 목록에 있으면 통과한다")
         void acceptsOwnInstallation() {
-            given(apiClient.getUserInstallations(TOKEN))
+            given(apiClient.getUserInstallationsComplete(TOKEN))
                     .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
 
             assertThat(service.ownsInstallation(USER_ID, PERSONAL_INSTALLATION)).isTrue();
-            verify(apiClient, times(1)).getUserInstallations(TOKEN);
+            verify(apiClient, times(1)).getUserInstallationsComplete(TOKEN);
         }
 
         @Test
         @DisplayName("목록에 없으면 재시도한 뒤 거부한다")
         void rejectsForeignInstallationAfterRetries() {
-            given(apiClient.getUserInstallations(TOKEN))
+            given(apiClient.getUserInstallationsComplete(TOKEN))
                     .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
 
             assertThat(service.ownsInstallation(USER_ID, 999_999L)).isFalse();
-            verify(apiClient, times(3)).getUserInstallations(TOKEN);
+            verify(apiClient, times(3)).getUserInstallationsComplete(TOKEN);
         }
 
         @Test
         @DisplayName("설치 직후 전파가 늦어도 재조회로 확인한다")
         void retriesUntilPropagated() {
-            given(apiClient.getUserInstallations(TOKEN))
+            given(apiClient.getUserInstallationsComplete(TOKEN))
                     .willReturn(List.of())
                     .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
 
             assertThat(service.ownsInstallation(USER_ID, PERSONAL_INSTALLATION)).isTrue();
-            verify(apiClient, times(2)).getUserInstallations(TOKEN);
+            verify(apiClient, times(2)).getUserInstallationsComplete(TOKEN);
         }
     }
 }

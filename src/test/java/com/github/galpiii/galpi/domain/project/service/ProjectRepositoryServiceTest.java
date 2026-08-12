@@ -22,8 +22,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 
+import java.sql.SQLException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
@@ -82,6 +85,17 @@ class ProjectRepositoryServiceTest {
                 "https://github.com/" + fullName);
     }
 
+    /**
+     * 실제 위반과 같은 원인 체인을 만든다. 제약 이름은 메시지가 아니라 이 예외에서 읽는다.
+     */
+    private static DataIntegrityViolationException integrityViolation(String constraintName) {
+        return new DataIntegrityViolationException(
+                "could not execute statement",
+                new ConstraintViolationException("constraint violation",
+                        new SQLException("duplicate key value violates unique constraint"),
+                        constraintName));
+    }
+
     private static Map<Long, RepositorySnapshot> accessible(RepositorySnapshot... snapshots) {
         Map<Long, RepositorySnapshot> map = new LinkedHashMap<>();
         for (RepositorySnapshot snapshot : snapshots) {
@@ -97,7 +111,7 @@ class ProjectRepositoryServiceTest {
         @Test
         @DisplayName("서로 다른 installation의 저장소를 한 프로젝트에 함께 연결한다")
         void linksAcrossInstallations() {
-            given(installationService.accessibleSnapshots(USER_ID)).willReturn(accessible(
+            given(installationService.accessibleSnapshots(eq(USER_ID), any())).willReturn(accessible(
                     snapshot(1L, PERSONAL_INSTALLATION, "wb/notes"),
                     snapshot(2L, ORG_INSTALLATION, "galpiii/backend")));
 
@@ -112,7 +126,7 @@ class ProjectRepositoryServiceTest {
         @Test
         @DisplayName("접근 권한이 없는 저장소 id는 저장 전에 거부한다")
         void rejectsInaccessibleRepository() {
-            given(installationService.accessibleSnapshots(USER_ID))
+            given(installationService.accessibleSnapshots(eq(USER_ID), any()))
                     .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
 
             assertThatThrownBy(() -> service.link(USER_ID, PROJECT_ID, List.of(1L, 999L)))
@@ -125,7 +139,7 @@ class ProjectRepositoryServiceTest {
         @Test
         @DisplayName("저장 값은 요청 본문이 아니라 GitHub 조회 결과에서 가져온다")
         void storesServerSideSnapshot() {
-            given(installationService.accessibleSnapshots(USER_ID))
+            given(installationService.accessibleSnapshots(eq(USER_ID), any()))
                     .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
 
             LinkedRepositoryResponse linked =
@@ -140,7 +154,7 @@ class ProjectRepositoryServiceTest {
         @Test
         @DisplayName("이미 추가된 저장소가 섞여 있으면 409로 안내한다")
         void rejectsAlreadyLinked() {
-            given(installationService.accessibleSnapshots(USER_ID))
+            given(installationService.accessibleSnapshots(eq(USER_ID), any()))
                     .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
             given(repositoryRepository.findAllByProjectIdAndGithubRepositoryIdIn(any(), any()))
                     .willReturn(List.of(GithubRepository.link(
@@ -155,7 +169,7 @@ class ProjectRepositoryServiceTest {
         @Test
         @DisplayName("같은 id가 중복으로 와도 한 번만 저장한다")
         void deduplicatesRequestedIds() {
-            given(installationService.accessibleSnapshots(USER_ID))
+            given(installationService.accessibleSnapshots(eq(USER_ID), any()))
                     .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
 
             assertThat(service.link(USER_ID, PROJECT_ID, List.of(1L, 1L, 1L))).hasSize(1);
@@ -170,13 +184,13 @@ class ProjectRepositoryServiceTest {
                     .isInstanceOf(NotFoundException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_FOUND);
 
-            verify(installationService, never()).accessibleSnapshots(anyLong());
+            verify(installationService, never()).accessibleSnapshots(anyLong(), any());
         }
 
         @Test
         @DisplayName("GitHub 조회 중에 프로젝트를 잃으면 저장하지 않는다 — 소유권을 저장 직전 다시 본다")
         void rechecksOwnershipBeforeSaving() {
-            given(installationService.accessibleSnapshots(USER_ID))
+            given(installationService.accessibleSnapshots(eq(USER_ID), any()))
                     .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
             given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID))
                     .willReturn(Optional.of(project), Optional.empty());
@@ -192,15 +206,39 @@ class ProjectRepositoryServiceTest {
         @Test
         @DisplayName("동시 연결로 UNIQUE 제약에 걸리면 500이 아니라 409로 안내한다")
         void translatesUniqueViolationToConflict() {
-            given(installationService.accessibleSnapshots(USER_ID))
+            given(installationService.accessibleSnapshots(eq(USER_ID), any()))
                     .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
-            willThrow(new DataIntegrityViolationException("uk_repositories_project_github_repository"))
+            willThrow(integrityViolation("uk_repositories_project_github_repository"))
                     .given(repositoryRepository).saveAllAndFlush(any());
 
             assertThatThrownBy(() -> service.link(USER_ID, PROJECT_ID, List.of(1L)))
                     .isInstanceOf(ConflictException.class)
                     .hasFieldOrPropertyWithValue("errorCode",
                             ErrorCode.PROJECT_REPOSITORY_ALREADY_LINKED);
+        }
+
+        @Test
+        @DisplayName("다른 제약 위반은 409로 덮지 않는다 — 서버 결함이 사용자 충돌로 둔갑하면 안 된다")
+        void doesNotMaskOtherConstraintViolations() {
+            given(installationService.accessibleSnapshots(eq(USER_ID), any()))
+                    .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
+            willThrow(integrityViolation("fk_repositories_project"))
+                    .given(repositoryRepository).saveAllAndFlush(any());
+
+            assertThatThrownBy(() -> service.link(USER_ID, PROJECT_ID, List.of(1L)))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+        }
+
+        @Test
+        @DisplayName("제약 이름을 알 수 없는 무결성 위반도 그대로 올려보낸다")
+        void doesNotMaskUnnamedViolations() {
+            given(installationService.accessibleSnapshots(eq(USER_ID), any()))
+                    .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
+            willThrow(new DataIntegrityViolationException("uk_repositories_project_github_repository"))
+                    .given(repositoryRepository).saveAllAndFlush(any());
+
+            assertThatThrownBy(() -> service.link(USER_ID, PROJECT_ID, List.of(1L)))
+                    .isInstanceOf(DataIntegrityViolationException.class);
         }
     }
 

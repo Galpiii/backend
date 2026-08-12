@@ -61,7 +61,8 @@ public class ProjectRepositoryService {
         ownedProject(userId, projectId);
         Set<Long> requested = new LinkedHashSet<>(githubRepositoryIds);
 
-        Map<Long, RepositorySnapshot> accessible = installationService.accessibleSnapshots(userId);
+        Map<Long, RepositorySnapshot> accessible =
+                installationService.accessibleSnapshots(userId, requested);
         List<Long> denied = requested.stream()
                 .filter(id -> !accessible.containsKey(id))
                 .toList();
