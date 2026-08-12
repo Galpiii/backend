@@ -1,6 +1,7 @@
 package com.github.galpiii.galpi.domain.project.controller;
 
 import com.github.galpiii.galpi.domain.auth.jwt.JwtTokenProvider;
+import com.github.galpiii.galpi.domain.project.dto.LinkRepositoriesRequest;
 import com.github.galpiii.galpi.domain.project.dto.LinkedRepositoryResponse;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.ForbiddenException;
@@ -85,6 +86,31 @@ class ProjectRepositoryControllerTest extends WebMvcTestSupport {
                             .header("Authorization", bearer())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"githubRepositoryIds\":[]}"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("상한을 넘는 목록은 400이다")
+        void rejectsOversizedSelection() throws Exception {
+            String ids = java.util.stream.LongStream
+                    .rangeClosed(1, LinkRepositoriesRequest.MAX_REPOSITORIES + 1)
+                    .mapToObj(Long::toString)
+                    .collect(java.util.stream.Collectors.joining(","));
+
+            mockMvc.perform(post("/projects/{projectId}/repositories", PROJECT_ID)
+                            .header("Authorization", bearer())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"githubRepositoryIds\":[" + ids + "]}"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("음수 저장소 id는 400이다")
+        void rejectsNonPositiveId() throws Exception {
+            mockMvc.perform(post("/projects/{projectId}/repositories", PROJECT_ID)
+                            .header("Authorization", bearer())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"githubRepositoryIds\":[-1]}"))
                     .andExpect(status().isBadRequest());
         }
 
