@@ -30,7 +30,10 @@ public class ProjectRepositoryController {
     private final ProjectRepositoryService projectRepositoryService;
 
     @Operation(summary = "연결된 저장소 목록",
-            description = "accessStatus가 INACCESSIBLE이면 권한을 잃은 저장소다.")
+            description = """
+                    accessStatus가 INACCESSIBLE이면 권한을 잃은 저장소다. 다만 이 상태로 바꾸는
+                    것은 Phase 1C의 수집 경로이므로, 지금은 항상 ACCESSIBLE로만 내려간다.
+                    권한 회수를 실시간으로 반영하지 않는다.""")
     @GetMapping
     public ResponseEntity<ApiResponse<List<LinkedRepositoryResponse>>> list(
             @AuthenticationPrincipal AuthPrincipal principal,
