@@ -1,0 +1,5 @@
+package com.github.galpiii.galpi.domain.user.entity;
+
+public enum OAuthProvider {
+    GITHUB
+}

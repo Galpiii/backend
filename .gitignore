@@ -40,3 +40,14 @@ out/
 
 ### Spring Initializr ###
 HELP.md
+
+### 자격증명 — 절대 커밋하지 않는다 ###
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.jks
+*.key
+secrets/
