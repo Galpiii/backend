@@ -32,6 +32,12 @@ spring:
       password: ""
       timeout: 3s
 
+cloud:
+  aws:
+    region: ap-northeast-2
+    s3:
+      bucket: galpi-test-bucket
+
 galpi:
   crypto:
     token:
