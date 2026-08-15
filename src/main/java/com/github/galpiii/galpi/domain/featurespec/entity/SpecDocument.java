@@ -30,18 +30,22 @@ public class SpecDocument extends BaseEntity {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(name = "file_name", nullable = false, length = 255)
+    @Column(nullable = false, length = 255)
     private String fileName;
 
+    @Column(length = 512)
+    private String storageKey;
+
     @Enumerated(EnumType.STRING)
-    @Column(name = "extraction_status", nullable = false, length = 20)
+    @Column(nullable = false, length = 20)
     private ExtractionStatus extractionStatus;
 
     @Builder
-    private SpecDocument(Project project, User user, String fileName) {
+    private SpecDocument(Project project, User user, String fileName, String storageKey) {
         this.project = project;
         this.user = user;
         this.fileName = fileName;
+        this.storageKey = storageKey;
         this.extractionStatus = ExtractionStatus.PENDING;
     }
 }
