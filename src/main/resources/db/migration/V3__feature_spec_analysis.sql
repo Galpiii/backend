@@ -21,9 +21,6 @@ CREATE TABLE spec_documents
     project_id        BIGINT       NOT NULL,
     user_id           BIGINT       NOT NULL,
     file_name         VARCHAR(255) NOT NULL,
-    -- 원본 PDF의 스토리지 키. 아직 업로드 흐름이 PDF를 검증만 하고 버려서 채울 값이 없다.
-    -- 스토리지 저장이 붙고 기존 행을 채운 뒤에 NOT NULL로 좁힌다.
-    storage_key       VARCHAR(512),
     extraction_status VARCHAR(20)  NOT NULL,
     created_at        TIMESTAMPTZ  NOT NULL,
     updated_at        TIMESTAMPTZ,

@@ -15,6 +15,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 
 @Slf4j
 @Component
@@ -28,12 +31,18 @@ public class FeatureSpecFileValidator {
     private static final String TEMP_FILE_PREFIX = "feature-spec-";
     private static final String TEMP_FILE_SUFFIX = ".pdf";
 
-    // 업로드된 기능명세서 PDF를 검증하고 저장에 사용할 파일명을 반환한다.
-    public String validate(MultipartFile file) {
+    public ValidatedFeatureSpec validate(MultipartFile file) {
         String fileName = validateBasicFile(file);
-        validatePdfStructure(file);
+        File tempFile = createTempFile(file);
 
-        return fileName;
+        try {
+            validatePdfStructure(tempFile);
+        } catch (RuntimeException | Error e) {
+            deleteTempFile(tempFile);
+            throw e;
+        }
+
+        return new ValidatedFeatureSpec(fileName, tempFile);
     }
 
     // 파일 존재 여부, 파일명, 확장자, 크기, Content-Type 검증
@@ -48,7 +57,6 @@ public class FeatureSpecFileValidator {
             throw new BadRequestException(ErrorCode.FEATURE_SPEC_FILE_NAME_MISSING);
         }
 
-        // 경로 구분자가 포함된 파일명이 그대로 저장되지 않도록 파일명만 남긴다.
         String fileName = StringUtils.getFilename(StringUtils.cleanPath(originalFilename));
 
         if (!StringUtils.hasText(fileName)) {
@@ -77,47 +85,51 @@ public class FeatureSpecFileValidator {
     }
 
     // PDF 파일을 열어 구조와 암호화 여부 검증
-    private void validatePdfStructure(MultipartFile file) {
-        File tempFile = createTempFile(file);
+    private void validatePdfStructure(File tempFile) {
+        boolean encrypted;
+        int pageCount;
 
-        try {
-            boolean encrypted;
-            int pageCount;
-
-            try (RandomAccessReadBufferedFile source = new RandomAccessReadBufferedFile(tempFile);
-                 PDDocument document = Loader.loadPDF(source)) {
-                encrypted = document.isEncrypted();
-                pageCount = document.getNumberOfPages();
-            } catch (InvalidPasswordException e) {
-                throw new BadRequestException(ErrorCode.FEATURE_SPEC_PDF_ENCRYPTED);
-            } catch (IOException | RuntimeException | StackOverflowError e) {
-                log.warn("[기능명세서 업로드] PDF 파싱 실패. type: {}", e.getClass().getSimpleName());
-                throw new BadRequestException(ErrorCode.FEATURE_SPEC_PDF_INVALID);
-            }
-
-            if (encrypted) {
-                throw new BadRequestException(ErrorCode.FEATURE_SPEC_PDF_ENCRYPTED);
-            }
-
-            validatePageCount(pageCount);
-        } finally {
-            deleteTempFile(tempFile);
+        try (RandomAccessReadBufferedFile source = new RandomAccessReadBufferedFile(tempFile);
+             PDDocument document = Loader.loadPDF(source)) {
+            encrypted = document.isEncrypted();
+            pageCount = document.getNumberOfPages();
+        } catch (InvalidPasswordException e) {
+            throw new BadRequestException(ErrorCode.FEATURE_SPEC_PDF_ENCRYPTED);
+        } catch (IOException | RuntimeException | StackOverflowError e) {
+            log.warn("[기능명세서 업로드] PDF 파싱 실패. type: {}", e.getClass().getSimpleName());
+            throw new BadRequestException(ErrorCode.FEATURE_SPEC_PDF_INVALID);
         }
+
+        if (encrypted) {
+            throw new BadRequestException(ErrorCode.FEATURE_SPEC_PDF_ENCRYPTED);
+        }
+
+        validatePageCount(pageCount);
     }
 
     private File createTempFile(MultipartFile file) {
+        File tempFile = null;
+
         try {
-            File tempFile = File.createTempFile(TEMP_FILE_PREFIX, TEMP_FILE_SUFFIX);
-            file.transferTo(tempFile);
+            tempFile = File.createTempFile(TEMP_FILE_PREFIX, TEMP_FILE_SUFFIX);
+
+            try (InputStream source = file.getInputStream()) {
+                Files.copy(source, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
 
             return tempFile;
         } catch (IOException | IllegalStateException e) {
+            if (tempFile != null) {
+                deleteTempFile(tempFile);
+            }
+
             log.error("[기능명세서 업로드] 임시 파일 생성 실패.", e);
             throw new GlobalException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
     }
 
-    private void deleteTempFile(File tempFile) {
+    // 검증에 쓴 임시 파일 삭제
+    public void deleteTempFile(File tempFile) {
         if (!tempFile.delete()) {
             log.warn("[기능명세서 업로드] 임시 파일 삭제 실패. path: {}", tempFile.getAbsolutePath());
         }
@@ -132,5 +144,8 @@ public class FeatureSpecFileValidator {
         if (pageCount > MAX_PAGE_COUNT) {
             throw new BadRequestException(ErrorCode.FEATURE_SPEC_PDF_PAGE_LIMIT_EXCEEDED);
         }
+    }
+
+    public record ValidatedFeatureSpec(String fileName, File tempFile) {
     }
 }

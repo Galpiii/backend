@@ -83,7 +83,7 @@ public interface FeatureSpecApi {
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
                             description = """
-                                    PROJECT-001: 프로젝트를 찾을 수 없음
+                                    PROJECT-002: 프로젝트를 찾을 수 없거나 접근할 수 없음
 
                                     프로젝트가 존재하지 않는 경우와 다른 사용자의 프로젝트인 경우를
                                     구분하지 않고 동일하게 응답합니다.
@@ -91,11 +91,32 @@ public interface FeatureSpecApi {
                             content = @Content(
                                     mediaType = MediaType.APPLICATION_JSON_VALUE,
                                     examples = @ExampleObject(
-                                            name = "프로젝트 조회 실패",
+                                            name = "프로젝트 접근 실패",
                                             value = """
                                                     {
-                                                      "code": "PROJECT-001",
-                                                      "message": "프로젝트를 찾을 수 없습니다."
+                                                      "code": "PROJECT-002",
+                                                      "message": "프로젝트를 찾을 수 없거나 접근할 수 없습니다."
+                                                    }
+                                                    """
+                                    )
+                            )
+                    ),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "409",
+                            description = """
+                                    FEATURE-SPEC-EXISTS-001: 이미 등록된 기능명세서가 있음
+
+                                    업로드는 등록만 담당합니다. 이미 등록된 기능명세서를 바꾸려면
+                                    교체 API를 사용해야 합니다.
+                                    """,
+                            content = @Content(
+                                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                    examples = @ExampleObject(
+                                            name = "기능명세서 중복 등록",
+                                            value = """
+                                                    {
+                                                      "code": "FEATURE-SPEC-EXISTS-001",
+                                                      "message": "이미 등록된 기능명세서가 있습니다."
                                                     }
                                                     """
                                     )

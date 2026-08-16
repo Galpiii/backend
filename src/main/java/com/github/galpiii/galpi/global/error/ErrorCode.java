@@ -42,6 +42,7 @@ public enum ErrorCode {
 
     // Project
     PROJECT_NOT_FOUND("PROJECT-001", HttpStatus.NOT_FOUND, "프로젝트를 찾을 수 없습니다."),
+    PROJECT_NOT_ACCESSIBLE("PROJECT-002", HttpStatus.NOT_FOUND, "프로젝트를 찾을 수 없거나 접근할 수 없습니다."),
 
     // Feature Spec File
     FEATURE_SPEC_FILE_EMPTY("FEATURE-SPEC-FILE-001", HttpStatus.BAD_REQUEST, "업로드된 파일이 비어 있습니다."),
@@ -55,7 +56,10 @@ public enum ErrorCode {
     FEATURE_SPEC_PDF_INVALID("FEATURE-SPEC-PDF-001", HttpStatus.BAD_REQUEST, "정상적으로 열 수 있는 PDF 파일이 아닙니다."),
     FEATURE_SPEC_PDF_ENCRYPTED("FEATURE-SPEC-PDF-002", HttpStatus.BAD_REQUEST, "암호화되거나 비밀번호로 보호된 PDF는 업로드할 수 없습니다."),
     FEATURE_SPEC_PDF_PAGE_MISSING("FEATURE-SPEC-PDF-003", HttpStatus.BAD_REQUEST, "PDF 문서에는 한 페이지 이상이 필요합니다."),
-    FEATURE_SPEC_PDF_PAGE_LIMIT_EXCEEDED("FEATURE-SPEC-PDF-004", HttpStatus.BAD_REQUEST, "PDF 문서는 100페이지를 초과할 수 없습니다.");
+    FEATURE_SPEC_PDF_PAGE_LIMIT_EXCEEDED("FEATURE-SPEC-PDF-004", HttpStatus.BAD_REQUEST, "PDF 문서는 100페이지를 초과할 수 없습니다."),
+
+    // Feature Spec
+    FEATURE_SPEC_ALREADY_EXISTS("FEATURE-SPEC-EXISTS-001", HttpStatus.CONFLICT, "이미 등록된 기능명세서가 있습니다.");
 
     private final String code;
     private final HttpStatus status;
