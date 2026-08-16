@@ -62,10 +62,9 @@ public class GithubInstallationController {
     @Operation(summary = "선택 가능한 저장소 조회",
             description = """
                     installation별로 묶어 돌려준다. 이 목록은 DB에 저장하지 않는다.
-                    projectId를 주면 이미 연결된 저장소에 linked 표시가 붙고, 그 저장소의
-                    이름·소유자 스냅샷이 현재 값으로 갱신된다. 정지된 installation은
-                    suspended=true와 빈 저장소 목록으로 반환한다.""")
-    @PostMapping("/repositories")
+                    projectId를 주면 이미 연결된 저장소에 linked 표시가 붙는다.
+                    정지된 installation은 suspended=true와 빈 저장소 목록으로 반환한다.""")
+    @GetMapping("/repositories")
     public ResponseEntity<ApiResponse<List<InstallationRepositoriesResponse>>> repositories(
             @AuthenticationPrincipal AuthPrincipal principal,
             @RequestParam(name = "projectId", required = false) Long projectId) {

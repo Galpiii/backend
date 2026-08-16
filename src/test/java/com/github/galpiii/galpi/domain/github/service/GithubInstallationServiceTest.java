@@ -11,6 +11,7 @@ import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.domain.github.exception.GithubInstallationUnavailableException;
 import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
+import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.domain.user.entity.User;
@@ -21,7 +22,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -36,8 +36,6 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
@@ -61,7 +59,7 @@ class GithubInstallationServiceTest {
     @Mock
     private GithubUserTokenService userTokenService;
     @Mock
-    private GithubRepositorySnapshotWriter snapshotWriter;
+    private GithubRepositoryRepository repositoryRepository;
     @Mock
     private ProjectRepository projectRepository;
     @Mock
@@ -73,11 +71,13 @@ class GithubInstallationServiceTest {
     void setUp() {
         given(userTokenService.require(USER_ID)).willReturn(TOKEN);
         given(apiClient.newOperationBudget()).willReturn(budget);
-        given(snapshotWriter.refreshLinked(any(), any())).willReturn(Set.of());
+        given(repositoryRepository.findGithubRepositoryIdsByProjectId(anyLong()))
+                .willReturn(List.of());
         service = new GithubInstallationService(
-                apiClient, userTokenService, snapshotWriter, projectRepository, properties(),
+                apiClient, userTokenService, repositoryRepository, projectRepository, properties(),
                 new GithubUserOperationLimiter(
-                        new GithubOperationProperties(50, Duration.ofSeconds(30), 1)));
+                        new GithubOperationProperties(
+                                50, Duration.ofSeconds(30), 1, Duration.ofSeconds(3))));
     }
 
     private static GithubAppProperties properties() {
@@ -169,7 +169,8 @@ class GithubInstallationServiceTest {
         void marksLinkedRepositories() {
             given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID))
                     .willReturn(Optional.of(project()));
-            given(snapshotWriter.refreshLinked(eq(PROJECT_ID), any())).willReturn(Set.of(1L));
+            given(repositoryRepository.findGithubRepositoryIdsByProjectId(PROJECT_ID))
+                    .willReturn(List.of(1L));
             given(apiClient.getUserInstallations(TOKEN, budget))
                     .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
             given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
@@ -184,8 +185,8 @@ class GithubInstallationServiceTest {
         }
 
         @Test
-        @DisplayName("GitHub에서 이름이 바뀌면 현재 값을 스냅샷 갱신으로 넘긴다")
-        void handsCurrentSnapshotToWriter() {
+        @DisplayName("목록 GET은 연결된 저장소 스냅샷을 변경하지 않는다")
+        void doesNotRefreshSnapshotsWhileListing() {
             given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID))
                     .willReturn(Optional.of(project()));
             given(apiClient.getUserInstallations(TOKEN, budget))
@@ -195,10 +196,8 @@ class GithubInstallationServiceTest {
 
             service.listRepositories(USER_ID, PROJECT_ID);
 
-            ArgumentCaptor<Map<Long, RepositorySnapshot>> captor = ArgumentCaptor.captor();
-            verify(snapshotWriter).refreshLinked(eq(PROJECT_ID), captor.capture());
-            assertThat(captor.getValue().get(1L).fullName()).isEqualTo("galpiii/journal");
-            assertThat(captor.getValue().get(1L).owner()).isEqualTo("galpiii");
+            verify(repositoryRepository).findGithubRepositoryIdsByProjectId(PROJECT_ID);
+            verify(repositoryRepository, never()).saveAll(org.mockito.ArgumentMatchers.any());
         }
 
         @Test
@@ -255,6 +254,24 @@ class GithubInstallationServiceTest {
                     .singleElement()
                     .satisfies(group -> assertThat(group.installation().installationId())
                             .isEqualTo(ORG_INSTALLATION));
+        }
+
+        @Test
+        @DisplayName("화면용 요청 budget이 소진되면 처리한 installation까지만 반환한다")
+        void stopsWithPartialResultWhenRequestBudgetIsExhausted() {
+            given(apiClient.getUserInstallations(TOKEN, budget)).willReturn(List.of(
+                    installation(PERSONAL_INSTALLATION, "wb", "User"),
+                    installation(ORG_INSTALLATION, "galpiii", "Organization")));
+            given(budget.isRequestLimitReached()).willReturn(false, true);
+            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
+                    .willReturn(List.of(repository(1L, "wb/notes", true)));
+
+            assertThat(service.listRepositories(USER_ID, null))
+                    .singleElement()
+                    .satisfies(group -> assertThat(group.installation().installationId())
+                            .isEqualTo(PERSONAL_INSTALLATION));
+            verify(apiClient, never()).getInstallationRepositories(
+                    TOKEN, ORG_INSTALLATION, budget);
         }
     }
 
@@ -348,6 +365,19 @@ class GithubInstallationServiceTest {
 
             assertThat(service.accessibleSnapshots(USER_ID, Set.of(2L))).containsOnlyKeys(2L);
         }
+
+        @Test
+        @DisplayName("누락된 installation 때문에 권한 대조가 불완전하면 403 대신 재시도 오류를 낸다")
+        void failsWhenUnavailableInstallationLeavesRequestedRepositoryUnresolved() {
+            given(apiClient.getUserInstallationsComplete(TOKEN, budget)).willReturn(List.of(
+                    installation(PERSONAL_INSTALLATION, "wb", "User")));
+            given(apiClient.getInstallationRepositoriesComplete(
+                    TOKEN, PERSONAL_INSTALLATION, budget))
+                    .willThrow(new GithubInstallationUnavailableException());
+
+            assertThatThrownBy(() -> service.accessibleSnapshots(USER_ID, Set.of(1L)))
+                    .isInstanceOf(GithubInstallationUnavailableException.class);
+        }
     }
 
     @Nested
@@ -365,24 +395,13 @@ class GithubInstallationServiceTest {
         }
 
         @Test
-        @DisplayName("목록에 없으면 재시도한 뒤 거부한다")
-        void rejectsForeignInstallationAfterRetries() {
+        @DisplayName("목록에 없으면 servlet thread를 붙잡고 재시도하지 않고 거부한다")
+        void rejectsForeignInstallationWithoutBlockingRetry() {
             given(apiClient.getUserInstallationsComplete(TOKEN, budget))
                     .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
 
             assertThat(service.ownsInstallation(USER_ID, 999_999L)).isFalse();
-            verify(apiClient, times(3)).getUserInstallationsComplete(TOKEN, budget);
-        }
-
-        @Test
-        @DisplayName("설치 직후 전파가 늦어도 재조회로 확인한다")
-        void retriesUntilPropagated() {
-            given(apiClient.getUserInstallationsComplete(TOKEN, budget))
-                    .willReturn(List.of())
-                    .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
-
-            assertThat(service.ownsInstallation(USER_ID, PERSONAL_INSTALLATION)).isTrue();
-            verify(apiClient, times(2)).getUserInstallationsComplete(TOKEN, budget);
+            verify(apiClient, times(1)).getUserInstallationsComplete(TOKEN, budget);
         }
     }
 }

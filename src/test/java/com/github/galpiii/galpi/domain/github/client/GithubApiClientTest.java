@@ -5,6 +5,7 @@ import com.github.galpiii.galpi.domain.github.client.dto.GithubUserResponse;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.domain.github.exception.GithubInstallationUnavailableException;
+import com.github.galpiii.galpi.domain.github.exception.GithubRateLimitedException;
 import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.GlobalException;
@@ -108,7 +109,7 @@ class GithubApiClientTest {
                             """, MediaType.APPLICATION_JSON));
 
             GithubInstallationResponse installation =
-                    client.getUserInstallations(TOKEN).getFirst();
+                    client.getUserInstallations(TOKEN, client.newOperationBudget()).getFirst();
 
             assertThat(installation.isSuspended()).isTrue();
         }
@@ -159,6 +160,8 @@ class GithubApiClientTest {
                             .contentType(MediaType.APPLICATION_JSON));
 
             assertThatThrownBy(() -> client.getAuthenticatedUser(TOKEN))
+                    .isInstanceOf(GithubRateLimitedException.class)
+                    .hasFieldOrPropertyWithValue("retryAfterSeconds", 60L)
                     .extracting(e -> ((GlobalException) e).getErrorCode())
                     .isEqualTo(ErrorCode.GITHUB_RATE_LIMITED);
         }
@@ -203,7 +206,8 @@ class GithubApiClientTest {
                             .body("{\"message\":\"Not Found\"}")
                             .contentType(MediaType.APPLICATION_JSON));
 
-            assertThatThrownBy(() -> client.getInstallationRepositories(TOKEN, 100L))
+            assertThatThrownBy(() -> client.getInstallationRepositories(
+                    TOKEN, 100L, client.newOperationBudget()))
                     .isInstanceOf(GithubInstallationUnavailableException.class);
         }
 
@@ -216,7 +220,8 @@ class GithubApiClientTest {
                             .body("{\"message\":\"This installation has been suspended\"}")
                             .contentType(MediaType.APPLICATION_JSON));
 
-            assertThatThrownBy(() -> client.getInstallationRepositories(TOKEN, 100L))
+            assertThatThrownBy(() -> client.getInstallationRepositories(
+                    TOKEN, 100L, client.newOperationBudget()))
                     .isInstanceOf(GithubInstallationUnavailableException.class);
         }
 
@@ -392,7 +397,7 @@ class GithubApiClientTest {
 
             List<String> all = client.getAllPages(
                     "/user/repos", TOKEN, new ParameterizedTypeReference<>() {
-                    });
+                    }, client.newOperationBudget());
 
             assertThat(all).containsExactly("a", "b", "c");
             server.verify();
@@ -409,24 +414,45 @@ class GithubApiClientTest {
 
             List<String> all = client.getAllPages(
                     "/user/repos", TOKEN, new ParameterizedTypeReference<>() {
-                    });
+                    }, client.newOperationBudget());
 
             assertThat(all).containsExactly("a");
             server.verify();
         }
 
         @Test
-        @DisplayName("한 작업의 API 호출 budget은 페이지 사이에 공유된다")
-        void enforcesOperationWideRequestBudget() {
+        @DisplayName("화면용 조회는 API 호출 budget 소진 시 수집한 페이지를 반환한다")
+        void returnsPartialResultWhenOperationBudgetIsExhausted() {
             initClient(GithubTestClients.properties(), GithubTestClients.operationProperties(1));
 
             server.expect(requestTo(PAGE_1))
                     .andRespond(withSuccess("[\"a\"]", MediaType.APPLICATION_JSON)
                             .headers(linkHeader("<" + PAGE_2 + ">; rel=\"next\"")));
 
-            assertThatThrownBy(() -> client.getAllPages(
+            List<String> all = client.getAllPages(
                     "/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
-                    }))
+                    }, client.newOperationBudget());
+
+            assertThat(all).containsExactly("a");
+            server.verify();
+        }
+
+        @Test
+        @DisplayName("권한 판정용 조회는 API 호출 budget 소진 시 하드 실패한다")
+        void enforcesOperationBudgetForPermissionChecks() {
+            initClient(GithubTestClients.properties(), GithubTestClients.operationProperties(1));
+
+            String firstPage = GithubTestClients.API_BASE_URL + "/user/installations?per_page=100";
+            server.expect(requestTo(firstPage))
+                    .andRespond(withSuccess("""
+                            {"total_count":2,"installations":[
+                              {"id":100,"account":{"id":1,"login":"wb","type":"User"},
+                               "repository_selection":"selected"}]}""",
+                            MediaType.APPLICATION_JSON)
+                            .headers(linkHeader("<" + firstPage + "&page=2>; rel=\"next\"")));
+
+            assertThatThrownBy(() -> client.getUserInstallationsComplete(
+                    TOKEN, client.newOperationBudget()))
                     .isInstanceOf(GithubApiException.class)
                     .hasFieldOrPropertyWithValue("errorCode",
                             ErrorCode.GITHUB_OPERATION_BUDGET_EXCEEDED);
@@ -447,7 +473,8 @@ class GithubApiClientTest {
                             MediaType.APPLICATION_JSON)
                             .headers(linkHeader("<" + firstPage + "&page=2>; rel=\"next\"")));
 
-            assertThatThrownBy(() -> client.getUserInstallationsComplete(TOKEN))
+            assertThatThrownBy(() -> client.getUserInstallationsComplete(
+                    TOKEN, client.newOperationBudget()))
                     .isInstanceOf(GithubApiException.class)
                     .hasFieldOrPropertyWithValue("errorCode",
                             ErrorCode.GITHUB_REPOSITORY_LIST_INCOMPLETE);
@@ -463,7 +490,7 @@ class GithubApiClientTest {
 
             List<String> all = client.getAllPages(
                     "/user/repos", TOKEN, new ParameterizedTypeReference<>() {
-                    });
+                    }, client.newOperationBudget());
 
             assertThat(all).containsExactly("a");
             // 두 번째 요청이 나갔다면 MockRestServiceServer가 예상치 못한 호출로 실패시킨다.
@@ -477,8 +504,9 @@ class GithubApiClientTest {
                     .andRespond(withSuccess("[\"a\"]", MediaType.APPLICATION_JSON)
                             .headers(linkHeader("<//evil.example/user/repos?page=2>; rel=\"next\"")));
 
-            assertThat(client.getAllPages("/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
-            })).containsExactly("a");
+            assertThat(client.getAllPages(
+                    "/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
+                    }, client.newOperationBudget())).containsExactly("a");
             server.verify();
         }
 
@@ -492,8 +520,9 @@ class GithubApiClientTest {
             server.expect(requestTo("https://api.github.com:443/user/repos?page=2"))
                     .andRespond(withSuccess("[\"b\"]", MediaType.APPLICATION_JSON));
 
-            assertThat(client.getAllPages("/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
-            })).containsExactly("a", "b");
+            assertThat(client.getAllPages(
+                    "/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
+                    }, client.newOperationBudget())).containsExactly("a", "b");
             server.verify();
         }
 
@@ -505,8 +534,9 @@ class GithubApiClientTest {
                             .headers(linkHeader(
                                     "<https://api.github.com.evil.example/user/repos>; rel=\"next\"")));
 
-            assertThat(client.getAllPages("/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
-            })).containsExactly("a");
+            assertThat(client.getAllPages(
+                    "/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
+                    }, client.newOperationBudget())).containsExactly("a");
             server.verify();
         }
 
@@ -519,8 +549,9 @@ class GithubApiClientTest {
             server.expect(requestTo(PAGE_2))
                     .andRespond(withSuccess("[\"b\"]", MediaType.APPLICATION_JSON));
 
-            assertThat(client.getAllPages("/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
-            })).containsExactly("a", "b");
+            assertThat(client.getAllPages(
+                    "/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
+                    }, client.newOperationBudget())).containsExactly("a", "b");
             server.verify();
         }
 

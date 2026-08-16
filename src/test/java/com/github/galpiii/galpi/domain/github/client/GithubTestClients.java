@@ -49,6 +49,7 @@ final class GithubTestClients {
     }
 
     static GithubOperationProperties operationProperties(int maxRequests) {
-        return new GithubOperationProperties(maxRequests, Duration.ofSeconds(30), 1);
+        return new GithubOperationProperties(
+                maxRequests, Duration.ofSeconds(30), 1, Duration.ofSeconds(3));
     }
 }

@@ -14,12 +14,17 @@ import java.time.Duration;
 public record GithubOperationProperties(
         @DefaultValue("50") @Min(1) int maxRequests,
         @DefaultValue("30s") @NotNull Duration timeout,
-        @DefaultValue("1") @Min(1) int maxConcurrentPerUser
+        @DefaultValue("1") @Min(1) int maxConcurrentPerUser,
+        @DefaultValue("3s") @NotNull Duration acquireTimeout
 ) {
 
     public GithubOperationProperties {
         if (timeout == null || timeout.isZero() || timeout.isNegative()) {
             throw new IllegalArgumentException("galpi.github.operation.timeout은 양수여야 합니다.");
+        }
+        if (acquireTimeout == null || acquireTimeout.isNegative()) {
+            throw new IllegalArgumentException(
+                    "galpi.github.operation.acquire-timeout은 0 이상이어야 합니다.");
         }
     }
 }

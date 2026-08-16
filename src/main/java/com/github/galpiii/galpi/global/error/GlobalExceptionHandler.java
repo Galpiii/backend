@@ -1,8 +1,10 @@
 package com.github.galpiii.galpi.global.error;
 
+import com.github.galpiii.galpi.domain.github.exception.GithubRateLimitedException;
 import com.github.galpiii.galpi.global.error.exception.GlobalException;
 import com.github.galpiii.galpi.global.response.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -20,6 +22,16 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(GithubRateLimitedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleGithubRateLimitedException(
+            GithubRateLimitedException e) {
+        ErrorCode errorCode = e.getErrorCode();
+        log.warn("[GitHubRateLimited] retryAfterSeconds={}", e.getRetryAfterSeconds());
+        return ResponseEntity.status(errorCode.getStatus())
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(e.getRetryAfterSeconds()))
+                .body(ApiResponse.error(errorCode.getCode(), errorCode.getMessage()));
+    }
 
     // 커스텀 예외
     @ExceptionHandler(GlobalException.class)

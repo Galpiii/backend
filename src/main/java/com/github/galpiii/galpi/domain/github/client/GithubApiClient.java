@@ -10,6 +10,7 @@ import com.github.galpiii.galpi.domain.github.config.GithubClientConfig;
 import com.github.galpiii.galpi.domain.github.config.GithubOperationProperties;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.domain.github.exception.GithubInstallationUnavailableException;
+import com.github.galpiii.galpi.domain.github.exception.GithubRateLimitedException;
 import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.util.LogSafe;
@@ -30,6 +31,8 @@ import org.springframework.web.client.RestClientException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -85,13 +88,15 @@ public class GithubApiClient {
         }
     }
 
-    public <T> ResponseEntity<T> get(String uri, String token, Class<T> responseType) {
+    private <T> ResponseEntity<T> get(String uri, String token, Class<T> responseType) {
         return execute(uri, token, spec -> spec.toEntity(responseType));
     }
 
-    public <T> List<T> getAllPages(String uri, String token, ParameterizedTypeReference<List<T>> pageType) {
-        return paginate(uri, token, spec -> spec.toEntity(pageType), body -> body, true,
-                newOperationBudget());
+    <T> List<T> getAllPages(String uri,
+                            String token,
+                            ParameterizedTypeReference<List<T>> pageType,
+                            GithubRequestBudget budget) {
+        return paginate(uri, token, spec -> spec.toEntity(pageType), body -> body, true, budget);
     }
 
     /**
@@ -101,25 +106,6 @@ public class GithubApiClient {
      * {@code total_count}와 목록을 함께 담은 객체를 돌려준다. Link 헤더 기반 순회는 같으므로
      * 목록을 꺼내는 방법만 받는다.
      */
-    public <P, T> List<T> getAllPagesWrapped(String uri,
-                                             String token,
-                                             Class<P> pageType,
-                                             Function<P, List<T>> itemsOf) {
-        return getAllPagesWrapped(uri, token, pageType, itemsOf, true, newOperationBudget());
-    }
-
-    /**
-     * @param partialAllowed 상한에 걸려 잘린 목록을 정상 결과로 볼지 여부.
-     */
-    public <P, T> List<T> getAllPagesWrapped(String uri,
-                                             String token,
-                                             Class<P> pageType,
-                                             Function<P, List<T>> itemsOf,
-                                             boolean partialAllowed) {
-        return getAllPagesWrapped(uri, token, pageType, itemsOf, partialAllowed,
-                newOperationBudget());
-    }
-
     private <P, T> List<T> getAllPagesWrapped(String uri,
                                               String token,
                                               Class<P> pageType,
@@ -147,7 +133,18 @@ public class GithubApiClient {
         int page = 0;
 
         while (nextUri != null && page < properties.maxPages()) {
-            ResponseEntity<B> response = execute(nextUri, token, extractor, budget);
+            ResponseEntity<B> response;
+            try {
+                response = execute(nextUri, token, extractor, budget);
+            } catch (GithubApiException e) {
+                if (partialAllowed
+                        && e.getErrorCode() == ErrorCode.GITHUB_OPERATION_BUDGET_EXCEEDED) {
+                    log.warn("[GitHub] 작업 요청 budget 소진. 수집한 페이지까지만 반환 uri={}",
+                            TokenMasker.mask(uri));
+                    break;
+                }
+                throw e;
+            }
             List<T> items = itemsOf.apply(response.getBody());
 
             if (items != null) {
@@ -173,18 +170,9 @@ public class GithubApiClient {
     }
 
     /** 설치 범위 ∩ 사용자 접근 권한이 이미 적용된 목록이다. 교집합을 따로 계산하지 마라. */
-    public List<GithubInstallationResponse> getUserInstallations(String userAccessToken) {
-        return getUserInstallations(userAccessToken, newOperationBudget());
-    }
-
     public List<GithubInstallationResponse> getUserInstallations(String userAccessToken,
                                                                  GithubRequestBudget budget) {
         return userInstallations(userAccessToken, true, budget);
-    }
-
-    public List<GithubRepositoryResponse> getInstallationRepositories(String userAccessToken,
-                                                                     Long installationId) {
-        return getInstallationRepositories(userAccessToken, installationId, newOperationBudget());
     }
 
     public List<GithubRepositoryResponse> getInstallationRepositories(String userAccessToken,
@@ -196,26 +184,16 @@ public class GithubApiClient {
     /**
      * 권한 판정용. 상한에 걸려 목록이 잘리면 예외를 던진다.
      *
-     * <p>화면용 {@link #getUserInstallations}와 나눈 이유는 잘린 목록의 의미가 다르기 때문이다.
+     * <p>화면용 installation 조회와 나눈 이유는 잘린 목록의 의미가 다르기 때문이다.
      * 목록 화면은 일부라도 보여주는 편이 낫지만, 이 결과로 "접근할 수 없는 저장소"를 판정하면
      * 뒤쪽 페이지의 정당한 저장소가 403이 된다.
      */
-    public List<GithubInstallationResponse> getUserInstallationsComplete(String userAccessToken) {
-        return getUserInstallationsComplete(userAccessToken, newOperationBudget());
-    }
-
     public List<GithubInstallationResponse> getUserInstallationsComplete(
             String userAccessToken, GithubRequestBudget budget) {
         return userInstallations(userAccessToken, false, budget);
     }
 
     /** 권한 판정용. 상한에 걸려 목록이 잘리면 예외를 던진다. */
-    public List<GithubRepositoryResponse> getInstallationRepositoriesComplete(String userAccessToken,
-                                                                             Long installationId) {
-        return getInstallationRepositoriesComplete(
-                userAccessToken, installationId, newOperationBudget());
-    }
-
     public List<GithubRepositoryResponse> getInstallationRepositoriesComplete(
             String userAccessToken, Long installationId, GithubRequestBudget budget) {
         return installationRepositories(userAccessToken, installationId, false, budget);
@@ -335,10 +313,10 @@ public class GithubApiClient {
             log.warn("[GitHub] rate limit uri={} remaining={} resetAt={} retryAfter={}",
                     TokenMasker.mask(uri), snapshot.remaining(), snapshot.resetAt(),
                     headers.getFirst(HttpHeaders.RETRY_AFTER));
-            return new GithubApiException(ErrorCode.GITHUB_RATE_LIMITED);
+            return new GithubRateLimitedException(retryAfterSeconds(headers, snapshot));
         }
         if (status.value() == 429) {
-            return new GithubApiException(ErrorCode.GITHUB_RATE_LIMITED);
+            return new GithubRateLimitedException(retryAfterSeconds(headers, snapshot));
         }
         if (isInstallationRepositoriesUri(uri)
                 && (status.value() == 404
@@ -351,6 +329,8 @@ public class GithubApiClient {
     }
 
     private static boolean isSecondaryRateLimit(String body) {
+        // GitHub은 secondary limit의 안정적인 machine-readable code를 제공하지 않는다.
+        // 호출부가 403으로 먼저 한정한 뒤 공식 영문 메시지를 best-effort로 식별한다.
         if (body == null || body.isBlank()) {
             return false;
         }
@@ -360,11 +340,29 @@ public class GithubApiClient {
     }
 
     private static boolean isSuspendedInstallation(String body) {
+        // 이 403도 별도 code가 없어 repository endpoint로 먼저 한정한 뒤 메시지를 보조로 쓴다.
+        // 문구가 바뀌면 일반 GITHUB-005로 실패하며 권한을 잘못 허용하지는 않는다.
         if (body == null || body.isBlank()) {
             return false;
         }
         String normalized = body.toLowerCase(Locale.ROOT);
         return normalized.contains("installation") && normalized.contains("suspend");
+    }
+
+    private static long retryAfterSeconds(HttpHeaders headers, RateLimitSnapshot snapshot) {
+        String retryAfter = headers.getFirst(HttpHeaders.RETRY_AFTER);
+        if (retryAfter != null) {
+            try {
+                return Math.max(1L, Long.parseLong(retryAfter));
+            } catch (NumberFormatException ignored) {
+                // GitHub이 정수 초가 아닌 값을 보내면 primary reset 시각이나 보수적 기본값을 쓴다.
+            }
+        }
+        if (snapshot.resetAt() != null) {
+            long millis = Duration.between(Instant.now(), snapshot.resetAt()).toMillis();
+            return Math.max(1L, (millis + 999L) / 1_000L);
+        }
+        return 60L;
     }
 
     private static boolean isInstallationRepositoriesUri(String uri) {

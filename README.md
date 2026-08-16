@@ -46,8 +46,10 @@ App 설정은 `Settings → Developer settings → GitHub Apps → {App}`에서 
 - 저장소 연결 요청은 사용자의 installation을 순회한다. 요청한 저장소를 모두 찾으면 멈추며,
   존재하지 않는 id가 섞여도 요청 전체 API 호출 수와 deadline을 넘으면 중단한다. 서버 인스턴스
   하나에서 동일 사용자의 GitHub 조회도 설정된 개수 이상 병렬 실행되지 않는다.
-- `GITHUB_MAX_PAGES`는 API 한 종류의 페이지 상한이고, `GITHUB_OPERATION_MAX_REQUESTS`와
-  `GITHUB_OPERATION_TIMEOUT`은 설치 목록부터 저장소 목록까지 한 사용자 작업 전체의 상한이다.
+- `GITHUB_MAX_PAGES`는 API 한 종류의 페이지 상한이고, `GITHUB_OPERATION_MAX_REQUESTS`는
+  설치 목록부터 저장소 목록까지 한 사용자 작업 전체의 요청 상한이다.
+- `GITHUB_OPERATION_TIMEOUT`은 다음 외부 요청을 시작할지 판단하는 soft deadline이다.
+  이미 전송된 요청은 중단하지 않아 read timeout만큼 실제 종료가 늦어질 수 있다.
 
 ## 환경 변수
 
@@ -60,5 +62,6 @@ App 설정은 `Settings → Developer settings → GitHub Apps → {App}`에서 
 | `GITHUB_ALLOWED_REDIRECT_ORIGINS` | `returnTo` 화이트리스트. 비우면 기본 URI로만 보낸다 |
 | `GITHUB_MAX_PAGES` | 페이지네이션 상한. 권한 판정 경로는 이 상한에 걸리면 잘린 목록을 쓰지 않고 `GITHUB-011`로 실패한다 |
 | `GITHUB_OPERATION_MAX_REQUESTS` | 한 사용자 작업이 보낼 수 있는 GitHub API 요청 수. 기본 50 |
-| `GITHUB_OPERATION_TIMEOUT` | 한 사용자 GitHub 작업의 전체 deadline. 기본 30초 |
+| `GITHUB_OPERATION_TIMEOUT` | 다음 GitHub 요청 시작을 막는 작업별 soft deadline. 기본 30초 |
 | `GITHUB_OPERATION_MAX_CONCURRENT_PER_USER` | 사용자별 동시 GitHub 작업 수. 기본 1 |
+| `GITHUB_OPERATION_ACQUIRE_TIMEOUT` | 사용자별 permit을 기다리는 최대 시간. 기본 3초 |

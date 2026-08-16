@@ -87,6 +87,7 @@ galpi:
       max-requests: ${GITHUB_OPERATION_MAX_REQUESTS:50}
       timeout: ${GITHUB_OPERATION_TIMEOUT:30s}
       max-concurrent-per-user: ${GITHUB_OPERATION_MAX_CONCURRENT_PER_USER:1}
+      acquire-timeout: ${GITHUB_OPERATION_ACQUIRE_TIMEOUT:3s}
 
 springdoc:
   api-docs:

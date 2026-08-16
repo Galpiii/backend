@@ -5,8 +5,9 @@ import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 
 /**
- * 하나의 사용자 작업 전체에서 공유하는 GitHub API 호출 budget과 deadline.
+ * 하나의 사용자 작업 전체에서 공유하는 GitHub API 호출 budget과 soft deadline.
  * installation마다 새로 만들면 요청 증폭을 막을 수 없으므로 서비스 진입점에서 한 번만 만든다.
+ * deadline은 이미 전송한 요청을 중단하지 않고 다음 요청의 시작만 막는다.
  */
 public final class GithubRequestBudget {
 
@@ -34,5 +35,10 @@ public final class GithubRequestBudget {
             throw new GithubApiException(ErrorCode.GITHUB_OPERATION_BUDGET_EXCEEDED);
         }
         remainingRequests--;
+    }
+
+    /** 화면용 부분 조회가 다음 installation 요청을 시작하지 않고 멈출 때 사용한다. */
+    public boolean isRequestLimitReached() {
+        return remainingRequests <= 0;
     }
 }

@@ -10,6 +10,7 @@ import com.github.galpiii.galpi.domain.github.dto.InstallationSummaryResponse;
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.dto.SelectableRepositoryResponse;
 import com.github.galpiii.galpi.domain.github.exception.GithubInstallationUnavailableException;
+import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
@@ -40,12 +41,9 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class GithubInstallationService {
 
-    private static final int VERIFY_ATTEMPTS = 3;
-    private static final long VERIFY_RETRY_MILLIS = 1_000L;
-
     private final GithubApiClient apiClient;
     private final GithubUserTokenService userTokenService;
-    private final GithubRepositorySnapshotWriter snapshotWriter;
+    private final GithubRepositoryRepository repositoryRepository;
     private final ProjectRepository projectRepository;
     private final GithubAppProperties properties;
     private final GithubUserOperationLimiter operationLimiter;
@@ -65,12 +63,8 @@ public class GithubInstallationService {
     /**
      * installation별로 묶은 저장소 목록.
      *
-     * <p>{@code projectId}가 오면 이미 연결된 저장소에 표시를 달고, 겸사겸사 스냅샷도 맞춘다.
-     * GitHub에서 저장소 이름이나 소유자가 바뀌어도 연결은 {@code github_repository_id}로
-     * 유지되지만, 화면에 옛 이름이 계속 남으면 사용자는 연결이 깨진 것으로 읽는다.
-     *
-     * <p>GitHub 호출을 모두 끝낸 뒤에 쓰기를 한 번에 처리한다. 트랜잭션으로 전체를 감싸면
-     * installation 수만큼의 외부 응답을 기다리는 동안 DB 커넥션이 묶인다.
+     * <p>{@code projectId}가 오면 이미 연결된 저장소에 표시만 단다. GET 목록 조회는 DB 상태를
+     * 변경하지 않으며, 저장소 스냅샷은 실제 연결 명령에서 갱신한다.
      */
     public List<InstallationRepositoriesResponse> listRepositories(Long userId, Long projectId) {
         return operationLimiter.execute(
@@ -83,11 +77,13 @@ public class GithubInstallationService {
         Long ownedProjectId = ownedProjectId(userId, projectId);
         GithubRequestBudget budget = apiClient.newOperationBudget();
 
-        Map<Long, RepositorySnapshot> current = new LinkedHashMap<>();
         Map<Long, List<GithubRepositoryResponse>> byInstallation = new LinkedHashMap<>();
         List<GithubInstallationResponse> installations = apiClient.getUserInstallations(token, budget);
 
         for (GithubInstallationResponse installation : installations) {
+            if (budget.isRequestLimitReached()) {
+                break;
+            }
             if (installation.isSuspended()) {
                 byInstallation.put(installation.id(), List.of());
                 continue;
@@ -104,15 +100,12 @@ public class GithubInstallationService {
                 continue;
             }
             byInstallation.put(installation.id(), repositories);
-
-            for (GithubRepositoryResponse repository : repositories) {
-                current.putIfAbsent(repository.id(), toSnapshot(repository, installation.id()));
-            }
         }
 
         Set<Long> linkedIds = ownedProjectId == null
                 ? Set.of()
-                : snapshotWriter.refreshLinked(ownedProjectId, current);
+                : new HashSet<>(repositoryRepository
+                        .findGithubRepositoryIdsByProjectId(ownedProjectId));
 
         List<InstallationRepositoriesResponse> grouped = new ArrayList<>();
         for (GithubInstallationResponse installation : installations) {
@@ -157,6 +150,7 @@ public class GithubInstallationService {
         GithubRequestBudget budget = apiClient.newOperationBudget();
         Set<Long> remaining = new HashSet<>(requestedIds);
         Map<Long, RepositorySnapshot> snapshots = new LinkedHashMap<>();
+        boolean lookupIncomplete = false;
 
         for (GithubInstallationResponse installation
                 : apiClient.getUserInstallationsComplete(token, budget)) {
@@ -169,6 +163,9 @@ public class GithubInstallationService {
                 repositories = apiClient.getInstallationRepositoriesComplete(
                         token, installation.id(), budget);
             } catch (GithubInstallationUnavailableException e) {
+                // 다른 installation에서 같은 저장소를 찾을 수도 있어 즉시 실패하지 않는다.
+                // 다 찾지 못한 채 끝나면 이 누락을 403 근거로 쓰지 않고 재시도 가능한 오류로 낸다.
+                lookupIncomplete = true;
                 log.info("[GitHub] 권한 대조 중 사라진 installation을 건너뛴다 installationId={}",
                         installation.id());
                 continue;
@@ -184,6 +181,9 @@ public class GithubInstallationService {
                 break;
             }
         }
+        if (!remaining.isEmpty() && lookupIncomplete) {
+            throw new GithubInstallationUnavailableException();
+        }
         return snapshots;
     }
 
@@ -192,9 +192,6 @@ public class GithubInstallationService {
      *
      * <p>GitHub 공식 문서가 명시적으로 경고하는 지점이다 — setup URL은 누구나 위조한
      * installation_id를 달고 부를 수 있다. 사용자 토큰으로 조회한 목록에 없으면 남의 설치다.
-     *
-     * <p>설치 직후에는 목록 반영이 조금 늦을 수 있어 짧게 다시 본다. rate limit 대기와 달리
-     * 초 단위 전파 지연이므로 요청 안에서 기다려도 된다.
      *
      * <p>이것도 권한 판정이라 잘린 목록을 쓰지 않는다. 상한 뒤쪽에 있다는 이유로 정당한 설치가
      * 남의 것으로 판정되면 안 된다. 대신 조회 자체가 실패할 수 있으므로, 콜백은 그 예외를
@@ -209,29 +206,14 @@ public class GithubInstallationService {
         String token = userTokenService.require(userId);
         GithubRequestBudget budget = apiClient.newOperationBudget();
 
-        for (int attempt = 0; attempt < VERIFY_ATTEMPTS; attempt++) {
-            if (attempt > 0 && !sleepBeforeRetry()) {
-                return false;
-            }
-            boolean found = apiClient.getUserInstallationsComplete(token, budget).stream()
-                    .anyMatch(installation -> installationId.equals(installation.id()));
-            if (found) {
-                return true;
-            }
+        boolean found = apiClient.getUserInstallationsComplete(token, budget).stream()
+                .anyMatch(installation -> installationId.equals(installation.id()));
+        if (found) {
+            return true;
         }
 
         log.warn("[GitHub] 콜백의 installation_id가 사용자 설치 목록에 없다 userId={}", userId);
         return false;
-    }
-
-    private boolean sleepBeforeRetry() {
-        try {
-            Thread.sleep(VERIFY_RETRY_MILLIS);
-            return true;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return false;
-        }
     }
 
     /** GitHub을 부르기 전에 프로젝트 소유권부터 확인한다. 남의 프로젝트면 여기서 끝난다. */

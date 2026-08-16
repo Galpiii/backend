@@ -2,6 +2,7 @@ package com.github.galpiii.galpi.domain.github.controller;
 
 import com.github.galpiii.galpi.domain.auth.jwt.JwtTokenProvider;
 import com.github.galpiii.galpi.domain.github.dto.InstallUrlResponse;
+import com.github.galpiii.galpi.domain.github.exception.GithubRateLimitedException;
 import com.github.galpiii.galpi.support.WebMvcTestSupport;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.DisplayName;
@@ -76,16 +77,16 @@ class GithubSetupControllerTest extends WebMvcTestSupport {
     }
 
     @Nested
-    @DisplayName("저장소 선택 — POST /github/repositories")
+    @DisplayName("저장소 선택 — GET /github/repositories")
     class Repositories {
 
         @Test
-        @DisplayName("스냅샷을 갱신하는 응답은 캐시하지 않는다")
-        void isPostAndNotCached() throws Exception {
+        @DisplayName("읽기 전용 응답은 GET으로 제공하고 캐시하지 않는다")
+        void isGetAndNotCached() throws Exception {
             given(githubInstallationService.listRepositories(USER_ID, 3L))
                     .willReturn(List.of());
 
-            mockMvc.perform(post("/github/repositories")
+            mockMvc.perform(get("/github/repositories")
                             .param("projectId", "3")
                             .header("Authorization", bearer()))
                     .andExpect(status().isOk())
@@ -95,11 +96,23 @@ class GithubSetupControllerTest extends WebMvcTestSupport {
         }
 
         @Test
-        @DisplayName("DB를 갱신할 수 있는 GET 요청은 허용하지 않는다")
-        void rejectsGet() throws Exception {
-            mockMvc.perform(get("/github/repositories")
+        @DisplayName("읽기 API에 POST 요청은 허용하지 않는다")
+        void rejectsPost() throws Exception {
+            mockMvc.perform(post("/github/repositories")
                             .header("Authorization", bearer()))
                     .andExpect(status().isMethodNotAllowed());
+        }
+
+        @Test
+        @DisplayName("GitHub rate limit의 Retry-After를 프론트에 전달한다")
+        void forwardsRetryAfter() throws Exception {
+            given(githubInstallationService.listRepositories(USER_ID, null))
+                    .willThrow(new GithubRateLimitedException(17));
+
+            mockMvc.perform(get("/github/repositories")
+                            .header("Authorization", bearer()))
+                    .andExpect(status().isTooManyRequests())
+                    .andExpect(header().string("Retry-After", "17"));
         }
     }
 

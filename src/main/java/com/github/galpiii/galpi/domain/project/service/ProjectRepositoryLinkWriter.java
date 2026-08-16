@@ -25,7 +25,6 @@ import java.util.Map;
  * <p>별도 빈으로 둔 이유는 트랜잭션 범위 때문이다. 연결 전 권한 재검증은 installation 수만큼
  * GitHub을 호출하는데, 그 전체를 트랜잭션으로 감싸면 외부 응답을 기다리는 동안 DB 커넥션을
  * 붙잡고 있게 된다. 조회는 트랜잭션 밖에서 끝내고 쓰기만 여기서 짧게 처리한다.
- * {@link com.github.galpiii.galpi.domain.github.service.GithubRepositorySnapshotWriter}와 같은 이유다.
  */
 @Slf4j
 @Component

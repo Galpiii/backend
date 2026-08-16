@@ -5,8 +5,10 @@ import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 /** 같은 사용자가 긴 GitHub 조회를 겹쳐 실행해 servlet thread와 rate limit을 독점하지 못하게 한다. */
@@ -15,14 +17,16 @@ public class GithubUserOperationLimiter {
 
     private final ConcurrentHashMap<Long, Slot> slots = new ConcurrentHashMap<>();
     private final int maxConcurrentPerUser;
+    private final Duration acquireTimeout;
 
     public GithubUserOperationLimiter(GithubOperationProperties properties) {
         this.maxConcurrentPerUser = properties.maxConcurrentPerUser();
+        this.acquireTimeout = properties.acquireTimeout();
     }
 
     public <T> T execute(Long userId, Supplier<T> operation) {
         Slot slot = retain(userId);
-        if (!slot.semaphore.tryAcquire()) {
+        if (!tryAcquire(slot)) {
             releaseReference(userId, slot);
             throw new GithubApiException(ErrorCode.GITHUB_OPERATION_IN_PROGRESS);
         }
@@ -32,6 +36,15 @@ public class GithubUserOperationLimiter {
         } finally {
             slot.semaphore.release();
             releaseReference(userId, slot);
+        }
+    }
+
+    private boolean tryAcquire(Slot slot) {
+        try {
+            return slot.semaphore.tryAcquire(acquireTimeout.toNanos(), TimeUnit.NANOSECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
         }
     }
 
