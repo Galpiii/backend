@@ -102,6 +102,27 @@ public interface FeatureSpecApi {
                             )
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "409",
+                            description = """
+                                    FEATURE-SPEC-EXISTS-001: 이미 등록된 기능명세서가 있음
+
+                                    업로드는 등록만 담당합니다. 이미 등록된 기능명세서를 바꾸려면
+                                    교체 API를 사용해야 합니다.
+                                    """,
+                            content = @Content(
+                                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                    examples = @ExampleObject(
+                                            name = "기능명세서 중복 등록",
+                                            value = """
+                                                    {
+                                                      "code": "FEATURE-SPEC-EXISTS-001",
+                                                      "message": "이미 등록된 기능명세서가 있습니다."
+                                                    }
+                                                    """
+                                    )
+                            )
+                    ),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "500",
                             description = """
                                     업로드 처리 실패:

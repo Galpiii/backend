@@ -9,6 +9,7 @@ import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.domain.user.entity.User;
 import com.github.galpiii.galpi.domain.user.repository.UserRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
+import com.github.galpiii.galpi.global.error.exception.ConflictException;
 import com.github.galpiii.galpi.global.error.exception.GlobalException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import com.github.galpiii.galpi.support.IntegrationTestSupport;
@@ -109,6 +110,19 @@ class FeatureSpecUploadIntegrationTest extends IntegrationTestSupport {
         service.upload(projectId, userId, pdfFile());
 
         assertThat(transactionActive).isFalse();
+    }
+
+    @Test
+    @DisplayName("같은 프로젝트에 두 번 올리면 두 번째는 거절하고 행은 하나로 유지한다")
+    void rejectsSecondUploadForSameProject() throws IOException {
+        given(s3Service.upload(any(), anyLong())).willReturn(STORAGE_KEY);
+        service.upload(projectId, userId, pdfFile());
+
+        assertThatThrownBy(() -> service.upload(projectId, userId, pdfFile()))
+                .isInstanceOf(ConflictException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_SPEC_ALREADY_EXISTS);
+
+        assertThat(specDocumentRepository.count()).isEqualTo(1);
     }
 
     @Test

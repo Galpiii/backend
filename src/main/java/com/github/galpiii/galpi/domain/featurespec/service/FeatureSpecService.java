@@ -2,10 +2,12 @@ package com.github.galpiii.galpi.domain.featurespec.service;
 
 import com.github.galpiii.galpi.domain.featurespec.dto.response.FeatureSpecUploadResponse;
 import com.github.galpiii.galpi.domain.featurespec.entity.SpecDocument;
+import com.github.galpiii.galpi.domain.featurespec.repository.SpecDocumentRepository;
 import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileValidator;
 import com.github.galpiii.galpi.domain.featurespec.validator.ValidatedFeatureSpec;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
+import com.github.galpiii.galpi.global.error.exception.ConflictException;
 import com.github.galpiii.galpi.global.error.exception.GlobalException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +21,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class FeatureSpecService {
 
     private final ProjectRepository projectRepository;
+    private final SpecDocumentRepository specDocumentRepository;
     private final FeatureSpecFileValidator featureSpecFileValidator;
     private final S3Service s3Service;
     private final SpecDocumentWriter specDocumentWriter;
@@ -30,6 +33,7 @@ public class FeatureSpecService {
             MultipartFile file
     ) {
         verifyProjectOwner(projectId, userId);
+        verifyNoRegisteredSpecDocument(projectId);
 
         ValidatedFeatureSpec validatedFeatureSpec = featureSpecFileValidator.validate(file);
 
@@ -65,6 +69,17 @@ public class FeatureSpecService {
                     userId
             );
             throw new NotFoundException(ErrorCode.PROJECT_NOT_ACCESSIBLE);
+        }
+    }
+
+    // 기능명세서 중복 등록 검증
+    private void verifyNoRegisteredSpecDocument(Long projectId) {
+        if (specDocumentRepository.existsByProjectId(projectId)) {
+            log.warn(
+                    "[기능명세서 업로드] 이미 등록된 기능명세서가 있습니다. projectId: {}",
+                    projectId
+            );
+            throw new ConflictException(ErrorCode.FEATURE_SPEC_ALREADY_EXISTS);
         }
     }
 

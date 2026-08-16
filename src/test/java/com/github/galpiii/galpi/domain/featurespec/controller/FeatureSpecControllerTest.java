@@ -5,6 +5,7 @@ import com.github.galpiii.galpi.domain.featurespec.dto.response.FeatureSpecUploa
 import com.github.galpiii.galpi.domain.featurespec.entity.ExtractionStatus;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.BadRequestException;
+import com.github.galpiii.galpi.global.error.exception.ConflictException;
 import com.github.galpiii.galpi.global.error.exception.GlobalException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import com.github.galpiii.galpi.support.WebMvcTestSupport;
@@ -108,6 +109,19 @@ class FeatureSpecControllerTest extends WebMvcTestSupport {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(ErrorCode.PROJECT_NOT_ACCESSIBLE.getCode()))
                 .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("이미 등록된 기능명세서가 있으면 409를 내려준다")
+    void returnsConflictWhenSpecAlreadyExists() throws Exception {
+        willThrow(new ConflictException(ErrorCode.FEATURE_SPEC_ALREADY_EXISTS))
+                .given(featureSpecService).upload(eq(PROJECT_ID), eq(USER_ID), any());
+
+        mockMvc.perform(multipart(PATH, PROJECT_ID)
+                        .file(pdfPart())
+                        .header(HttpHeaders.AUTHORIZATION, bearer()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.FEATURE_SPEC_ALREADY_EXISTS.getCode()));
     }
 
     @Test

@@ -3,11 +3,13 @@ package com.github.galpiii.galpi.domain.featurespec.service;
 import com.github.galpiii.galpi.domain.featurespec.dto.response.FeatureSpecUploadResponse;
 import com.github.galpiii.galpi.domain.featurespec.entity.ExtractionStatus;
 import com.github.galpiii.galpi.domain.featurespec.entity.SpecDocument;
+import com.github.galpiii.galpi.domain.featurespec.repository.SpecDocumentRepository;
 import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileValidator;
 import com.github.galpiii.galpi.domain.featurespec.validator.ValidatedFeatureSpec;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.BadRequestException;
+import com.github.galpiii.galpi.global.error.exception.ConflictException;
 import com.github.galpiii.galpi.global.error.exception.GlobalException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,6 +52,8 @@ class FeatureSpecServiceTest {
     @Mock
     private ProjectRepository projectRepository;
     @Mock
+    private SpecDocumentRepository specDocumentRepository;
+    @Mock
     private FeatureSpecFileValidator featureSpecFileValidator;
     @Mock
     private S3Service s3Service;
@@ -75,6 +79,11 @@ class FeatureSpecServiceTest {
         given(projectRepository.existsByIdAndUserId(PROJECT_ID, USER_ID)).willReturn(true);
     }
 
+    private void givenUploadableProject() {
+        givenOwnedProject();
+        given(specDocumentRepository.existsByProjectId(PROJECT_ID)).willReturn(false);
+    }
+
     private SpecDocument specDocument() {
         SpecDocument specDocument = SpecDocument.builder()
                 .fileName(FILE_NAME)
@@ -88,7 +97,7 @@ class FeatureSpecServiceTest {
     @Test
     @DisplayName("업로드에 성공하면 PENDING 상태로 접수 정보를 돌려준다")
     void returnsPendingDocumentOnSuccess() {
-        givenOwnedProject();
+        givenUploadableProject();
         given(featureSpecFileValidator.validate(file)).willReturn(validatedFeatureSpec);
         given(s3Service.upload(tempFile, PROJECT_ID)).willReturn(STORAGE_KEY);
         given(specDocumentWriter.save(PROJECT_ID, USER_ID, FILE_NAME, STORAGE_KEY))
@@ -104,7 +113,7 @@ class FeatureSpecServiceTest {
     @Test
     @DisplayName("원본을 올린 뒤에 저장한다 — 순서가 뒤집히면 보상 삭제할 키를 알 수 없다")
     void uploadsBeforeSaving() {
-        givenOwnedProject();
+        givenUploadableProject();
         given(featureSpecFileValidator.validate(file)).willReturn(validatedFeatureSpec);
         given(s3Service.upload(tempFile, PROJECT_ID)).willReturn(STORAGE_KEY);
         given(specDocumentWriter.save(PROJECT_ID, USER_ID, FILE_NAME, STORAGE_KEY))
@@ -120,7 +129,7 @@ class FeatureSpecServiceTest {
     @Test
     @DisplayName("성공해도 임시 파일을 지운다")
     void deletesTempFileOnSuccess() {
-        givenOwnedProject();
+        givenUploadableProject();
         given(featureSpecFileValidator.validate(file)).willReturn(validatedFeatureSpec);
         given(s3Service.upload(tempFile, PROJECT_ID)).willReturn(STORAGE_KEY);
         given(specDocumentWriter.save(PROJECT_ID, USER_ID, FILE_NAME, STORAGE_KEY))
@@ -145,9 +154,23 @@ class FeatureSpecServiceTest {
     }
 
     @Test
+    @DisplayName("이미 등록된 기능명세서가 있으면 파일을 읽지도 올리지도 않는다")
+    void rejectsSecondUploadForSameProject() {
+        givenOwnedProject();
+        given(specDocumentRepository.existsByProjectId(PROJECT_ID)).willReturn(true);
+
+        assertThatThrownBy(() -> service.upload(PROJECT_ID, USER_ID, file))
+                .isInstanceOf(ConflictException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_SPEC_ALREADY_EXISTS);
+
+        verify(featureSpecFileValidator, never()).validate(any());
+        verify(s3Service, never()).upload(any(), anyLong());
+    }
+
+    @Test
     @DisplayName("검증에 실패하면 올리지 않고, 임시 파일 정리도 검증 쪽에 맡긴다")
     void skipsUploadWhenValidationFails() {
-        givenOwnedProject();
+        givenUploadableProject();
         given(featureSpecFileValidator.validate(file))
                 .willThrow(new BadRequestException(ErrorCode.FEATURE_SPEC_PDF_INVALID));
 
@@ -162,7 +185,7 @@ class FeatureSpecServiceTest {
     @Test
     @DisplayName("업로드가 실패하면 저장하지 않고 임시 파일을 지운다")
     void deletesTempFileWhenUploadFails() {
-        givenOwnedProject();
+        givenUploadableProject();
         given(featureSpecFileValidator.validate(file)).willReturn(validatedFeatureSpec);
         given(s3Service.upload(tempFile, PROJECT_ID))
                 .willThrow(new GlobalException(ErrorCode.FEATURE_SPEC_STORAGE_UPLOAD_FAILED));
@@ -178,7 +201,7 @@ class FeatureSpecServiceTest {
     @Test
     @DisplayName("저장이 실패하면 방금 올린 원본을 지운다 — 아무도 참조하지 않는 파일이 남으면 안 된다")
     void deletesStorageObjectWhenSaveFails() {
-        givenOwnedProject();
+        givenUploadableProject();
         given(featureSpecFileValidator.validate(file)).willReturn(validatedFeatureSpec);
         given(s3Service.upload(tempFile, PROJECT_ID)).willReturn(STORAGE_KEY);
         given(specDocumentWriter.save(PROJECT_ID, USER_ID, FILE_NAME, STORAGE_KEY))
@@ -195,7 +218,7 @@ class FeatureSpecServiceTest {
     @Test
     @DisplayName("보상 삭제까지 실패해도 저장 실패를 그대로 알린다 — 삭제 실패가 원인을 가리면 안 된다")
     void keepsSaveFailureWhenCompensationFails() {
-        givenOwnedProject();
+        givenUploadableProject();
         given(featureSpecFileValidator.validate(file)).willReturn(validatedFeatureSpec);
         given(s3Service.upload(tempFile, PROJECT_ID)).willReturn(STORAGE_KEY);
         given(specDocumentWriter.save(PROJECT_ID, USER_ID, FILE_NAME, STORAGE_KEY))
