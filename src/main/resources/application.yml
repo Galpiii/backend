@@ -37,6 +37,12 @@ spring:
       password: ${REDIS_PASSWORD:}
       timeout: ${REDIS_TIMEOUT}
 
+cloud:
+  aws:
+    region: ${AWS_REGION}
+    s3:
+      bucket: ${AWS_S3_BUCKET}
+
 galpi:
   api-docs:
     enabled: ${API_DOCS_ENABLED:false}

@@ -33,7 +33,7 @@ public class SpecDocument extends BaseEntity {
     @Column(nullable = false, length = 255)
     private String fileName;
 
-    @Column(length = 512)
+    @Column(nullable = false, length = 512)
     private String storageKey;
 
     @Enumerated(EnumType.STRING)
