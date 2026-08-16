@@ -1,6 +1,5 @@
 package com.github.galpiii.galpi.domain.github.service;
 
-import com.github.galpiii.galpi.domain.auth.store.RefreshTokenStore;
 import com.github.galpiii.galpi.domain.auth.support.RedirectUriValidator;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.dto.InstallUrlResponse;
@@ -34,7 +33,6 @@ public class GithubSetupService {
     private final GithubInstallStateStore installStateStore;
     private final GithubInstallationService installationService;
     private final RedirectUriValidator redirectUriValidator;
-    private final RefreshTokenStore refreshTokenStore;
     private final GithubAppProperties properties;
 
     public InstallUrlResponse buildInstallUrl(Long userId, String returnTo) {
@@ -50,14 +48,16 @@ public class GithubSetupService {
      * 않고, 실제로는 {@code install}·{@code request}·{@code update}가 관측된다. 값이 늘거나
      * 없어도 흐름이 죽지 않도록 로그로만 남기고, 판단은 {@code installation_id}를 GitHub에
      * 직접 대조한 결과로 한다.
+     *
+     * <p>사용자를 찾는 근거는 {@code state} 하나다. 유실되면 여기서 끝내고 프론트로 돌려보낸다.
+     * 설치 자체는 목록 조회가 GitHub에 직접 묻기 때문에 새로고침으로 복구된다.
      */
-    public String handleSetupCallback(Long installationId, String setupAction,
-                                      String state, String refreshToken) {
+    public String handleSetupCallback(Long installationId, String setupAction, String state) {
         log.info("[GitHub] setup 콜백 setupAction={} hasInstallationId={} hasState={}",
                 LogSafe.text(setupAction), installationId != null,
                 state != null && !state.isBlank());
 
-        Optional<InstallIntent> intent = resolveIntent(state, refreshToken);
+        Optional<InstallIntent> intent = installStateStore.consumeState(state);
         if (intent.isEmpty()) {
             log.warn("[GitHub] 설치를 시작한 기록 없이 setup 콜백이 들어왔다");
             return redirectUriValidator.buildFrontendError(
@@ -101,24 +101,6 @@ public class GithubSetupService {
                     userId, e.getErrorCode().getCode());
             return false;
         }
-    }
-
-    /**
-     * 콜백을 시작한 사용자를 찾는다.
-     *
-     * <p>state가 살아 돌아오면 그것이 가장 강한 근거다. 유실됐으면 갈피 세션 쿠키로 사용자를
-     * 특정한 뒤, 그 사용자가 설치를 시작했다는 기록이 남아 있는지까지 확인한다. "로그인만
-     * 되어 있으면 통과"로 두면 아무 링크나 눌러도 콜백이 성립한다.
-     */
-    private Optional<InstallIntent> resolveIntent(String state, String refreshToken) {
-        Optional<InstallIntent> byState = installStateStore.consumeState(state);
-        if (byState.isPresent()) {
-            installStateStore.clearIntent(byState.get().userId());
-            return byState;
-        }
-
-        return refreshTokenStore.peek(refreshToken)
-                .flatMap(installStateStore::consumeIntent);
     }
 
     /**

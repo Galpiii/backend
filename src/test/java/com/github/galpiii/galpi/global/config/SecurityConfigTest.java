@@ -57,7 +57,7 @@ class SecurityConfigTest extends WebMvcTestSupport {
         @Test
         @DisplayName("App 설치 콜백은 열려 있다 — GitHub이 브라우저를 직접 보낸다")
         void setupCallbackIsPublic() throws Exception {
-            given(githubSetupService.handleSetupCallback(any(), any(), any(), any()))
+            given(githubSetupService.handleSetupCallback(any(), any(), any()))
                     .willReturn("https://galpi.dev/auth/callback?installation=verified");
 
             mockMvc.perform(get("/auth/github/setup/callback").param("installation_id", "1"))

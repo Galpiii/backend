@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -53,12 +54,12 @@ class GithubInstallStateStoreTest {
     }
 
     @Test
-    @DisplayName("state 키와 사용자 키에 같은 내용을 15분씩 함께 적는다")
-    void writesBothKeys() {
+    @DisplayName("state 키 하나에만 15분짜리로 적는다")
+    void writesStateKeyOnly() {
         String state = store.issue(USER_ID, "/projects/3/repositories");
 
         verify(valueOperations).set(eq("github:install-state:" + state), any(), eq(Duration.ofMinutes(15)));
-        verify(valueOperations).set(eq("github:install-intent:" + USER_ID), any(), eq(Duration.ofMinutes(15)));
+        verify(valueOperations, times(1)).set(any(), any(), any(Duration.class));
     }
 
     @Test
@@ -93,22 +94,14 @@ class GithubInstallStateStoreTest {
     }
 
     @Test
-    @DisplayName("사용자 키로도 한 번 읽으면 사라진다")
-    void consumesIntentOnce() {
+    @DisplayName("복귀 경로도 기록에서 함께 돌아온다")
+    void consumeCarriesReturnTo() {
         String state = store.issue(USER_ID, "/projects");
         String payload = captureStatePayload(state);
 
-        given(valueOperations.getAndDelete("github:install-intent:" + USER_ID)).willReturn(payload);
+        given(valueOperations.getAndDelete("github:install-state:" + state)).willReturn(payload);
 
-        assertThat(store.consumeIntent(USER_ID)).map(InstallIntent::returnTo).contains("/projects");
-    }
-
-    @Test
-    @DisplayName("state로 검증하면 짝이 되는 사용자 키도 지운다")
-    void clearsIntentAfterStateWin() {
-        store.clearIntent(USER_ID);
-
-        verify(redisTemplate).delete("github:install-intent:" + USER_ID);
+        assertThat(store.consumeState(state)).map(InstallIntent::returnTo).contains("/projects");
     }
 
     @Test
@@ -117,7 +110,6 @@ class GithubInstallStateStoreTest {
         given(valueOperations.getAndDelete(any())).willReturn(null);
 
         assertThat(store.consumeState("expired")).isEmpty();
-        assertThat(store.consumeIntent(USER_ID)).isEmpty();
     }
 
     @Test

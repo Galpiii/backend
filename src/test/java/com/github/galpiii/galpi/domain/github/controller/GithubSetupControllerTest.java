@@ -70,7 +70,7 @@ class GithubSetupControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("Authorization 헤더 없이도 열려 있다 — GitHub이 브라우저를 직접 보낸다")
         void isPublic() throws Exception {
-            given(githubSetupService.handleSetupCallback(any(), any(), any(), any()))
+            given(githubSetupService.handleSetupCallback(any(), any(), any()))
                     .willReturn(FRONT_REDIRECT);
 
             mockMvc.perform(get("/auth/github/setup/callback")
@@ -82,25 +82,40 @@ class GithubSetupControllerTest extends WebMvcTestSupport {
         }
 
         @Test
-        @DisplayName("installation_id·setup_action·state·세션 쿠키를 서비스로 넘긴다")
+        @DisplayName("installation_id·setup_action·state를 서비스로 넘긴다")
         void passesAllInputs() throws Exception {
-            given(githubSetupService.handleSetupCallback(any(), any(), any(), any()))
+            given(githubSetupService.handleSetupCallback(any(), any(), any()))
                     .willReturn(FRONT_REDIRECT);
 
             mockMvc.perform(get("/auth/github/setup/callback")
                             .param("installation_id", "4242")
                             .param("setup_action", "install")
-                            .param("state", "abc")
-                            .cookie(new Cookie("galpi_refresh", "refresh-value")))
+                            .param("state", "abc"))
                     .andExpect(status().isFound());
 
-            verify(githubSetupService).handleSetupCallback(4242L, "install", "abc", "refresh-value");
+            verify(githubSetupService).handleSetupCallback(4242L, "install", "abc");
+        }
+
+        @Test
+        @DisplayName("세션 쿠키가 있어도 판단에 쓰지 않는다")
+        void ignoresSessionCookie() throws Exception {
+            given(githubSetupService.handleSetupCallback(any(), any(), isNull()))
+                    .willReturn("https://galpi.dev/auth/callback?error=GITHUB-008");
+
+            mockMvc.perform(get("/auth/github/setup/callback")
+                            .param("installation_id", "4242")
+                            .param("setup_action", "install")
+                            .cookie(new Cookie("galpi_refresh", "refresh-value")))
+                    .andExpect(status().isFound())
+                    .andExpect(redirectedUrl("https://galpi.dev/auth/callback?error=GITHUB-008"));
+
+            verify(githubSetupService).handleSetupCallback(4242L, "install", null);
         }
 
         @Test
         @DisplayName("파라미터가 하나도 없어도 500이 아니라 서비스 판단에 맡긴다")
         void toleratesMissingParameters() throws Exception {
-            given(githubSetupService.handleSetupCallback(isNull(), isNull(), isNull(), isNull()))
+            given(githubSetupService.handleSetupCallback(isNull(), isNull(), isNull()))
                     .willReturn("https://galpi.dev/auth/callback?error=GITHUB-008");
 
             mockMvc.perform(get("/auth/github/setup/callback"))
@@ -111,7 +126,7 @@ class GithubSetupControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("콜백 응답은 캐시하지 않는다")
         void isNotCached() throws Exception {
-            given(githubSetupService.handleSetupCallback(any(), any(), any(), any()))
+            given(githubSetupService.handleSetupCallback(any(), any(), any()))
                     .willReturn(FRONT_REDIRECT);
 
             mockMvc.perform(get("/auth/github/setup/callback").param("state", "abc"))

@@ -13,7 +13,7 @@ App 설정은 `Settings → Developer settings → GitHub Apps → {App}`에서 
 |---|---|---|
 | Callback URL | `{APP_SERVER_URL}/auth/github/callback` | 1A OAuth 콜백 |
 | Setup URL | `{APP_SERVER_URL}/auth/github/setup/callback` | 설치 완료 콜백 |
-| **Redirect on update** | **끔** | 켜면 저장소 추가·제거 후에도 setup 콜백이 오는데, 그 경로에는 install-intent가 없어 `GITHUB-008`로 끝난다. 저장소 선택 변경은 콜백이 아니라 목록 새로고침으로 반영한다 |
+| **Redirect on update** | **끔** | 켜면 저장소 추가·제거 후에도 setup 콜백이 오는데, 그 경로에는 `state`가 없어 `GITHUB-008`로 끝난다. 저장소 선택 변경은 콜백이 아니라 목록 새로고침으로 반영한다 |
 | **Webhook Active** | **끔** | MVP는 웹훅을 쓰지 않는다. 권한 회수·설치 삭제는 웹훅이 아니라 **API 호출 실패로 감지**한다. 엔드포인트·서명 검증(`X-Hub-Signature-256`)·멱등성 처리는 Phase 2 |
 | **Expire user authorization tokens** | **켬** | 끄면 `expires_in`이 응답에 오지 않아 만료 처리 전체가 무력해진다. 만료를 끄는 것이 더 편해 보이지만 보안상 더 나쁜 선택이다 |
 | Request user authorization (OAuth) during installation | 켬 | 설치와 로그인을 한 흐름으로 잇는다 |
@@ -37,6 +37,10 @@ App 설정은 `Settings → Developer settings → GitHub Apps → {App}`에서 
 
 ### 알려진 한계 (Phase 2 이전)
 
+- **조직 관리자 승인 시점을 서버가 알 수 없다.** 승인 후의 setup 콜백은 (오더라도) 승인한 관리자
+  브라우저로 가고 `state`도 없어 `GITHUB-008`로 끝난다. 요청한 사용자는 승인 뒤 목록을 새로고침하면
+  설치가 보인다 — 목록은 `GET /user/installations`로 GitHub에 직접 묻기 때문이다. 승인 통지를
+  서버가 직접 받으려면 Phase 2의 웹훅(`installation.created`)이 필요하다.
 - 권한 회수·설치 삭제가 즉시 반영되지 않는다. `repositories.access_status`를 `INACCESSIBLE`로
   바꾸는 것은 Phase 1C의 수집 경로다. 그전까지 목록은 마지막으로 성공한 조회 결과를 보여준다.
 - 저장소 연결 요청은 사용자의 installation을 순회한다. 요청한 저장소를 모두 찾으면 멈추지만,

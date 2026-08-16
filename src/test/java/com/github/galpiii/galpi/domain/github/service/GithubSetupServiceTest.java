@@ -1,6 +1,5 @@
 package com.github.galpiii.galpi.domain.github.service;
 
-import com.github.galpiii.galpi.domain.auth.store.RefreshTokenStore;
 import com.github.galpiii.galpi.domain.auth.support.RedirectUriValidator;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.dto.InstallUrlResponse;
@@ -27,7 +26,6 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -43,14 +41,11 @@ class GithubSetupServiceTest {
     private static final long INSTALLATION_ID = 4242L;
     private static final String STATE = "install-state-value";
     private static final String RETURN_TO = "/projects/3/repositories";
-    private static final String REFRESH_TOKEN = "refresh-token-value";
 
     @Mock
     private GithubInstallStateStore installStateStore;
     @Mock
     private GithubInstallationService installationService;
-    @Mock
-    private RefreshTokenStore refreshTokenStore;
 
     private GithubSetupService service;
 
@@ -59,7 +54,7 @@ class GithubSetupServiceTest {
         GithubAppProperties properties = properties();
         service = new GithubSetupService(
                 installStateStore, installationService,
-                new RedirectUriValidator(properties), refreshTokenStore, properties);
+                new RedirectUriValidator(properties), properties);
     }
 
     private static GithubAppProperties properties() {
@@ -107,56 +102,36 @@ class GithubSetupServiceTest {
     class UserResolution {
 
         @Test
-        @DisplayName("state가 살아 돌아오면 그것으로 확인하고 사용자 키도 함께 지운다")
+        @DisplayName("state가 살아 돌아오면 그것으로 확인한다")
         void resolvesByState() {
             given(installStateStore.consumeState(STATE)).willReturn(Optional.of(intent(RETURN_TO)));
             given(installationService.ownsInstallation(USER_ID, INSTALLATION_ID)).willReturn(true);
 
-            String redirect = service.handleSetupCallback(
-                    INSTALLATION_ID, "install", STATE, REFRESH_TOKEN);
-
-            assertThat(redirect).contains("installation=verified");
-            verify(installStateStore).clearIntent(USER_ID);
-            verify(refreshTokenStore, never()).peek(anyString());
-        }
-
-        @Test
-        @DisplayName("state가 유실되면 세션 쿠키로 사용자를 찾고 설치 시작 기록을 확인한다")
-        void fallsBackToSessionAndIntent() {
-            given(installStateStore.consumeState(null)).willReturn(Optional.empty());
-            given(refreshTokenStore.peek(REFRESH_TOKEN)).willReturn(Optional.of(USER_ID));
-            given(installStateStore.consumeIntent(USER_ID)).willReturn(Optional.of(intent(RETURN_TO)));
-            given(installationService.ownsInstallation(USER_ID, INSTALLATION_ID)).willReturn(true);
-
-            String redirect = service.handleSetupCallback(
-                    INSTALLATION_ID, "install", null, REFRESH_TOKEN);
+            String redirect = service.handleSetupCallback(INSTALLATION_ID, "install", STATE);
 
             assertThat(redirect).contains("installation=verified");
         }
 
         @Test
-        @DisplayName("로그인은 되어 있지만 설치를 시작한 기록이 없으면 거부한다")
-        void rejectsLoggedInUserWithoutIntent() {
+        @DisplayName("state가 없으면 거부한다 — 세션으로 대신 받아내지 않는다")
+        void rejectsCallbackWithoutState() {
             given(installStateStore.consumeState(null)).willReturn(Optional.empty());
-            given(refreshTokenStore.peek(REFRESH_TOKEN)).willReturn(Optional.of(USER_ID));
-            given(installStateStore.consumeIntent(USER_ID)).willReturn(Optional.empty());
 
-            String redirect = service.handleSetupCallback(
-                    INSTALLATION_ID, "install", null, REFRESH_TOKEN);
+            String redirect = service.handleSetupCallback(INSTALLATION_ID, "install", null);
 
             assertThat(redirect).contains("error=" + ErrorCode.GITHUB_INSTALL_NOT_STARTED.getCode());
             verify(installationService, never()).ownsInstallation(anyLong(), anyLong());
         }
 
         @Test
-        @DisplayName("세션도 state도 없으면 거부한다")
-        void rejectsAnonymousCallback() {
-            given(installStateStore.consumeState(any())).willReturn(Optional.empty());
-            given(refreshTokenStore.peek(any())).willReturn(Optional.empty());
+        @DisplayName("만료·재사용된 state도 거부한다")
+        void rejectsUnknownState() {
+            given(installStateStore.consumeState(STATE)).willReturn(Optional.empty());
 
-            String redirect = service.handleSetupCallback(INSTALLATION_ID, "install", null, null);
+            String redirect = service.handleSetupCallback(INSTALLATION_ID, "install", STATE);
 
             assertThat(redirect).contains("error=" + ErrorCode.GITHUB_INSTALL_NOT_STARTED.getCode());
+            verify(installationService, never()).ownsInstallation(anyLong(), anyLong());
         }
     }
 
@@ -170,8 +145,7 @@ class GithubSetupServiceTest {
             given(installStateStore.consumeState(STATE)).willReturn(Optional.of(intent(RETURN_TO)));
             given(installationService.ownsInstallation(USER_ID, INSTALLATION_ID)).willReturn(false);
 
-            String redirect = service.handleSetupCallback(
-                    INSTALLATION_ID, "install", STATE, REFRESH_TOKEN);
+            String redirect = service.handleSetupCallback(INSTALLATION_ID, "install", STATE);
 
             assertThat(redirect).contains("installation=unverified");
         }
@@ -183,8 +157,7 @@ class GithubSetupServiceTest {
             given(installationService.ownsInstallation(USER_ID, INSTALLATION_ID))
                     .willThrow(new GithubApiException(ErrorCode.GITHUB_REPOSITORY_LIST_INCOMPLETE));
 
-            String redirect = service.handleSetupCallback(
-                    INSTALLATION_ID, "install", STATE, REFRESH_TOKEN);
+            String redirect = service.handleSetupCallback(INSTALLATION_ID, "install", STATE);
 
             assertThat(redirect).contains("installation=unverified");
         }
@@ -196,8 +169,7 @@ class GithubSetupServiceTest {
             given(installationService.ownsInstallation(USER_ID, INSTALLATION_ID))
                     .willThrow(new GithubReauthRequiredException());
 
-            String redirect = service.handleSetupCallback(
-                    INSTALLATION_ID, "install", STATE, REFRESH_TOKEN);
+            String redirect = service.handleSetupCallback(INSTALLATION_ID, "install", STATE);
 
             assertThat(redirect).contains("installation=unverified");
         }
@@ -207,7 +179,7 @@ class GithubSetupServiceTest {
         void treatsMissingInstallationIdAsPending() {
             given(installStateStore.consumeState(STATE)).willReturn(Optional.of(intent(RETURN_TO)));
 
-            String redirect = service.handleSetupCallback(null, "request", STATE, REFRESH_TOKEN);
+            String redirect = service.handleSetupCallback(null, "request", STATE);
 
             assertThat(redirect).contains("installation=unverified");
             verify(installationService, never()).ownsInstallation(anyLong(), anyLong());
@@ -219,9 +191,9 @@ class GithubSetupServiceTest {
             given(installStateStore.consumeState(STATE)).willReturn(Optional.of(intent(RETURN_TO)));
             given(installationService.ownsInstallation(USER_ID, INSTALLATION_ID)).willReturn(true);
 
-            assertThat(service.handleSetupCallback(INSTALLATION_ID, "brand-new-value", STATE, null))
+            assertThat(service.handleSetupCallback(INSTALLATION_ID, "brand-new-value", STATE))
                     .contains("installation=verified");
-            assertThat(service.handleSetupCallback(INSTALLATION_ID, null, STATE, null))
+            assertThat(service.handleSetupCallback(INSTALLATION_ID, null, STATE))
                     .contains("installation=verified");
         }
     }
@@ -236,7 +208,7 @@ class GithubSetupServiceTest {
             given(installStateStore.consumeState(STATE)).willReturn(Optional.of(intent(RETURN_TO)));
             given(installationService.ownsInstallation(USER_ID, INSTALLATION_ID)).willReturn(true);
 
-            assertThat(service.handleSetupCallback(INSTALLATION_ID, "install", STATE, null))
+            assertThat(service.handleSetupCallback(INSTALLATION_ID, "install", STATE))
                     .startsWith("https://galpi.dev/auth/callback?")
                     .contains("returnTo=");
         }
@@ -248,7 +220,7 @@ class GithubSetupServiceTest {
                     .willReturn(Optional.of(intent("https://evil.example/steal")));
             given(installationService.ownsInstallation(USER_ID, INSTALLATION_ID)).willReturn(true);
 
-            String redirect = service.handleSetupCallback(INSTALLATION_ID, "install", STATE, null);
+            String redirect = service.handleSetupCallback(INSTALLATION_ID, "install", STATE);
 
             assertThat(redirect).startsWith("https://galpi.dev/auth/callback?")
                     .doesNotContain("evil.example");
