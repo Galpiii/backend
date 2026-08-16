@@ -7,7 +7,9 @@ import com.github.galpiii.galpi.domain.github.client.dto.GithubRepositoryRespons
 import com.github.galpiii.galpi.domain.github.client.dto.GithubUserResponse;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.config.GithubClientConfig;
+import com.github.galpiii.galpi.domain.github.config.GithubOperationProperties;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
+import com.github.galpiii.galpi.domain.github.exception.GithubInstallationUnavailableException;
 import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.util.LogSafe;
@@ -42,11 +44,18 @@ public class GithubApiClient {
 
     private final RestClient restClient;
     private final GithubAppProperties properties;
+    private final GithubOperationProperties operationProperties;
 
     public GithubApiClient(@Qualifier(GithubClientConfig.API_CLIENT) RestClient restClient,
-                           GithubAppProperties properties) {
+                           GithubAppProperties properties,
+                           GithubOperationProperties operationProperties) {
         this.restClient = restClient;
         this.properties = properties;
+        this.operationProperties = operationProperties;
+    }
+
+    public GithubRequestBudget newOperationBudget() {
+        return GithubRequestBudget.from(operationProperties);
     }
 
     public GithubUserResponse getAuthenticatedUser(String userAccessToken) {
@@ -81,7 +90,8 @@ public class GithubApiClient {
     }
 
     public <T> List<T> getAllPages(String uri, String token, ParameterizedTypeReference<List<T>> pageType) {
-        return paginate(uri, token, spec -> spec.toEntity(pageType), body -> body, true);
+        return paginate(uri, token, spec -> spec.toEntity(pageType), body -> body, true,
+                newOperationBudget());
     }
 
     /**
@@ -95,7 +105,7 @@ public class GithubApiClient {
                                              String token,
                                              Class<P> pageType,
                                              Function<P, List<T>> itemsOf) {
-        return getAllPagesWrapped(uri, token, pageType, itemsOf, true);
+        return getAllPagesWrapped(uri, token, pageType, itemsOf, true, newOperationBudget());
     }
 
     /**
@@ -106,8 +116,18 @@ public class GithubApiClient {
                                              Class<P> pageType,
                                              Function<P, List<T>> itemsOf,
                                              boolean partialAllowed) {
+        return getAllPagesWrapped(uri, token, pageType, itemsOf, partialAllowed,
+                newOperationBudget());
+    }
+
+    private <P, T> List<T> getAllPagesWrapped(String uri,
+                                              String token,
+                                              Class<P> pageType,
+                                              Function<P, List<T>> itemsOf,
+                                              boolean partialAllowed,
+                                              GithubRequestBudget budget) {
         return paginate(uri, token, spec -> spec.toEntity(pageType),
-                body -> body == null ? List.of() : itemsOf.apply(body), partialAllowed);
+                body -> body == null ? List.of() : itemsOf.apply(body), partialAllowed, budget);
     }
 
     /**
@@ -120,13 +140,14 @@ public class GithubApiClient {
                                     String token,
                                     ResponseExtractor<B> extractor,
                                     Function<B, List<T>> itemsOf,
-                                    boolean partialAllowed) {
+                                    boolean partialAllowed,
+                                    GithubRequestBudget budget) {
         List<T> collected = new ArrayList<>();
         String nextUri = uri;
         int page = 0;
 
         while (nextUri != null && page < properties.maxPages()) {
-            ResponseEntity<B> response = execute(nextUri, token, extractor);
+            ResponseEntity<B> response = execute(nextUri, token, extractor, budget);
             List<T> items = itemsOf.apply(response.getBody());
 
             if (items != null) {
@@ -153,12 +174,23 @@ public class GithubApiClient {
 
     /** 설치 범위 ∩ 사용자 접근 권한이 이미 적용된 목록이다. 교집합을 따로 계산하지 마라. */
     public List<GithubInstallationResponse> getUserInstallations(String userAccessToken) {
-        return userInstallations(userAccessToken, true);
+        return getUserInstallations(userAccessToken, newOperationBudget());
+    }
+
+    public List<GithubInstallationResponse> getUserInstallations(String userAccessToken,
+                                                                 GithubRequestBudget budget) {
+        return userInstallations(userAccessToken, true, budget);
     }
 
     public List<GithubRepositoryResponse> getInstallationRepositories(String userAccessToken,
                                                                      Long installationId) {
-        return installationRepositories(userAccessToken, installationId, true);
+        return getInstallationRepositories(userAccessToken, installationId, newOperationBudget());
+    }
+
+    public List<GithubRepositoryResponse> getInstallationRepositories(String userAccessToken,
+                                                                      Long installationId,
+                                                                      GithubRequestBudget budget) {
+        return installationRepositories(userAccessToken, installationId, true, budget);
     }
 
     /**
@@ -169,28 +201,42 @@ public class GithubApiClient {
      * 뒤쪽 페이지의 정당한 저장소가 403이 된다.
      */
     public List<GithubInstallationResponse> getUserInstallationsComplete(String userAccessToken) {
-        return userInstallations(userAccessToken, false);
+        return getUserInstallationsComplete(userAccessToken, newOperationBudget());
+    }
+
+    public List<GithubInstallationResponse> getUserInstallationsComplete(
+            String userAccessToken, GithubRequestBudget budget) {
+        return userInstallations(userAccessToken, false, budget);
     }
 
     /** 권한 판정용. 상한에 걸려 목록이 잘리면 예외를 던진다. */
     public List<GithubRepositoryResponse> getInstallationRepositoriesComplete(String userAccessToken,
                                                                              Long installationId) {
-        return installationRepositories(userAccessToken, installationId, false);
+        return getInstallationRepositoriesComplete(
+                userAccessToken, installationId, newOperationBudget());
+    }
+
+    public List<GithubRepositoryResponse> getInstallationRepositoriesComplete(
+            String userAccessToken, Long installationId, GithubRequestBudget budget) {
+        return installationRepositories(userAccessToken, installationId, false, budget);
     }
 
     private List<GithubInstallationResponse> userInstallations(String userAccessToken,
-                                                               boolean partialAllowed) {
+                                                               boolean partialAllowed,
+                                                               GithubRequestBudget budget) {
         return getAllPagesWrapped("/user/installations?per_page=100", userAccessToken,
-                GithubInstallationsPage.class, GithubInstallationsPage::items, partialAllowed);
+                GithubInstallationsPage.class, GithubInstallationsPage::items, partialAllowed,
+                budget);
     }
 
     private List<GithubRepositoryResponse> installationRepositories(String userAccessToken,
                                                                     Long installationId,
-                                                                    boolean partialAllowed) {
+                                                                    boolean partialAllowed,
+                                                                    GithubRequestBudget budget) {
         return getAllPagesWrapped(
                 "/user/installations/" + installationId + "/repositories?per_page=100",
                 userAccessToken, GithubRepositoriesPage.class, GithubRepositoriesPage::items,
-                partialAllowed);
+                partialAllowed, budget);
     }
 
     /**
@@ -247,14 +293,24 @@ public class GithubApiClient {
     private <T> ResponseEntity<T> execute(String uri,
                                           String token,
                                           ResponseExtractor<T> extractor) {
+        return execute(uri, token, extractor, newOperationBudget());
+    }
+
+    private <T> ResponseEntity<T> execute(String uri,
+                                          String token,
+                                          ResponseExtractor<T> extractor,
+                                          GithubRequestBudget budget) {
         try {
             return extractor.extract(
                     restClient.get()
                             .uri(uri)
                             .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                            .attribute(GithubRequestBudget.REQUEST_ATTRIBUTE, budget)
                             .retrieve()
                             .onStatus(HttpStatusCode::isError, (req, res) -> {
-                                throw toException(uri, res.getStatusCode(), res.getHeaders());
+                                String body = new String(res.getBody().readNBytes(8_192),
+                                        StandardCharsets.UTF_8);
+                                throw toException(uri, res.getStatusCode(), res.getHeaders(), body);
                             }));
         } catch (GithubApiException | GithubReauthRequiredException e) {
             throw e;
@@ -265,9 +321,11 @@ public class GithubApiClient {
         }
     }
 
-    private RuntimeException toException(String uri, HttpStatusCode status, HttpHeaders headers) {
+    private RuntimeException toException(String uri, HttpStatusCode status, HttpHeaders headers,
+                                         String body) {
         RateLimitSnapshot snapshot = RateLimitSnapshot.from(headers);
-        boolean secondaryLimit = headers.getFirst(HttpHeaders.RETRY_AFTER) != null;
+        boolean secondaryLimit = headers.getFirst(HttpHeaders.RETRY_AFTER) != null
+                || isSecondaryRateLimit(body);
 
         if (status.value() == 401) {
             log.info("[GitHub] 401 — user token 만료/무효 uri={}", TokenMasker.mask(uri));
@@ -282,9 +340,40 @@ public class GithubApiClient {
         if (status.value() == 429) {
             return new GithubApiException(ErrorCode.GITHUB_RATE_LIMITED);
         }
+        if (isInstallationRepositoriesUri(uri)
+                && (status.value() == 404
+                || (status.value() == 403 && isSuspendedInstallation(body)))) {
+            return new GithubInstallationUnavailableException();
+        }
 
         log.warn("[GitHub] 호출 실패 status={} uri={}", status.value(), TokenMasker.mask(uri));
         return new GithubApiException();
+    }
+
+    private static boolean isSecondaryRateLimit(String body) {
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        String normalized = body.toLowerCase(Locale.ROOT);
+        return normalized.contains("secondary rate limit")
+                || normalized.contains("abuse detection mechanism");
+    }
+
+    private static boolean isSuspendedInstallation(String body) {
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        String normalized = body.toLowerCase(Locale.ROOT);
+        return normalized.contains("installation") && normalized.contains("suspend");
+    }
+
+    private static boolean isInstallationRepositoriesUri(String uri) {
+        try {
+            String path = URI.create(uri).getPath();
+            return path != null && path.matches("/user/installations/\\d+/repositories");
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     private RuntimeException toRevokeException(HttpStatusCode status) {

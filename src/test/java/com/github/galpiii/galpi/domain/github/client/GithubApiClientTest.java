@@ -1,8 +1,10 @@
 package com.github.galpiii.galpi.domain.github.client;
 
+import com.github.galpiii.galpi.domain.github.client.dto.GithubInstallationResponse;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubUserResponse;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
+import com.github.galpiii.galpi.domain.github.exception.GithubInstallationUnavailableException;
 import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.GlobalException;
@@ -38,10 +40,16 @@ class GithubApiClientTest {
     private GithubApiClient client;
 
     private void initClient(GithubAppProperties properties) {
+        initClient(properties, GithubTestClients.operationProperties());
+    }
+
+    private void initClient(GithubAppProperties properties,
+                            com.github.galpiii.galpi.domain.github.config.GithubOperationProperties
+                                    operationProperties) {
         RestClient.Builder builder = GithubTestClients.config()
                 .apiClientBuilder(properties, new RateLimitRecorder());
         server = MockRestServiceServer.bindTo(builder).build();
-        client = new GithubApiClient(builder.build(), properties);
+        client = new GithubApiClient(builder.build(), properties, operationProperties);
     }
 
     @BeforeEach
@@ -85,6 +93,24 @@ class GithubApiClientTest {
             assertThat(user.id()).isEqualTo(583231L);
             assertThat(user.login()).isEqualTo("octocat");
             assertThat(user.email()).isNull();
+        }
+
+        @Test
+        @DisplayName("installation 정지 상태를 파싱한다")
+        void parsesSuspendedInstallation() {
+            server.expect(requestTo(GithubTestClients.API_BASE_URL
+                            + "/user/installations?per_page=100"))
+                    .andRespond(withSuccess("""
+                            {"total_count":1,"installations":[
+                              {"id":100,"account":{"id":1,"login":"wb","type":"User"},
+                               "repository_selection":"selected",
+                               "suspended_at":"2026-08-17T01:00:00Z"}]}
+                            """, MediaType.APPLICATION_JSON));
+
+            GithubInstallationResponse installation =
+                    client.getUserInstallations(TOKEN).getFirst();
+
+            assertThat(installation.isSuspended()).isTrue();
         }
     }
 
@@ -153,6 +179,48 @@ class GithubApiClientTest {
         }
 
         @Test
+        @DisplayName("Retry-After가 없어도 응답 본문이 secondary rate limit이면 429로 분류한다")
+        void mapsSecondaryRateLimitWithoutRetryAfter() {
+            server.expect(requestTo(GithubTestClients.API_BASE_URL + "/user"))
+                    .andRespond(withStatus(HttpStatus.FORBIDDEN)
+                            .header(RateLimitSnapshot.HEADER_REMAINING, "4998")
+                            .body("""
+                                    {"message":"You have exceeded a secondary rate limit."}
+                                    """)
+                            .contentType(MediaType.APPLICATION_JSON));
+
+            assertThatThrownBy(() -> client.getAuthenticatedUser(TOKEN))
+                    .extracting(e -> ((GlobalException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.GITHUB_RATE_LIMITED);
+        }
+
+        @Test
+        @DisplayName("목록 조회 사이에 사라진 installation의 404를 구분한다")
+        void distinguishesUnavailableInstallation() {
+            server.expect(requestTo(GithubTestClients.API_BASE_URL
+                            + "/user/installations/100/repositories?per_page=100"))
+                    .andRespond(withStatus(HttpStatus.NOT_FOUND)
+                            .body("{\"message\":\"Not Found\"}")
+                            .contentType(MediaType.APPLICATION_JSON));
+
+            assertThatThrownBy(() -> client.getInstallationRepositories(TOKEN, 100L))
+                    .isInstanceOf(GithubInstallationUnavailableException.class);
+        }
+
+        @Test
+        @DisplayName("목록 조회 직후 정지된 installation의 403을 구분한다")
+        void distinguishesInstallationSuspendedDuringListing() {
+            server.expect(requestTo(GithubTestClients.API_BASE_URL
+                            + "/user/installations/100/repositories?per_page=100"))
+                    .andRespond(withStatus(HttpStatus.FORBIDDEN)
+                            .body("{\"message\":\"This installation has been suspended\"}")
+                            .contentType(MediaType.APPLICATION_JSON));
+
+            assertThatThrownBy(() -> client.getInstallationRepositories(TOKEN, 100L))
+                    .isInstanceOf(GithubInstallationUnavailableException.class);
+        }
+
+        @Test
         @DisplayName("404는 일반 API 오류로 넘기고 호출부가 저장소 단위로 처리한다")
         void mapsNotFound() {
             server.expect(requestTo(GithubTestClients.API_BASE_URL + "/user"))
@@ -191,7 +259,8 @@ class GithubApiClientTest {
             GithubAppProperties properties = GithubTestClients.properties();
             RestClient.Builder builder = GithubTestClients.config().apiClientBuilder(properties, recorder);
             MockRestServiceServer retryServer = MockRestServiceServer.bindTo(builder).build();
-            GithubApiClient retryClient = new GithubApiClient(builder.build(), properties);
+            GithubApiClient retryClient = new GithubApiClient(
+                    builder.build(), properties, GithubTestClients.operationProperties());
 
             retryServer.expect(requestTo(GithubTestClients.API_BASE_URL + "/user"))
                     .andRespond(withStatus(HttpStatus.BAD_GATEWAY));
@@ -224,6 +293,20 @@ class GithubApiClientTest {
             assertThatThrownBy(() -> client.getAuthenticatedUser(TOKEN))
                     .isInstanceOf(GithubReauthRequiredException.class);
 
+            server.verify();
+        }
+
+        @Test
+        @DisplayName("5xx 재시도도 사용자 작업의 요청 budget을 소비한다")
+        void countsRetriesAgainstOperationBudget() {
+            initClient(GithubTestClients.properties(), GithubTestClients.operationProperties(1));
+            server.expect(requestTo(GithubTestClients.API_BASE_URL + "/user"))
+                    .andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+
+            assertThatThrownBy(() -> client.getAuthenticatedUser(TOKEN))
+                    .isInstanceOf(GithubApiException.class)
+                    .hasFieldOrPropertyWithValue("errorCode",
+                            ErrorCode.GITHUB_OPERATION_BUDGET_EXCEEDED);
             server.verify();
         }
     }
@@ -329,6 +412,24 @@ class GithubApiClientTest {
                     });
 
             assertThat(all).containsExactly("a");
+            server.verify();
+        }
+
+        @Test
+        @DisplayName("한 작업의 API 호출 budget은 페이지 사이에 공유된다")
+        void enforcesOperationWideRequestBudget() {
+            initClient(GithubTestClients.properties(), GithubTestClients.operationProperties(1));
+
+            server.expect(requestTo(PAGE_1))
+                    .andRespond(withSuccess("[\"a\"]", MediaType.APPLICATION_JSON)
+                            .headers(linkHeader("<" + PAGE_2 + ">; rel=\"next\"")));
+
+            assertThatThrownBy(() -> client.getAllPages(
+                    "/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
+                    }))
+                    .isInstanceOf(GithubApiException.class)
+                    .hasFieldOrPropertyWithValue("errorCode",
+                            ErrorCode.GITHUB_OPERATION_BUDGET_EXCEEDED);
             server.verify();
         }
 

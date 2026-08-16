@@ -9,12 +9,15 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.util.List;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
@@ -37,7 +40,7 @@ class GithubSetupControllerTest extends WebMvcTestSupport {
     }
 
     @Nested
-    @DisplayName("설치 URL — GET /github/install-url")
+    @DisplayName("설치 URL — POST /github/install-url")
     class InstallUrl {
 
         @Test
@@ -46,11 +49,12 @@ class GithubSetupControllerTest extends WebMvcTestSupport {
             given(githubSetupService.buildInstallUrl(eq(USER_ID), any()))
                     .willReturn(new InstallUrlResponse(INSTALL_URL));
 
-            mockMvc.perform(get("/github/install-url")
+            mockMvc.perform(post("/github/install-url")
                             .param("returnTo", "/projects/3/repositories")
                             .header("Authorization", bearer()))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data.installUrl").value(INSTALL_URL));
+                    .andExpect(jsonPath("$.data.installUrl").value(INSTALL_URL))
+                    .andExpect(header().string("Cache-Control", "no-store"));
 
             verify(githubSetupService).buildInstallUrl(USER_ID, "/projects/3/repositories");
         }
@@ -58,8 +62,44 @@ class GithubSetupControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("토큰 없이 부르면 401이다")
         void requiresAuthentication() throws Exception {
-            mockMvc.perform(get("/github/install-url"))
+            mockMvc.perform(post("/github/install-url"))
                     .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("일회성 state를 만드는 GET 요청은 허용하지 않는다")
+        void rejectsGet() throws Exception {
+            mockMvc.perform(get("/github/install-url")
+                            .header("Authorization", bearer()))
+                    .andExpect(status().isMethodNotAllowed());
+        }
+    }
+
+    @Nested
+    @DisplayName("저장소 선택 — POST /github/repositories")
+    class Repositories {
+
+        @Test
+        @DisplayName("스냅샷을 갱신하는 응답은 캐시하지 않는다")
+        void isPostAndNotCached() throws Exception {
+            given(githubInstallationService.listRepositories(USER_ID, 3L))
+                    .willReturn(List.of());
+
+            mockMvc.perform(post("/github/repositories")
+                            .param("projectId", "3")
+                            .header("Authorization", bearer()))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Cache-Control", "no-store"));
+
+            verify(githubInstallationService).listRepositories(USER_ID, 3L);
+        }
+
+        @Test
+        @DisplayName("DB를 갱신할 수 있는 GET 요청은 허용하지 않는다")
+        void rejectsGet() throws Exception {
+            mockMvc.perform(get("/github/repositories")
+                            .header("Authorization", bearer()))
+                    .andExpect(status().isMethodNotAllowed());
         }
     }
 

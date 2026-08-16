@@ -83,6 +83,10 @@ galpi:
     read-timeout: ${GITHUB_READ_TIMEOUT}
     max-retries: ${GITHUB_MAX_RETRIES}
     max-pages: ${GITHUB_MAX_PAGES}
+    operation:
+      max-requests: ${GITHUB_OPERATION_MAX_REQUESTS:50}
+      timeout: ${GITHUB_OPERATION_TIMEOUT:30s}
+      max-concurrent-per-user: ${GITHUB_OPERATION_MAX_CONCURRENT_PER_USER:1}
 
 springdoc:
   api-docs:

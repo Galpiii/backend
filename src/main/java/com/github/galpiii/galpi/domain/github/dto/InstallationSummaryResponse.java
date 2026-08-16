@@ -16,6 +16,7 @@ public record InstallationSummaryResponse(
         String accountType,
         String avatarUrl,
         String repositorySelection,
+        boolean suspended,
         String settingsUrl
 ) {
 
@@ -28,6 +29,7 @@ public record InstallationSummaryResponse(
                 account == null ? null : account.type(),
                 account == null ? null : account.avatarUrl(),
                 installation.repositorySelection(),
+                installation.isSuspended(),
                 properties.installationSettingsUrl(
                         installation.id(), installation.accountLogin(),
                         installation.isOrganization()));

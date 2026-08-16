@@ -1,6 +1,7 @@
 package com.github.galpiii.galpi.domain.github.service;
 
 import com.github.galpiii.galpi.domain.github.client.GithubApiClient;
+import com.github.galpiii.galpi.domain.github.client.GithubRequestBudget;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubInstallationResponse;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubRepositoryResponse;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
@@ -8,6 +9,7 @@ import com.github.galpiii.galpi.domain.github.dto.InstallationRepositoriesRespon
 import com.github.galpiii.galpi.domain.github.dto.InstallationSummaryResponse;
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.dto.SelectableRepositoryResponse;
+import com.github.galpiii.galpi.domain.github.exception.GithubInstallationUnavailableException;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
@@ -46,10 +48,16 @@ public class GithubInstallationService {
     private final GithubRepositorySnapshotWriter snapshotWriter;
     private final ProjectRepository projectRepository;
     private final GithubAppProperties properties;
+    private final GithubUserOperationLimiter operationLimiter;
 
     public List<InstallationSummaryResponse> listInstallations(Long userId) {
+        return operationLimiter.execute(userId, () -> listInstallationsWithinLimit(userId));
+    }
+
+    private List<InstallationSummaryResponse> listInstallationsWithinLimit(Long userId) {
         String token = userTokenService.require(userId);
-        return apiClient.getUserInstallations(token).stream()
+        GithubRequestBudget budget = apiClient.newOperationBudget();
+        return apiClient.getUserInstallations(token, budget).stream()
                 .map(installation -> InstallationSummaryResponse.from(installation, properties))
                 .toList();
     }
@@ -65,16 +73,36 @@ public class GithubInstallationService {
      * installation 수만큼의 외부 응답을 기다리는 동안 DB 커넥션이 묶인다.
      */
     public List<InstallationRepositoriesResponse> listRepositories(Long userId, Long projectId) {
+        return operationLimiter.execute(
+                userId, () -> listRepositoriesWithinLimit(userId, projectId));
+    }
+
+    private List<InstallationRepositoriesResponse> listRepositoriesWithinLimit(
+            Long userId, Long projectId) {
         String token = userTokenService.require(userId);
         Long ownedProjectId = ownedProjectId(userId, projectId);
+        GithubRequestBudget budget = apiClient.newOperationBudget();
 
         Map<Long, RepositorySnapshot> current = new LinkedHashMap<>();
         Map<Long, List<GithubRepositoryResponse>> byInstallation = new LinkedHashMap<>();
-        List<GithubInstallationResponse> installations = apiClient.getUserInstallations(token);
+        List<GithubInstallationResponse> installations = apiClient.getUserInstallations(token, budget);
 
         for (GithubInstallationResponse installation : installations) {
-            List<GithubRepositoryResponse> repositories =
-                    apiClient.getInstallationRepositories(token, installation.id());
+            if (installation.isSuspended()) {
+                byInstallation.put(installation.id(), List.of());
+                continue;
+            }
+
+            List<GithubRepositoryResponse> repositories;
+            try {
+                repositories = apiClient.getInstallationRepositories(
+                        token, installation.id(), budget);
+            } catch (GithubInstallationUnavailableException e) {
+                // 목록과 상세 조회 사이에 제거된 installation 하나 때문에 나머지를 숨기지 않는다.
+                log.info("[GitHub] 목록 조회 중 사라진 installation을 건너뛴다 installationId={}",
+                        installation.id());
+                continue;
+            }
             byInstallation.put(installation.id(), repositories);
 
             for (GithubRepositoryResponse repository : repositories) {
@@ -88,6 +116,9 @@ public class GithubInstallationService {
 
         List<InstallationRepositoriesResponse> grouped = new ArrayList<>();
         for (GithubInstallationResponse installation : installations) {
+            if (!installation.isSuspended() && !byInstallation.containsKey(installation.id())) {
+                continue;
+            }
             List<SelectableRepositoryResponse> items =
                     byInstallation.getOrDefault(installation.id(), List.of()).stream()
                             .map(repository -> SelectableRepositoryResponse.of(
@@ -107,25 +138,43 @@ public class GithubInstallationService {
      * <p>목록 조회와 달리 잘린 결과를 받지 않는다. 이 맵에 없는 id는 "권한 없음"으로 거부되므로,
      * 페이지네이션 상한에 걸린 목록으로 판정하면 정당한 저장소가 403이 된다.
      *
-     * <p>요청한 id만 남기고 다 찾으면 즉시 멈춘다. 저장소 하나를 연결하려고 사용자의 모든
-     * installation을 끝까지 읽으면 요청 하나가 수천 번의 외부 호출로 번지고, 그동안 servlet
-     * 스레드와 GitHub rate limit이 함께 묶인다. 대부분의 요청은 installation 한둘에서 끝난다.
-     *
-     * <p>다만 존재하지 않는 id가 섞이면 여전히 끝까지 훑는다. 여기서 더 줄이려면 요청 전체에
-     * 페이지 budget과 사용자별 동시 실행 제한을 걸어야 한다.
+     * <p>요청한 id만 남기고 다 찾으면 즉시 멈춘다. 존재하지 않는 id가 섞이면 installation을
+     * 끝까지 훑을 수 있으므로, 서비스 진입점의 사용자별 동시 실행 제한과 이 작업 전체가 공유하는
+     * API 호출 budget·deadline이 최종 상한을 보장한다.
      */
     public Map<Long, RepositorySnapshot> accessibleSnapshots(Long userId, Collection<Long> requestedIds) {
         if (requestedIds.isEmpty()) {
             return Map.of();
         }
 
+        return operationLimiter.execute(
+                userId, () -> accessibleSnapshotsWithinLimit(userId, requestedIds));
+    }
+
+    private Map<Long, RepositorySnapshot> accessibleSnapshotsWithinLimit(
+            Long userId, Collection<Long> requestedIds) {
         String token = userTokenService.require(userId);
+        GithubRequestBudget budget = apiClient.newOperationBudget();
         Set<Long> remaining = new HashSet<>(requestedIds);
         Map<Long, RepositorySnapshot> snapshots = new LinkedHashMap<>();
 
-        for (GithubInstallationResponse installation : apiClient.getUserInstallationsComplete(token)) {
-            for (GithubRepositoryResponse repository
-                    : apiClient.getInstallationRepositoriesComplete(token, installation.id())) {
+        for (GithubInstallationResponse installation
+                : apiClient.getUserInstallationsComplete(token, budget)) {
+            if (installation.isSuspended()) {
+                continue;
+            }
+
+            List<GithubRepositoryResponse> repositories;
+            try {
+                repositories = apiClient.getInstallationRepositoriesComplete(
+                        token, installation.id(), budget);
+            } catch (GithubInstallationUnavailableException e) {
+                log.info("[GitHub] 권한 대조 중 사라진 installation을 건너뛴다 installationId={}",
+                        installation.id());
+                continue;
+            }
+
+            for (GithubRepositoryResponse repository : repositories) {
                 // 처음 본 id일 때만 remove가 true다. 뒤 installation의 같은 저장소는 덮지 않는다.
                 if (remaining.remove(repository.id())) {
                     snapshots.put(repository.id(), toSnapshot(repository, installation.id()));
@@ -152,13 +201,19 @@ public class GithubInstallationService {
      * "확인 안 됨"으로 받아 리다이렉트를 유지해야 한다.
      */
     public boolean ownsInstallation(Long userId, Long installationId) {
+        return operationLimiter.execute(
+                userId, () -> ownsInstallationWithinLimit(userId, installationId));
+    }
+
+    private boolean ownsInstallationWithinLimit(Long userId, Long installationId) {
         String token = userTokenService.require(userId);
+        GithubRequestBudget budget = apiClient.newOperationBudget();
 
         for (int attempt = 0; attempt < VERIFY_ATTEMPTS; attempt++) {
             if (attempt > 0 && !sleepBeforeRetry()) {
                 return false;
             }
-            boolean found = apiClient.getUserInstallationsComplete(token).stream()
+            boolean found = apiClient.getUserInstallationsComplete(token, budget).stream()
                     .anyMatch(installation -> installationId.equals(installation.id()));
             if (found) {
                 return true;

@@ -1,12 +1,15 @@
 package com.github.galpiii.galpi.domain.github.service;
 
 import com.github.galpiii.galpi.domain.github.client.GithubApiClient;
+import com.github.galpiii.galpi.domain.github.client.GithubRequestBudget;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubInstallationResponse;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubRepositoryResponse;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
+import com.github.galpiii.galpi.domain.github.config.GithubOperationProperties;
 import com.github.galpiii.galpi.domain.github.dto.InstallationRepositoriesResponse;
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
+import com.github.galpiii.galpi.domain.github.exception.GithubInstallationUnavailableException;
 import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
@@ -25,6 +28,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -60,15 +64,20 @@ class GithubInstallationServiceTest {
     private GithubRepositorySnapshotWriter snapshotWriter;
     @Mock
     private ProjectRepository projectRepository;
+    @Mock
+    private GithubRequestBudget budget;
 
     private GithubInstallationService service;
 
     @BeforeEach
     void setUp() {
         given(userTokenService.require(USER_ID)).willReturn(TOKEN);
+        given(apiClient.newOperationBudget()).willReturn(budget);
         given(snapshotWriter.refreshLinked(any(), any())).willReturn(Set.of());
         service = new GithubInstallationService(
-                apiClient, userTokenService, snapshotWriter, projectRepository, properties());
+                apiClient, userTokenService, snapshotWriter, projectRepository, properties(),
+                new GithubUserOperationLimiter(
+                        new GithubOperationProperties(50, Duration.ofSeconds(30), 1)));
     }
 
     private static GithubAppProperties properties() {
@@ -84,6 +93,13 @@ class GithubInstallationServiceTest {
         return new GithubInstallationResponse(
                 id, new GithubInstallationResponse.Account(id * 10, login, type, "https://avatar"),
                 "selected");
+    }
+
+    private static GithubInstallationResponse suspendedInstallation(
+            long id, String login, String type) {
+        return new GithubInstallationResponse(
+                id, new GithubInstallationResponse.Account(id * 10, login, type, "https://avatar"),
+                "selected", OffsetDateTime.now());
     }
 
     private static GithubRepositoryResponse repository(long id, String fullName, boolean isPrivate) {
@@ -106,12 +122,12 @@ class GithubInstallationServiceTest {
         @Test
         @DisplayName("개인 계정과 조직을 installation 단위로 나눠 준다")
         void groupsByInstallation() {
-            given(apiClient.getUserInstallations(TOKEN)).willReturn(List.of(
+            given(apiClient.getUserInstallations(TOKEN, budget)).willReturn(List.of(
                     installation(PERSONAL_INSTALLATION, "wb", "User"),
                     installation(ORG_INSTALLATION, "galpiii", "Organization")));
-            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION))
+            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
                     .willReturn(List.of(repository(1L, "wb/notes", true)));
-            given(apiClient.getInstallationRepositories(TOKEN, ORG_INSTALLATION))
+            given(apiClient.getInstallationRepositories(TOKEN, ORG_INSTALLATION, budget))
                     .willReturn(List.of(repository(2L, "galpiii/backend", true)));
 
             List<InstallationRepositoriesResponse> grouped = service.listRepositories(USER_ID, null);
@@ -126,9 +142,10 @@ class GithubInstallationServiceTest {
         @Test
         @DisplayName("조직 설치 설정 링크는 조직 경로로 만든다")
         void buildsOrgSettingsUrl() {
-            given(apiClient.getUserInstallations(TOKEN))
+            given(apiClient.getUserInstallations(TOKEN, budget))
                     .willReturn(List.of(installation(ORG_INSTALLATION, "galpiii", "Organization")));
-            given(apiClient.getInstallationRepositories(TOKEN, ORG_INSTALLATION)).willReturn(List.of());
+            given(apiClient.getInstallationRepositories(TOKEN, ORG_INSTALLATION, budget))
+                    .willReturn(List.of());
 
             assertThat(service.listRepositories(USER_ID, null).getFirst().installation().settingsUrl())
                     .isEqualTo("https://github.com/organizations/galpiii/settings/installations/200");
@@ -137,9 +154,9 @@ class GithubInstallationServiceTest {
         @Test
         @DisplayName("비공개 저장소만 있는 계정도 그대로 돌려준다")
         void keepsPrivateOnlyAccount() {
-            given(apiClient.getUserInstallations(TOKEN))
+            given(apiClient.getUserInstallations(TOKEN, budget))
                     .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
-            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION))
+            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
                     .willReturn(List.of(repository(1L, "wb/secret", true)));
 
             assertThat(service.listRepositories(USER_ID, null).getFirst().repositories())
@@ -153,9 +170,9 @@ class GithubInstallationServiceTest {
             given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID))
                     .willReturn(Optional.of(project()));
             given(snapshotWriter.refreshLinked(eq(PROJECT_ID), any())).willReturn(Set.of(1L));
-            given(apiClient.getUserInstallations(TOKEN))
+            given(apiClient.getUserInstallations(TOKEN, budget))
                     .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
-            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION))
+            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
                     .willReturn(List.of(repository(1L, "wb/notes", true), repository(2L, "wb/other", false)));
 
             List<com.github.galpiii.galpi.domain.github.dto.SelectableRepositoryResponse> repos =
@@ -171,9 +188,9 @@ class GithubInstallationServiceTest {
         void handsCurrentSnapshotToWriter() {
             given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID))
                     .willReturn(Optional.of(project()));
-            given(apiClient.getUserInstallations(TOKEN))
+            given(apiClient.getUserInstallations(TOKEN, budget))
                     .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
-            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION))
+            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
                     .willReturn(List.of(repository(1L, "galpiii/journal", true)));
 
             service.listRepositories(USER_ID, PROJECT_ID);
@@ -203,6 +220,42 @@ class GithubInstallationServiceTest {
                     .isInstanceOf(GithubReauthRequiredException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.GITHUB_REAUTH_REQUIRED);
         }
+
+        @Test
+        @DisplayName("정지된 installation은 상태만 돌려주고 저장소 API는 호출하지 않는다")
+        void keepsSuspendedInstallationWithoutFetchingRepositories() {
+            given(apiClient.getUserInstallations(TOKEN, budget)).willReturn(List.of(
+                    suspendedInstallation(PERSONAL_INSTALLATION, "wb", "User"),
+                    installation(ORG_INSTALLATION, "galpiii", "Organization")));
+            given(apiClient.getInstallationRepositories(TOKEN, ORG_INSTALLATION, budget))
+                    .willReturn(List.of(repository(2L, "galpiii/backend", true)));
+
+            List<InstallationRepositoriesResponse> grouped =
+                    service.listRepositories(USER_ID, null);
+
+            assertThat(grouped).hasSize(2);
+            assertThat(grouped.getFirst().installation().suspended()).isTrue();
+            assertThat(grouped.getFirst().repositories()).isEmpty();
+            verify(apiClient, never()).getInstallationRepositories(
+                    TOKEN, PERSONAL_INSTALLATION, budget);
+        }
+
+        @Test
+        @DisplayName("목록과 상세 조회 사이에 삭제된 installation만 건너뛴다")
+        void skipsInstallationRemovedDuringListing() {
+            given(apiClient.getUserInstallations(TOKEN, budget)).willReturn(List.of(
+                    installation(PERSONAL_INSTALLATION, "wb", "User"),
+                    installation(ORG_INSTALLATION, "galpiii", "Organization")));
+            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
+                    .willThrow(new GithubInstallationUnavailableException());
+            given(apiClient.getInstallationRepositories(TOKEN, ORG_INSTALLATION, budget))
+                    .willReturn(List.of(repository(2L, "galpiii/backend", true)));
+
+            assertThat(service.listRepositories(USER_ID, null))
+                    .singleElement()
+                    .satisfies(group -> assertThat(group.installation().installationId())
+                            .isEqualTo(ORG_INSTALLATION));
+        }
     }
 
     @Nested
@@ -212,12 +265,13 @@ class GithubInstallationServiceTest {
         @Test
         @DisplayName("여러 installation의 저장소를 하나의 맵으로 모은다")
         void collectsAcrossInstallations() {
-            given(apiClient.getUserInstallationsComplete(TOKEN)).willReturn(List.of(
+            given(apiClient.getUserInstallationsComplete(TOKEN, budget)).willReturn(List.of(
                     installation(PERSONAL_INSTALLATION, "wb", "User"),
                     installation(ORG_INSTALLATION, "galpiii", "Organization")));
-            given(apiClient.getInstallationRepositoriesComplete(TOKEN, PERSONAL_INSTALLATION))
+            given(apiClient.getInstallationRepositoriesComplete(
+                    TOKEN, PERSONAL_INSTALLATION, budget))
                     .willReturn(List.of(repository(1L, "wb/notes", true)));
-            given(apiClient.getInstallationRepositoriesComplete(TOKEN, ORG_INSTALLATION))
+            given(apiClient.getInstallationRepositoriesComplete(TOKEN, ORG_INSTALLATION, budget))
                     .willReturn(List.of(repository(2L, "galpiii/backend", true)));
 
             Map<Long, RepositorySnapshot> snapshots =
@@ -231,23 +285,26 @@ class GithubInstallationServiceTest {
         @Test
         @DisplayName("요청한 저장소를 다 찾으면 남은 installation은 조회하지 않는다")
         void stopsOnceEveryRequestedRepositoryIsFound() {
-            given(apiClient.getUserInstallationsComplete(TOKEN)).willReturn(List.of(
+            given(apiClient.getUserInstallationsComplete(TOKEN, budget)).willReturn(List.of(
                     installation(PERSONAL_INSTALLATION, "wb", "User"),
                     installation(ORG_INSTALLATION, "galpiii", "Organization")));
-            given(apiClient.getInstallationRepositoriesComplete(TOKEN, PERSONAL_INSTALLATION))
+            given(apiClient.getInstallationRepositoriesComplete(
+                    TOKEN, PERSONAL_INSTALLATION, budget))
                     .willReturn(List.of(repository(1L, "wb/notes", true)));
 
             assertThat(service.accessibleSnapshots(USER_ID, Set.of(1L))).containsOnlyKeys(1L);
 
-            verify(apiClient, never()).getInstallationRepositoriesComplete(TOKEN, ORG_INSTALLATION);
+            verify(apiClient, never()).getInstallationRepositoriesComplete(
+                    TOKEN, ORG_INSTALLATION, budget);
         }
 
         @Test
         @DisplayName("요청하지 않은 저장소는 담지 않는다 — 전체 목록을 메모리에 올리지 않는다")
         void keepsOnlyRequestedRepositories() {
-            given(apiClient.getUserInstallationsComplete(TOKEN))
+            given(apiClient.getUserInstallationsComplete(TOKEN, budget))
                     .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
-            given(apiClient.getInstallationRepositoriesComplete(TOKEN, PERSONAL_INSTALLATION))
+            given(apiClient.getInstallationRepositoriesComplete(
+                    TOKEN, PERSONAL_INSTALLATION, budget))
                     .willReturn(List.of(repository(1L, "wb/notes", true),
                             repository(2L, "wb/other", false),
                             repository(3L, "wb/third", false)));
@@ -260,13 +317,13 @@ class GithubInstallationServiceTest {
         void skipsGithubForEmptyRequest() {
             assertThat(service.accessibleSnapshots(USER_ID, Set.of())).isEmpty();
 
-            verify(apiClient, never()).getUserInstallationsComplete(TOKEN);
+            verify(apiClient, never()).getUserInstallationsComplete(TOKEN, budget);
         }
 
         @Test
         @DisplayName("잘린 목록으로는 권한을 판정하지 않는다 — 부분 결과를 허용하지 않는 경로를 쓴다")
         void refusesTruncatedList() {
-            given(apiClient.getUserInstallationsComplete(TOKEN))
+            given(apiClient.getUserInstallationsComplete(TOKEN, budget))
                     .willThrow(new GithubApiException(ErrorCode.GITHUB_REPOSITORY_LIST_INCOMPLETE));
 
             assertThatThrownBy(() -> service.accessibleSnapshots(USER_ID, Set.of(1L)))
@@ -274,7 +331,22 @@ class GithubInstallationServiceTest {
                     .hasFieldOrPropertyWithValue("errorCode",
                             ErrorCode.GITHUB_REPOSITORY_LIST_INCOMPLETE);
 
-            verify(apiClient, never()).getUserInstallations(TOKEN);
+            verify(apiClient, never()).getUserInstallations(TOKEN, budget);
+        }
+
+        @Test
+        @DisplayName("권한 대조 중 사라진 installation 뒤의 정상 저장소를 계속 찾는다")
+        void continuesAfterUnavailableInstallation() {
+            given(apiClient.getUserInstallationsComplete(TOKEN, budget)).willReturn(List.of(
+                    installation(PERSONAL_INSTALLATION, "wb", "User"),
+                    installation(ORG_INSTALLATION, "galpiii", "Organization")));
+            given(apiClient.getInstallationRepositoriesComplete(
+                    TOKEN, PERSONAL_INSTALLATION, budget))
+                    .willThrow(new GithubInstallationUnavailableException());
+            given(apiClient.getInstallationRepositoriesComplete(TOKEN, ORG_INSTALLATION, budget))
+                    .willReturn(List.of(repository(2L, "galpiii/backend", true)));
+
+            assertThat(service.accessibleSnapshots(USER_ID, Set.of(2L))).containsOnlyKeys(2L);
         }
     }
 
@@ -285,32 +357,32 @@ class GithubInstallationServiceTest {
         @Test
         @DisplayName("사용자 설치 목록에 있으면 통과한다")
         void acceptsOwnInstallation() {
-            given(apiClient.getUserInstallationsComplete(TOKEN))
+            given(apiClient.getUserInstallationsComplete(TOKEN, budget))
                     .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
 
             assertThat(service.ownsInstallation(USER_ID, PERSONAL_INSTALLATION)).isTrue();
-            verify(apiClient, times(1)).getUserInstallationsComplete(TOKEN);
+            verify(apiClient, times(1)).getUserInstallationsComplete(TOKEN, budget);
         }
 
         @Test
         @DisplayName("목록에 없으면 재시도한 뒤 거부한다")
         void rejectsForeignInstallationAfterRetries() {
-            given(apiClient.getUserInstallationsComplete(TOKEN))
+            given(apiClient.getUserInstallationsComplete(TOKEN, budget))
                     .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
 
             assertThat(service.ownsInstallation(USER_ID, 999_999L)).isFalse();
-            verify(apiClient, times(3)).getUserInstallationsComplete(TOKEN);
+            verify(apiClient, times(3)).getUserInstallationsComplete(TOKEN, budget);
         }
 
         @Test
         @DisplayName("설치 직후 전파가 늦어도 재조회로 확인한다")
         void retriesUntilPropagated() {
-            given(apiClient.getUserInstallationsComplete(TOKEN))
+            given(apiClient.getUserInstallationsComplete(TOKEN, budget))
                     .willReturn(List.of())
                     .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
 
             assertThat(service.ownsInstallation(USER_ID, PERSONAL_INSTALLATION)).isTrue();
-            verify(apiClient, times(2)).getUserInstallationsComplete(TOKEN);
+            verify(apiClient, times(2)).getUserInstallationsComplete(TOKEN, budget);
         }
     }
 }

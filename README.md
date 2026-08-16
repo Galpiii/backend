@@ -16,7 +16,7 @@ App 설정은 `Settings → Developer settings → GitHub Apps → {App}`에서 
 | **Redirect on update** | **끔** | 켜면 저장소 추가·제거 후에도 setup 콜백이 오는데, 그 경로에는 `state`가 없어 `GITHUB-008`로 끝난다. 저장소 선택 변경은 콜백이 아니라 목록 새로고침으로 반영한다 |
 | **Webhook Active** | **끔** | MVP는 웹훅을 쓰지 않는다. 권한 회수·설치 삭제는 웹훅이 아니라 **API 호출 실패로 감지**한다. 엔드포인트·서명 검증(`X-Hub-Signature-256`)·멱등성 처리는 Phase 2 |
 | **Expire user authorization tokens** | **켬** | 끄면 `expires_in`이 응답에 오지 않아 만료 처리 전체가 무력해진다. 만료를 끄는 것이 더 편해 보이지만 보안상 더 나쁜 선택이다 |
-| Request user authorization (OAuth) during installation | 켬 | 설치와 로그인을 한 흐름으로 잇는다 |
+| **Request user authorization (OAuth) during installation** | **끔** | 켜면 GitHub이 Setup URL을 비활성화하고 OAuth Callback URL로 보내므로 설치 state 검증 흐름이 동작하지 않는다. 로그인은 설치 전에 별도 OAuth 흐름으로 끝낸다 |
 
 ### 권한 (최소)
 
@@ -43,10 +43,11 @@ App 설정은 `Settings → Developer settings → GitHub Apps → {App}`에서 
   서버가 직접 받으려면 Phase 2의 웹훅(`installation.created`)이 필요하다.
 - 권한 회수·설치 삭제가 즉시 반영되지 않는다. `repositories.access_status`를 `INACCESSIBLE`로
   바꾸는 것은 Phase 1C의 수집 경로다. 그전까지 목록은 마지막으로 성공한 조회 결과를 보여준다.
-- 저장소 연결 요청은 사용자의 installation을 순회한다. 요청한 저장소를 모두 찾으면 멈추지만,
-  존재하지 않는 id가 섞이면 끝까지 훑는다. 사용자별 rate limit과 요청 전체 페이지 budget은
-  아직 없다.
-- `GITHUB_MAX_PAGES`는 **호출 한 번당** 상한이다. 요청 전체의 상한이 아니다.
+- 저장소 연결 요청은 사용자의 installation을 순회한다. 요청한 저장소를 모두 찾으면 멈추며,
+  존재하지 않는 id가 섞여도 요청 전체 API 호출 수와 deadline을 넘으면 중단한다. 서버 인스턴스
+  하나에서 동일 사용자의 GitHub 조회도 설정된 개수 이상 병렬 실행되지 않는다.
+- `GITHUB_MAX_PAGES`는 API 한 종류의 페이지 상한이고, `GITHUB_OPERATION_MAX_REQUESTS`와
+  `GITHUB_OPERATION_TIMEOUT`은 설치 목록부터 저장소 목록까지 한 사용자 작업 전체의 상한이다.
 
 ## 환경 변수
 
@@ -58,3 +59,6 @@ App 설정은 `Settings → Developer settings → GitHub Apps → {App}`에서 
 | `GITHUB_APP_SLUG` | 설치 URL(`github.com/apps/{slug}/installations/new`)에 쓴다. `GITHUB_APP_ID`(숫자)와 다르다 |
 | `GITHUB_ALLOWED_REDIRECT_ORIGINS` | `returnTo` 화이트리스트. 비우면 기본 URI로만 보낸다 |
 | `GITHUB_MAX_PAGES` | 페이지네이션 상한. 권한 판정 경로는 이 상한에 걸리면 잘린 목록을 쓰지 않고 `GITHUB-011`로 실패한다 |
+| `GITHUB_OPERATION_MAX_REQUESTS` | 한 사용자 작업이 보낼 수 있는 GitHub API 요청 수. 기본 50 |
+| `GITHUB_OPERATION_TIMEOUT` | 한 사용자 GitHub 작업의 전체 deadline. 기본 30초 |
+| `GITHUB_OPERATION_MAX_CONCURRENT_PER_USER` | 사용자별 동시 GitHub 작업 수. 기본 1 |

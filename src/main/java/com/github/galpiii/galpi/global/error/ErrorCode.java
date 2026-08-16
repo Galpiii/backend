@@ -46,6 +46,14 @@ public enum ErrorCode {
     GITHUB_REPOSITORY_ACCESS_DENIED("GITHUB-010", HttpStatus.FORBIDDEN, "접근 권한이 없는 저장소입니다."),
     GITHUB_REPOSITORY_LIST_INCOMPLETE("GITHUB-011", HttpStatus.BAD_GATEWAY,
             "GitHub 저장소 목록을 끝까지 읽지 못했습니다. 잠시 후 다시 시도해 주세요."),
+    GITHUB_OPERATION_BUDGET_EXCEEDED("GITHUB-012", HttpStatus.SERVICE_UNAVAILABLE,
+            "GitHub 조회 범위가 너무 큽니다. 요청 범위를 줄여 다시 시도해 주세요."),
+    GITHUB_OPERATION_TIMEOUT("GITHUB-013", HttpStatus.GATEWAY_TIMEOUT,
+            "GitHub 조회 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."),
+    GITHUB_OPERATION_IN_PROGRESS("GITHUB-014", HttpStatus.TOO_MANY_REQUESTS,
+            "GitHub 조회가 이미 진행 중입니다. 완료된 뒤 다시 시도해 주세요."),
+    GITHUB_INSTALLATION_UNAVAILABLE("GITHUB-015", HttpStatus.BAD_GATEWAY,
+            "GitHub 설치 정보를 더 이상 조회할 수 없습니다."),
 
     // Project
     PROJECT_NOT_FOUND("PROJECT-001", HttpStatus.NOT_FOUND, "프로젝트를 찾을 수 없습니다."),
