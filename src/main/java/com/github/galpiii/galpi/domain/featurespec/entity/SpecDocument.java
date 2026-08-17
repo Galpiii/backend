@@ -37,6 +37,11 @@ public class SpecDocument extends BaseEntity {
     @Column(nullable = false, length = 20)
     private ExtractionStatus extractionStatus;
 
+    // FAILED일 때만 채움. 그 외 상태에서는 null이어야 한다.
+    @Enumerated(EnumType.STRING)
+    @Column(length = 30)
+    private ExtractionFailureCode failureCode;
+
     @Builder
     private SpecDocument(Project project, User user, String fileName) {
         this.project = project;
