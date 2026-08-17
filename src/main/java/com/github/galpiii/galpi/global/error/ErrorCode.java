@@ -59,7 +59,8 @@ public enum ErrorCode {
     FEATURE_SPEC_PDF_PAGE_LIMIT_EXCEEDED("FEATURE-SPEC-PDF-004", HttpStatus.BAD_REQUEST, "PDF 문서는 100페이지를 초과할 수 없습니다."),
 
     // Feature Spec
-    FEATURE_SPEC_ALREADY_EXISTS("FEATURE-SPEC-EXISTS-001", HttpStatus.CONFLICT, "이미 등록된 기능명세서가 있습니다.");
+    FEATURE_SPEC_ALREADY_EXISTS("FEATURE-SPEC-EXISTS-001", HttpStatus.CONFLICT, "이미 등록된 기능명세서가 있습니다."),
+    FEATURE_SPEC_NOT_ACCESSIBLE("FEATURE-SPEC-ACCESS-001", HttpStatus.NOT_FOUND, "기능명세서를 찾을 수 없거나 접근할 수 없습니다.");
 
     private final String code;
     private final HttpStatus status;
