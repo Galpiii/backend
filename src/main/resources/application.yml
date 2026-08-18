@@ -41,6 +41,13 @@ galpi:
   api-docs:
     enabled: ${API_DOCS_ENABLED:false}
 
+  openai:
+    api-key: ${OPENAI_API_KEY}
+    model: ${OPENAI_MODEL}
+    max-output-tokens: ${OPENAI_MAX_OUTPUT_TOKENS}
+    timeout: ${OPENAI_TIMEOUT}
+    max-attempts: ${OPENAI_MAX_ATTEMPTS}
+
   crypto:
     token:
       current-version: ${TOKEN_ENCRYPTION_CURRENT_VERSION:1}

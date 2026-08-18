@@ -1,0 +1,224 @@
+{
+  "name": "feature_specification_analysis",
+  "strict": true,
+  "schema": {
+    "type": "object",
+    "properties": {
+      "sections": {
+        "type": "array",
+        "description": "기능명세서에서 파악한 기능 분류 섹션 목록",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "description": "서비스 내부에서 기능 분류에 사용할 정리된 섹션명. 장·절 번호 등은 제거한다. 100자를 넘지 않으며 다른 섹션의 title과 중복될 수 없다."
+            },
+            "sourceTitle": {
+              "type": ["string", "null"],
+              "description": "원문에 실제 섹션 제목이 존재하면 해당 제목을 그대로 반환한다. 장·절 번호가 있으면 포함한다. 원문에 대응되는 명시적 섹션이 없고 의미상 새로 분류한 경우 null"
+            },
+            "pageStart": {
+              "type": ["integer", "null"],
+              "description": "원문에 대응되는 섹션이 존재하는 경우 해당 섹션의 시작 페이지. 확인할 수 없거나 새로 분류한 섹션이면 null"
+            },
+            "pageEnd": {
+              "type": ["integer", "null"],
+              "description": "원문에 대응되는 섹션이 존재하는 경우 해당 섹션의 종료 페이지. 확인할 수 없거나 새로 분류한 섹션이면 null"
+            }
+          },
+          "required": [
+            "title",
+            "sourceTitle",
+            "pageStart",
+            "pageEnd"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "features": {
+        "type": "array",
+        "description": "기능명세서에서 추출한 전체 기능 목록",
+        "items": {
+          "type": "object",
+          "properties": {
+            "extractionId": {
+              "type": "string",
+              "description": "한 번의 분석 응답 안에서 기능을 식별하기 위한 임시 ID. 다른 기능을 참조해야 하는 경우 사용하며 DB의 Feature ID와는 별개이다. 응답 전체에서 고유해야 한다."
+            },
+            "name": {
+              "type": "string",
+              "description": "원문을 바탕으로 추출하고 정리한 기능명. 100자를 넘지 않는다."
+            },
+            "section": {
+              "type": ["string", "null"],
+              "description": "기능이 속하는 정리된 섹션명. 값이 존재하는 경우 sections[].title 중 하나와 정확히 일치해야 한다."
+            },
+            "requirements": {
+              "type": "array",
+              "description": "해당 기능의 세부 요구사항 목록",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "description": "원문의 의미를 유지하면서 명확하게 정리한 요구사항"
+                  },
+                  "originalText": {
+                    "type": "string",
+                    "description": "해당 요구사항의 직접 근거가 된 원문 문구"
+                  }
+                },
+                "required": [
+                  "content",
+                  "originalText"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "source": {
+              "type": "object",
+              "description": "해당 기능을 추출한 원문 위치 정보",
+              "properties": {
+                "pageStart": {
+                  "type": ["integer", "null"],
+                  "description": "해당 기능의 직접적인 근거가 시작되는 페이지. 확인할 수 없으면 null"
+                },
+                "pageEnd": {
+                  "type": ["integer", "null"],
+                  "description": "해당 기능의 직접적인 근거가 끝나는 페이지. 확인할 수 없으면 null"
+                }
+              },
+              "required": [
+                "pageStart",
+                "pageEnd"
+              ],
+              "additionalProperties": false
+            },
+            "issues": {
+              "type": "array",
+              "description": "사용자의 확인이 필요한 기능 단위 특이사항 목록. 없으면 빈 배열",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "DUPLICATE_SUSPECTED",
+                      "MISSING_REQUIREMENTS",
+                      "SPLIT_RECOMMENDED",
+                      "SOURCE_REVIEW_REQUIRED",
+                      "SOURCE_CONTENT_CONFLICT"
+                    ]
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "해당 특이사항을 판단한 구체적인 이유"
+                  }
+                },
+                "required": [
+                  "type",
+                  "description"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "duplicateCandidates": {
+              "type": "array",
+              "description": "DUPLICATE_SUSPECTED인 경우 중복 또는 병합을 검토할 대상 기능과 병합 제안. 그렇지 않으면 빈 배열",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "targetExtractionId": {
+                    "type": "string",
+                    "description": "중복 또는 병합 대상으로 제안하는 다른 기능의 extractionId. 현재 기능 자신의 extractionId와 같을 수 없다."
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "두 기능을 중복 또는 병합 후보로 판단한 구체적인 이유"
+                  },
+                  "suggestedMergedName": {
+                    "type": "string",
+                    "description": "두 기능을 병합하는 경우 권장하는 최종 기능명. 기존 기능명 중 하나가 적절하면 그대로 사용할 수 있고, 필요한 경우 두 기능을 포괄하는 이름을 제안할 수 있다. 100자를 넘지 않는다."
+                  },
+                  "suggestedSection": {
+                    "type": "string",
+                    "description": "병합 후 권장 섹션명. 기존 sections[].title 중 적절한 섹션을 우선 사용하고, 기존 섹션이 명백히 부적절한 경우에만 새로운 섹션명을 제안한다. 100자를 넘지 않는다."
+                  }
+                },
+                "required": [
+                  "targetExtractionId",
+                  "reason",
+                  "suggestedMergedName",
+                  "suggestedSection"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "splitSuggestion": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "SPLIT_RECOMMENDED인 경우 현재 기능의 요구사항들을 여러 독립적인 기능으로 분리하기 위한 제안. 그렇지 않으면 null",
+              "properties": {
+                "suggestedFeatures": {
+                  "type": "array",
+                  "description": "현재 기능을 분리했을 때 생성할 것을 제안하는 기능 목록. 최소 2개 이상이어야 한다.",
+                  "minItems": 2,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "suggestedName": {
+                        "type": "string",
+                        "description": "분리 후 생성할 것을 제안하는 기능명. 100자를 넘지 않는다."
+                      },
+                      "requirementIndexes": {
+                        "type": "array",
+                        "description": "현재 feature.requirements 배열에서 이 기능에 포함할 요구사항의 0-based index 목록",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "suggestedSection": {
+                        "type": "string",
+                        "description": "분리 후 권장 섹션명. 현재 섹션이 분리된 기능에도 적절하면 기존 섹션을 우선 유지하고, 기존 섹션으로 분류하기 명백히 부적절한 경우에만 새로운 섹션명을 제안한다. 100자를 넘지 않는다."
+                      }
+                    },
+                    "required": [
+                      "suggestedName",
+                      "requirementIndexes",
+                      "suggestedSection"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "suggestedFeatures"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "extractionId",
+            "name",
+            "section",
+            "requirements",
+            "source",
+            "issues",
+            "duplicateCandidates",
+            "splitSuggestion"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "sections",
+      "features"
+    ],
+    "additionalProperties": false
+  }
+}

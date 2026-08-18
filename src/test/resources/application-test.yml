@@ -33,6 +33,15 @@ spring:
       timeout: 3s
 
 galpi:
+  # 테스트는 OpenAI를 실제로 호출하지 않는다. 클라이언트 Bean 생성에 필요한 값만 채운다.
+  openai:
+    api-key: test-api-key
+    model: gpt-5
+    max-output-tokens: 64000
+    timeout: 5m
+    max-attempts: 3
+    retry-backoff: 1ms
+
   crypto:
     token:
       current-version: 1
