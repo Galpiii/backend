@@ -69,7 +69,7 @@ class GithubOAuthServiceTest {
 
     private static GithubAppProperties githubProperties() {
         return new GithubAppProperties(
-                "12345", "Iv1.client", "client-secret", "-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
+                "12345", "galpi-app", "Iv1.client", "client-secret", "-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
                 "https://api.galpi.dev", "2022-11-28", "https://api.github.com", "https://github.com",
                 "Galpi", List.of("https://galpi.dev"), "https://galpi.dev/auth/callback",
                 Duration.ofSeconds(5), Duration.ofSeconds(15), 2, 10);

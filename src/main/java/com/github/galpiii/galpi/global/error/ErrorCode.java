@@ -32,6 +32,7 @@ public enum ErrorCode {
     SESSION_EXPIRED("AUTH-009", HttpStatus.UNAUTHORIZED, "세션 최대 유지 기간이 지났습니다. 다시 로그인해 주세요."),
     CSRF_HEADER_REQUIRED("AUTH-010", HttpStatus.FORBIDDEN, "이 요청에는 X-Galpi-Request 헤더가 필요합니다."),
 
+    // Github
     GITHUB_REAUTH_REQUIRED("GITHUB-001", HttpStatus.UNAUTHORIZED, "GitHub 재연결이 필요합니다."),
     GITHUB_OAUTH_STATE_INVALID("GITHUB-002", HttpStatus.BAD_REQUEST, "유효하지 않거나 만료된 state입니다."),
     GITHUB_OAUTH_CODE_REUSED("GITHUB-003", HttpStatus.BAD_REQUEST, "이미 사용된 인증 코드입니다."),
@@ -39,9 +40,25 @@ public enum ErrorCode {
     GITHUB_API_ERROR("GITHUB-005", HttpStatus.BAD_GATEWAY, "GitHub API 호출에 실패했습니다."),
     GITHUB_RATE_LIMITED("GITHUB-006", HttpStatus.TOO_MANY_REQUESTS, "GitHub API 호출 한도를 초과했습니다."),
     GITHUB_REDIRECT_NOT_ALLOWED("GITHUB-007", HttpStatus.BAD_REQUEST, "허용되지 않은 리다이렉트 대상입니다."),
+    GITHUB_INSTALL_NOT_STARTED("GITHUB-008", HttpStatus.BAD_REQUEST, "설치를 시작한 기록이 없습니다."),
+    // GITHUB-009는 비어 있다. 쓰이지 않던 GITHUB_INSTALLATION_NOT_VERIFIED가 있던 자리다.
+    // 설치 미확인은 에러가 아니라 콜백 리다이렉트의 installation=unverified로 나가므로 코드가 필요 없다.
+    GITHUB_REPOSITORY_ACCESS_DENIED("GITHUB-010", HttpStatus.FORBIDDEN, "접근 권한이 없는 저장소입니다."),
+    GITHUB_REPOSITORY_LIST_INCOMPLETE("GITHUB-011", HttpStatus.BAD_GATEWAY,
+            "GitHub 저장소 목록을 끝까지 읽지 못했습니다. 잠시 후 다시 시도해 주세요."),
+    GITHUB_OPERATION_BUDGET_EXCEEDED("GITHUB-012", HttpStatus.SERVICE_UNAVAILABLE,
+            "GitHub 조회 범위가 너무 큽니다. 요청 범위를 줄여 다시 시도해 주세요."),
+    GITHUB_OPERATION_TIMEOUT("GITHUB-013", HttpStatus.GATEWAY_TIMEOUT,
+            "GitHub 조회 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."),
+    GITHUB_OPERATION_IN_PROGRESS("GITHUB-014", HttpStatus.TOO_MANY_REQUESTS,
+            "GitHub 조회가 이미 진행 중입니다. 완료된 뒤 다시 시도해 주세요."),
+    GITHUB_INSTALLATION_UNAVAILABLE("GITHUB-015", HttpStatus.BAD_GATEWAY,
+            "GitHub 설치 정보를 더 이상 조회할 수 없습니다."),
 
     // Project
     PROJECT_NOT_FOUND("PROJECT-001", HttpStatus.NOT_FOUND, "프로젝트를 찾을 수 없습니다."),
+    PROJECT_REPOSITORY_NOT_FOUND("PROJECT-002", HttpStatus.NOT_FOUND, "프로젝트에 연결된 저장소가 아닙니다."),
+    PROJECT_REPOSITORY_ALREADY_LINKED("PROJECT-003", HttpStatus.CONFLICT, "이미 추가된 저장소입니다."),
 
     // Feature Spec File
     FEATURE_SPEC_FILE_EMPTY("FEATURE-SPEC-FILE-001", HttpStatus.BAD_REQUEST, "업로드된 파일이 비어 있습니다."),

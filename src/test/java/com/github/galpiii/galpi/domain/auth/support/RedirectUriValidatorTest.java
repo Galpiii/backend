@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class RedirectUriValidatorTest {
 
     private final RedirectUriValidator validator = new RedirectUriValidator(new GithubAppProperties(
-            "12345", "Iv1.client", "secret", "pem", "https://api.galpi.dev",
+            "12345", "galpi-app", "Iv1.client", "secret", "pem", "https://api.galpi.dev",
             "2022-11-28", "https://api.github.com", "https://github.com", "Galpi",
             List.of("https://galpi.dev", "http://localhost:3000"),
             "https://galpi.dev/auth/callback",

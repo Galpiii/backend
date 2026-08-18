@@ -46,6 +46,14 @@ public class RedirectUriValidator {
         return buildFrontendUrl("error", errorCode, returnTo);
     }
 
+    /**
+     * 오류가 아닌 결과를 프론트로 넘긴다. 설치 콜백처럼 "성공/실패"가 아니라 "확인됨/확인 안 됨"
+     * 같은 상태를 전달해야 하는 경우에 쓴다.
+     */
+    public String buildFrontendResult(String paramName, String value, String returnTo) {
+        return buildFrontendUrl(paramName, value, returnTo);
+    }
+
     private String buildFrontendUrl(String paramName, String paramValue, String returnTo) {
         StringBuilder url = new StringBuilder(properties.defaultRedirectUri());
         url.append(properties.defaultRedirectUri().contains("?") ? '&' : '?')

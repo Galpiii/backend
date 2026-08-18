@@ -61,6 +61,7 @@ galpi:
 
   github:
     app-id: "12345"
+    app-slug: galpi-test-app
     client-id: Iv1.test-client-id
     client-secret: test-client-secret
     base-url: http://localhost:8080
@@ -75,6 +76,11 @@ galpi:
     read-timeout: 15s
     max-retries: 2
     max-pages: 10
+    operation:
+      max-requests: 50
+      timeout: 30s
+      max-concurrent-per-user: 1
+      acquire-timeout: 3s
 
 logging:
   level:

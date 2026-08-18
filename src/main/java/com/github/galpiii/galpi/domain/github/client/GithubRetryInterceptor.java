@@ -22,6 +22,7 @@ public class GithubRetryInterceptor implements ClientHttpRequestInterceptor {
     public ClientHttpResponse intercept(HttpRequest request,
                                         byte[] body,
                                         ClientHttpRequestExecution execution) throws IOException {
+        consumeBudget(request);
         ClientHttpResponse response = execution.execute(request, body);
 
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
@@ -32,9 +33,17 @@ public class GithubRetryInterceptor implements ClientHttpRequestInterceptor {
             sleepBackoff(attempt);
             log.debug("[GitHub] 5xx 재시도 {}/{} uri={}",
                     attempt, maxRetries, TokenMasker.mask(request.getURI().toString()));
+            consumeBudget(request);
             response = execution.execute(request, body);
         }
         return response;
+    }
+
+    private static void consumeBudget(HttpRequest request) {
+        Object value = request.getAttributes().get(GithubRequestBudget.REQUEST_ATTRIBUTE);
+        if (value instanceof GithubRequestBudget budget) {
+            budget.consume();
+        }
     }
 
     private void sleepBackoff(int attempt) {
