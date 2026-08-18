@@ -26,4 +26,15 @@ class SpecDocumentWriter {
                         .build()
         );
     }
+
+    /**
+     * 업로드 접수를 되돌린다.
+     *
+     * <p>분석 제출이 거부되면 분석을 시작조차 못 한 것이므로 행을 남기지 않는다. FAILED로 두면
+     * 사용자는 specDocumentId를 받지 못한 채 중복 등록 검증에 걸려 다시 올릴 수도 없다.
+     */
+    @Transactional
+    void delete(Long specDocumentId) {
+        specDocumentRepository.deleteById(specDocumentId);
+    }
 }

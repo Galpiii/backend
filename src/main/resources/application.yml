@@ -48,6 +48,12 @@ galpi:
     timeout: ${OPENAI_TIMEOUT}
     max-attempts: ${OPENAI_MAX_ATTEMPTS}
 
+  feature-extraction:
+    core-pool-size: ${FEATURE_EXTRACTION_CORE_POOL_SIZE}
+    max-pool-size: ${FEATURE_EXTRACTION_MAX_POOL_SIZE}
+    queue-capacity: ${FEATURE_EXTRACTION_QUEUE_CAPACITY}
+    await-termination: ${FEATURE_EXTRACTION_AWAIT_TERMINATION}
+
   crypto:
     token:
       current-version: ${TOKEN_ENCRYPTION_CURRENT_VERSION:1}

@@ -3,6 +3,7 @@ package com.github.galpiii.galpi.domain.featurespec.service;
 import com.github.galpiii.galpi.ai.dto.FeatureSpecExtractionResult;
 import com.github.galpiii.galpi.domain.featurespec.entity.DuplicateCandidate;
 import com.github.galpiii.galpi.domain.featurespec.entity.ExtractionFailureCode;
+import com.github.galpiii.galpi.domain.featurespec.entity.ExtractionStatus;
 import com.github.galpiii.galpi.domain.featurespec.entity.Feature;
 import com.github.galpiii.galpi.domain.featurespec.entity.FeatureIssue;
 import com.github.galpiii.galpi.domain.featurespec.entity.FeatureIssueType;
@@ -49,6 +50,22 @@ class FeatureExtractionWriter {
     @Transactional
     public void markFailed(Long specDocumentId, ExtractionFailureCode failureCode) {
         specDocument(specDocumentId).markFailed(failureCode);
+    }
+
+    /**
+     * 아직 끝나지 않은 분석을 모두 실패로 정리한다.
+     *
+     * <p>작업 큐가 JVM 힙에 있어 프로세스가 죽으면 대기 중이던 작업이 사라진다. 분석에 쓸 임시
+     * PDF도 함께 사라져 이어서 처리할 방법이 없으므로, 남은 문서는 실패로 표시해 사용자가
+     * 다시 업로드하게 한다.
+     */
+    @Transactional
+    public int failAllInProgress() {
+        return specDocumentRepository.failAll(
+                List.of(ExtractionStatus.PENDING, ExtractionStatus.PROCESSING),
+                ExtractionStatus.FAILED,
+                ExtractionFailureCode.ANALYSIS_FAILED
+        );
     }
 
     @Transactional

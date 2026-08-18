@@ -122,6 +122,27 @@ public interface FeatureSpecApi {
                                                     """
                                     )
                             )
+                    ),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "503",
+                            description = """
+                                    FEATURE-SPEC-EXTRACTION-001: 분석 요청이 몰려 접수할 수 없음
+
+                                    분석 대기열이 가득 차 업로드를 접수하지 못했습니다.
+                                    아무것도 저장되지 않으므로 잠시 후 같은 파일로 다시 업로드하면 됩니다.
+                                    """,
+                            content = @Content(
+                                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                    examples = @ExampleObject(
+                                            name = "분석 대기열 포화",
+                                            value = """
+                                                    {
+                                                      "code": "FEATURE-SPEC-EXTRACTION-001",
+                                                      "message": "분석 요청이 많아 지금은 처리할 수 없습니다. 잠시 후 다시 시도해 주세요."
+                                                    }
+                                                    """
+                                    )
+                            )
                     )
             }
     )

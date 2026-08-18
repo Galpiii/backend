@@ -10,6 +10,7 @@ import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.BadRequestException;
 import com.github.galpiii.galpi.global.error.exception.ConflictException;
+import com.github.galpiii.galpi.global.error.exception.GlobalException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
@@ -32,6 +34,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -52,6 +55,8 @@ class FeatureSpecServiceTest {
     private FeatureSpecFileValidator featureSpecFileValidator;
     @Mock
     private SpecDocumentWriter specDocumentWriter;
+    @Mock
+    private FeatureExtractionService featureExtractionService;
 
     @InjectMocks
     private FeatureSpecService service;
@@ -101,19 +106,37 @@ class FeatureSpecServiceTest {
     }
 
     @Test
-    @DisplayName("성공해도 임시 파일을 지운다")
-    void deletesTempFileOnSuccess() {
+    @DisplayName("분석을 제출하고, 임시 파일은 지우지 않는다 — 분석이 그대로 이어 쓴다")
+    void submitsExtractionAndKeepsTempFile() {
         givenUploadableProject();
         given(featureSpecFileValidator.validate(file)).willReturn(validatedFeatureSpec);
         given(specDocumentWriter.save(PROJECT_ID, USER_ID, FILE_NAME)).willReturn(specDocument());
 
         service.upload(PROJECT_ID, USER_ID, file);
 
+        verify(featureExtractionService).extract(SPEC_DOCUMENT_ID, tempFile);
+        verify(featureSpecFileValidator, never()).deleteTempFile(any());
+    }
+
+    @Test
+    @DisplayName("제출이 거부되면 접수를 되돌리고 503으로 응답한다 — 재업로드가 막히면 안 된다")
+    void failsWhenSubmissionIsRejected() {
+        givenUploadableProject();
+        given(featureSpecFileValidator.validate(file)).willReturn(validatedFeatureSpec);
+        given(specDocumentWriter.save(PROJECT_ID, USER_ID, FILE_NAME)).willReturn(specDocument());
+        willThrow(new TaskRejectedException("큐가 가득 찼습니다."))
+                .given(featureExtractionService).extract(SPEC_DOCUMENT_ID, tempFile);
+
+        assertThatThrownBy(() -> service.upload(PROJECT_ID, USER_ID, file))
+                .isInstanceOf(GlobalException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_SPEC_EXTRACTION_BUSY);
+
+        verify(specDocumentWriter).delete(SPEC_DOCUMENT_ID);
         verify(featureSpecFileValidator).deleteTempFile(tempFile);
     }
 
     @Test
-    @DisplayName("저장이 실패해도 임시 파일을 지운다")
+    @DisplayName("저장이 실패하면 제출하지 않고 임시 파일을 지운다")
     void deletesTempFileWhenSaveFails() {
         givenUploadableProject();
         given(featureSpecFileValidator.validate(file)).willReturn(validatedFeatureSpec);
@@ -124,6 +147,7 @@ class FeatureSpecServiceTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
 
         verify(featureSpecFileValidator).deleteTempFile(tempFile);
+        verify(featureExtractionService, never()).extract(anyLong(), any());
     }
 
     @Test
@@ -136,7 +160,7 @@ class FeatureSpecServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_ACCESSIBLE);
 
         verify(featureSpecFileValidator, never()).validate(any());
-        verify(specDocumentWriter, never()).save(anyLong(), anyLong(), anyString());
+        verify(featureExtractionService, never()).extract(anyLong(), any());
     }
 
     @Test

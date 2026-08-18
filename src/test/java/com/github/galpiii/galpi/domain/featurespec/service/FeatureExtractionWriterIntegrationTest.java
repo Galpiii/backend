@@ -65,6 +65,8 @@ class FeatureExtractionWriterIntegrationTest extends IntegrationTestSupport {
     private TransactionTemplate transactionTemplate;
 
     private Long specDocumentId;
+    private User user;
+    private Project project;
 
     @BeforeEach
     void setUp() {
@@ -72,9 +74,9 @@ class FeatureExtractionWriterIntegrationTest extends IntegrationTestSupport {
         projectRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
 
-        User user = userRepository.save(
+        user = userRepository.save(
                 User.ofGithub(System.nanoTime(), "galpi-tester", "테스터", null, null));
-        Project project = projectRepository.save(Project.builder().name("갈피").user(user).build());
+        project = projectRepository.save(Project.builder().name("갈피").user(user).build());
         SpecDocument specDocument = specDocumentRepository.save(
                 SpecDocument.builder().project(project).user(user).fileName("기능명세서.pdf").build());
 
@@ -231,6 +233,34 @@ class FeatureExtractionWriterIntegrationTest extends IntegrationTestSupport {
     @Nested
     @DisplayName("상태 전이")
     class StatusTransition {
+
+        /**
+         * 재배포로 프로세스가 죽으면 큐에 있던 작업과 임시 PDF가 함께 사라진다. 남은 문서를
+         * 그대로 두면 프론트가 끝나지 않는 상태를 계속 polling한다.
+         */
+        @Test
+        @DisplayName("끝나지 않은 분석을 한 번에 실패로 정리한다")
+        void failsAllInProgress() {
+            SpecDocument pending = specDocumentRepository.save(SpecDocument.builder()
+                    .project(project)
+                    .user(user)
+                    .fileName("대기중.pdf")
+                    .build());
+
+            writer.saveResult(specDocumentId, fullResult());
+
+            int cleaned = writer.failAllInProgress();
+
+            assertThat(cleaned).isEqualTo(1);
+            assertThat(specDocumentRepository.findById(pending.getId()).orElseThrow())
+                    .satisfies(document -> {
+                        assertThat(document.getExtractionStatus()).isEqualTo(ExtractionStatus.FAILED);
+                        assertThat(document.getFailureCode())
+                                .isEqualTo(ExtractionFailureCode.ANALYSIS_FAILED);
+                    });
+            assertThat(reloadSpecDocument().getExtractionStatus())
+                    .isEqualTo(ExtractionStatus.COMPLETED);
+        }
 
         @Test
         @DisplayName("분석을 시작하면 PROCESSING이 된다")

@@ -9,12 +9,16 @@ import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileVali
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.ConflictException;
+import com.github.galpiii.galpi.global.error.exception.GlobalException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.io.File;
 
 @Slf4j
 @Service
@@ -25,8 +29,9 @@ public class FeatureSpecService {
     private final SpecDocumentRepository specDocumentRepository;
     private final FeatureSpecFileValidator featureSpecFileValidator;
     private final SpecDocumentWriter specDocumentWriter;
+    private final FeatureExtractionService featureExtractionService;
 
-    // 기능명세서 업로드
+    // 기능명세서 업로드 (llm 추출 시작)
     public FeatureSpecUploadResponse upload(
             Long projectId,
             Long userId,
@@ -37,23 +42,48 @@ public class FeatureSpecService {
 
         ValidatedFeatureSpec validatedFeatureSpec = featureSpecFileValidator.validate(file);
 
+        SpecDocument savedSpecDocument = saveOrDeleteTempFile(projectId, userId, validatedFeatureSpec);
+
+        submitExtraction(savedSpecDocument.getId(), validatedFeatureSpec.tempFile());
+
+        log.info(
+                "[기능명세서 업로드] 업로드 완료. specDocumentId: {}, projectId: {}, userId: {}",
+                savedSpecDocument.getId(),
+                projectId,
+                userId
+        );
+
+        return FeatureSpecUploadResponse.from(savedSpecDocument);
+    }
+
+    private SpecDocument saveOrDeleteTempFile(
+            Long projectId,
+            Long userId,
+            ValidatedFeatureSpec validatedFeatureSpec
+    ) {
         try {
-            SpecDocument savedSpecDocument = specDocumentWriter.save(
-                    projectId,
-                    userId,
-                    validatedFeatureSpec.fileName()
-            );
-
-            log.info(
-                    "[기능명세서 업로드] 업로드 완료. specDocumentId: {}, projectId: {}, userId: {}",
-                    savedSpecDocument.getId(),
-                    projectId,
-                    userId
-            );
-
-            return FeatureSpecUploadResponse.from(savedSpecDocument);
-        } finally {
+            return specDocumentWriter.save(projectId, userId, validatedFeatureSpec.fileName());
+        } catch (RuntimeException e) {
             featureSpecFileValidator.deleteTempFile(validatedFeatureSpec.tempFile());
+            throw e;
+        }
+    }
+
+    // 제출이 거부되면 비동기 메서드가 실행되지 않아 임시 파일도 접수한 행도 정리할 주체가 없다.
+    // 분석을 시작조차 못 했으므로 접수 자체를 되돌린다.
+    private void submitExtraction(Long specDocumentId, File tempFile) {
+        try {
+            featureExtractionService.extract(specDocumentId, tempFile);
+        } catch (TaskRejectedException e) {
+            log.error(
+                    "[기능명세서 업로드] 분석 작업이 거부되었습니다. specDocumentId: {}",
+                    specDocumentId,
+                    e
+            );
+            specDocumentWriter.delete(specDocumentId);
+            featureSpecFileValidator.deleteTempFile(tempFile);
+
+            throw new GlobalException(ErrorCode.FEATURE_SPEC_EXTRACTION_BUSY);
         }
     }
 

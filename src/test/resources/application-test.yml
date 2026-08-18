@@ -42,6 +42,12 @@ galpi:
     max-attempts: 3
     retry-backoff: 1ms
 
+  feature-extraction:
+    core-pool-size: 1
+    max-pool-size: 1
+    queue-capacity: 5
+    await-termination: 1s
+
   crypto:
     token:
       current-version: 1
