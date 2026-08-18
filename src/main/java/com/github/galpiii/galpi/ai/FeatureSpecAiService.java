@@ -6,7 +6,6 @@ import com.github.galpiii.galpi.ai.config.OpenAiProperties;
 import com.github.galpiii.galpi.ai.dto.FeatureSpecExtractionResult;
 import com.github.galpiii.galpi.ai.exception.FeatureSpecAiException;
 import com.github.galpiii.galpi.ai.exception.RetryableAiException;
-import com.github.galpiii.galpi.ai.exception.FeatureSpecAiException;
 import com.openai.client.OpenAIClient;
 import com.openai.core.JsonValue;
 import com.openai.errors.InternalServerException;
@@ -80,6 +79,7 @@ public class FeatureSpecAiService {
             }
 
             verifyCompleted(response);
+            logUsage(response);
 
             return parse(outputText(response));
         });
@@ -155,6 +155,15 @@ public class FeatureSpecAiService {
         }
 
         throw new RetryableAiException("응답 상태가 완료가 아닙니다. status: " + status);
+    }
+
+    private void logUsage(Response response) {
+        response.usage().ifPresent(usage -> log.info(
+                "[기능명세서 분석] 토큰 사용량. input: {}, output: {}, total: {}",
+                usage.inputTokens(),
+                usage.outputTokens(),
+                usage.totalTokens()
+        ));
     }
 
     private String outputText(Response response) {
