@@ -49,4 +49,18 @@ public class SpecDocument extends BaseEntity {
         this.fileName = fileName;
         this.extractionStatus = ExtractionStatus.PENDING;
     }
+
+    public void markProcessing() {
+        this.extractionStatus = ExtractionStatus.PROCESSING;
+    }
+
+    public void markCompleted() {
+        this.extractionStatus = ExtractionStatus.COMPLETED;
+        this.failureCode = null;
+    }
+
+    public void markFailed(ExtractionFailureCode failureCode) {
+        this.extractionStatus = ExtractionStatus.FAILED;
+        this.failureCode = failureCode;
+    }
 }
