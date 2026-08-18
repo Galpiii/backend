@@ -113,7 +113,7 @@
                   },
                   "description": {
                     "type": "string",
-                    "description": "해당 특이사항을 판단한 구체적인 이유"
+                    "description": "해당 특이사항을 판단한 구체적인 이유. 사용자에게 그대로 보여지므로 원문의 기능 ID 대신 기능명으로 지칭한다."
                   }
                 },
                 "required": [
@@ -135,7 +135,7 @@
                   },
                   "reason": {
                     "type": "string",
-                    "description": "두 기능을 중복 또는 병합 후보로 판단한 구체적인 이유"
+                    "description": "두 기능을 중복 또는 병합 후보로 판단한 구체적인 이유. 사용자에게 그대로 보여지므로 원문의 기능 ID 대신 기능명으로 지칭한다."
                   },
                   "suggestedMergedName": {
                     "type": "string",

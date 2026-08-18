@@ -15,6 +15,11 @@
 
 원문에 기능 ID가 존재하더라도 `extractionId`는 응답 내부 참조용 식별자로 사용합니다.
 
+사용자에게 그대로 보여지는 `issues[].description`과 `duplicateCandidates[].reason`에는 **원문의 기능 ID를 쓰지 않습니다.** 사용자는 원문을 펼쳐 보지 않고 화면만 확인하는 경우가 많아 `AUTH-003` 같은 코드는 의미를 전달하지 못합니다. 다른 기능을 가리킬 때는 추출한 기능명으로 지칭하세요.
+
+* 쓰지 않음: `요구사항이 AUTH-003과 동일함`
+* 사용: `요구사항이 「비밀번호 재설정」과 동일함`
+
 ## 2. Section 및 페이지
 
 * 원문에 명시적인 기능 섹션이 있으면 해당 구조를 우선 사용합니다.
@@ -220,6 +225,7 @@
 * Split 시 모든 requirements를 누락·중복 없이 정확히 한 suggested feature에 배정함
 * `feature.section`이 null이 아니라면 `sections[].title` 중 하나와 정확히 일치함
 * `sections[].title`은 서로 중복되지 않음
+* `issues[].description`과 `duplicateCandidates[].reason`에 원문 기능 ID를 쓰지 않고 기능명으로 지칭함
 * 기능명, `sections[].title`, `suggestedMergedName`, `suggestedName`, `suggestedSection`이 각각 100자를 넘지 않음
 
 정상 기능에 억지로 issue를 만들지는 말되, 위 기준에 명확히 해당하는 문제를 놓치지 마세요.
