@@ -37,8 +37,8 @@ galpi:
   openai:
     api-key: test-api-key
     model: gpt-5
-    max-output-tokens: 64000
-    timeout: 5m
+    max-output-tokens: 128000
+    timeout: 10m
     max-attempts: 3
     retry-backoff: 1ms
 

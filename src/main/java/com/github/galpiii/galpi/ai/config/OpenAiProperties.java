@@ -13,8 +13,8 @@ import java.time.Duration;
 public record OpenAiProperties(
         @NotBlank String apiKey,
         @DefaultValue("gpt-5") String model,
-        @DefaultValue("64000") @Min(1) long maxOutputTokens,
-        @DefaultValue("5m") Duration timeout,
+        @DefaultValue("128000") @Min(1) long maxOutputTokens,
+        @DefaultValue("10m") Duration timeout,
         @DefaultValue("3") @Min(1) int maxAttempts,
         @DefaultValue("1s") Duration retryBackoff
 ) {
