@@ -33,7 +33,8 @@ spring:
       timeout: 3s
 
 galpi:
-  # 테스트는 OpenAI를 실제로 호출하지 않는다. 클라이언트 Bean 생성에 필요한 값만 채운다.
+  # 클라이언트 Bean 생성에 필요한 값만 채운다. 실제 호출은 IntegrationTestSupport가
+  # OpenAIClient를 대체해 막는다 — 이 값들이 진짜 요청에 쓰이는 일은 없다.
   openai:
     api-key: test-api-key
     model: gpt-5

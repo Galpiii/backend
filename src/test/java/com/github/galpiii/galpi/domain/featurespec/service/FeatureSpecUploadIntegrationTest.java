@@ -23,18 +23,22 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.willAnswer;
+import static org.mockito.Mockito.verify;
 
 @DisplayName("기능명세서 업로드 — 실제 Postgres")
 class FeatureSpecUploadIntegrationTest extends IntegrationTestSupport {
@@ -52,6 +56,13 @@ class FeatureSpecUploadIntegrationTest extends IntegrationTestSupport {
 
     @MockitoSpyBean
     private FeatureSpecFileValidator featureSpecFileValidator;
+
+    /**
+     * 분석은 업로드가 끝난 뒤 별도 스레드에서 돈다. 이 클래스가 검증하는 것은 업로드까지이고,
+     * 그 스레드를 살려 두면 다음 테스트가 DB를 비우는 사이에 상태를 써서 서로를 간섭한다.
+     */
+    @MockitoBean
+    private FeatureExtractionService featureExtractionService;
 
     private Long userId;
     private Long projectId;
@@ -109,6 +120,7 @@ class FeatureSpecUploadIntegrationTest extends IntegrationTestSupport {
         assertThat(saved.getExtractionStatus()).isEqualTo(ExtractionStatus.PENDING);
         assertThat(saved.getProject().getId()).isEqualTo(projectId);
         assertThat(saved.getUser().getId()).isEqualTo(userId);
+        verify(featureExtractionService).extract(eq(response.specDocumentId()), any(File.class));
     }
 
     @Test

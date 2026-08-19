@@ -1,5 +1,6 @@
 package com.github.galpiii.galpi.support;
 
+import com.openai.client.OpenAIClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -7,6 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
  * 실제 Postgres와 Redis를 붙인 통합 테스트의 바탕.
@@ -20,6 +22,15 @@ public abstract class IntegrationTestSupport {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    /**
+     * 실제 OpenAI 호출을 원천 차단한다.
+     *
+     * <p>테스트용 키로도 요청은 그대로 나가 매 빌드마다 인증 실패가 쌓인다. 호출하는 쪽을
+     * 대체하는 것은 테스트마다 잊을 수 있으므로 클라이언트 자체를 여기서 막는다.
+     */
+    @MockitoBean
+    private OpenAIClient openAIClient;
 
     /**
      * 테스트마다 DB를 비운다.
