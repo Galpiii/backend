@@ -19,8 +19,8 @@ public interface AnalysisRunRepository extends JpaRepository<AnalysisRun, Long> 
      * 아직 끝나지 않은 작업이 있는지.
      *
      * <p>같은 프로젝트에 작업 두 개가 동시에 돌면 같은 저장소를 두 번 수집하며 서로의 결과를
-     * 덮는다. 완벽한 방어는 아니다 — 두 요청이 정확히 같은 순간에 오면 둘 다 통과할 수 있다.
-     * 그 경우에도 데이터가 깨지지는 않고(수집은 멱등하다) 호출량만 두 배가 된다.
+     * 덮는다. 이 조회는 빠른 실패를 위한 것이고, 동시에 통과하는 경쟁 조건은 DB의
+     * {@code uk_analysis_runs_project_in_flight} 부분 유니크 인덱스가 최종적으로 막는다.
      */
     boolean existsByProjectIdAndStatusIn(Long projectId, Collection<AnalysisRunStatus> statuses);
 
@@ -41,8 +41,8 @@ public interface AnalysisRunRepository extends JpaRepository<AnalysisRun, Long> 
             SELECT id
               FROM analysis_runs
              WHERE status = 'QUEUED'
-               AND (claimed_at IS NULL OR claimed_at < :leaseExpiredBefore)
-             ORDER BY created_at
+                OR (status = 'RUNNING' AND claimed_at < :leaseExpiredBefore)
+             ORDER BY CASE WHEN status = 'QUEUED' THEN 0 ELSE 1 END, created_at
              LIMIT 1
              FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
@@ -51,12 +51,12 @@ public interface AnalysisRunRepository extends JpaRepository<AnalysisRun, Long> 
     /**
      * 고른 작업을 RUNNING으로 넘긴다.
      *
-     * <p>{@code status = 'QUEUED'} 조건을 다시 거는 것은 방어다. 잠금이 이미 경합을 막지만,
-     * 이 조건이 있으면 잠금 없이 불렸을 때도 0을 돌려주고 조용히 넘어간다.
+     * <p>QUEUED 또는 lease가 지난 RUNNING 조건을 다시 거는 것은 방어다. 잠금이 이미 경합을
+     * 막지만, 이 조건이 있으면 잠금 없이 불렸을 때도 잘못된 상태 전이를 막는다.
      *
      * <p>네이티브 갱신이라 {@code @LastModifiedDate}가 동작하지 않는다. {@code updated_at}을
      * 직접 채우지 않으면 이 행만 감사 컬럼이 멈춘다.
-     */
+    */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
             UPDATE analysis_runs
@@ -67,7 +67,22 @@ public interface AnalysisRunRepository extends JpaRepository<AnalysisRun, Long> 
                    started_at = COALESCE(started_at, now()),
                    updated_at = now()
              WHERE id = :id
-               AND status = 'QUEUED'
+               AND (status = 'QUEUED'
+                    OR (status = 'RUNNING' AND claimed_at < :leaseExpiredBefore))
             """, nativeQuery = true)
-    int claim(@Param("id") Long id, @Param("workerId") String workerId);
+    int claim(@Param("id") Long id,
+              @Param("workerId") String workerId,
+              @Param("leaseExpiredBefore") OffsetDateTime leaseExpiredBefore);
+
+    /** 살아 있는 워커가 자신의 lease만 연장한다. 소유자가 달라졌다면 갱신하지 않는다. */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            UPDATE analysis_runs
+               SET claimed_at = now(),
+                   updated_at = now()
+             WHERE id = :id
+               AND status = 'RUNNING'
+               AND claimed_by = :workerId
+            """, nativeQuery = true)
+    int heartbeat(@Param("id") Long id, @Param("workerId") String workerId);
 }

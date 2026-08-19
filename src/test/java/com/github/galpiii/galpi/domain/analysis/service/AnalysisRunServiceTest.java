@@ -27,6 +27,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -186,6 +187,25 @@ class AnalysisRunServiceTest {
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ANALYSIS_ALREADY_RUNNING);
 
             verify(installationService, never()).accessibleSnapshots(anyLong(), any());
+        }
+
+        @Test
+        @DisplayName("동시 요청이 사전 검사를 함께 통과해도 DB 충돌을 409로 변환한다")
+        void mapsConcurrentInsertConflict() {
+            GithubRepository repository =
+                    repository(1L, 11L, "wb/personal", PERSONAL_INSTALLATION);
+            given(repositoryRepository.findAllByProjectId(PROJECT_ID))
+                    .willReturn(List.of(repository));
+            given(installationService.accessibleSnapshots(eq(USER_ID), any()))
+                    .willReturn(accessible(
+                            snapshot(11L, "wb/personal", PERSONAL_INSTALLATION)));
+            given(creator.create(anyLong(), anyLong(), anyList(), any()))
+                    .willThrow(new DataIntegrityViolationException("duplicate active run"));
+
+            assertThatThrownBy(() -> service.create(USER_ID, PROJECT_ID))
+                    .isInstanceOf(ConflictException.class)
+                    .hasFieldOrPropertyWithValue("errorCode",
+                            ErrorCode.ANALYSIS_ALREADY_RUNNING);
         }
     }
 

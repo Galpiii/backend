@@ -18,6 +18,7 @@ import com.github.galpiii.galpi.global.error.exception.ForbiddenException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -82,7 +83,7 @@ public class AnalysisRunService {
                 continue;
             }
             targets.add(new AnalysisRunCreator.TargetSpec(
-                    repository.getId(), snapshot.installationId()));
+                    repository.getId(), snapshot));
             installationSnapshot.put(repository.getGithubRepositoryId(),
                     snapshot.installationId());
         }
@@ -96,7 +97,14 @@ public class AnalysisRunService {
             throw new ForbiddenException(ErrorCode.ANALYSIS_NO_ACCESSIBLE_REPOSITORY);
         }
 
-        Long runId = creator.create(userId, projectId, targets, installationSnapshot);
+        Long runId;
+        try {
+            runId = creator.create(userId, projectId, targets, installationSnapshot);
+        } catch (DataIntegrityViolationException e) {
+            // 권한 재검증 외부 호출 사이에 같은 요청이 들어와도 DB 부분 유니크 인덱스가 마지막으로
+            // 막는다. 제약 이름에 의존하지 않고 이 생성 경로의 충돌을 일관된 409로 바꾼다.
+            throw new ConflictException(ErrorCode.ANALYSIS_ALREADY_RUNNING);
+        }
         return new AnalysisRunCreatedResponse(runId, AnalysisRunStatus.QUEUED, targets.size(),
                 inaccessibleIds.size());
     }

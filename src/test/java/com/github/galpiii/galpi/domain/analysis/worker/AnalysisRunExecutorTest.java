@@ -15,6 +15,7 @@ import com.github.galpiii.galpi.domain.github.client.RateLimitSnapshot;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubRepositoryResponse;
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.entity.GithubRepository;
+import com.github.galpiii.galpi.domain.github.exception.GithubInstallationUnavailableException;
 import com.github.galpiii.galpi.domain.github.exception.GithubRateLimitedException;
 import com.github.galpiii.galpi.domain.github.exception.GithubRepositoryUnavailableException;
 import com.github.galpiii.galpi.domain.github.service.GithubInstallationTokenService;
@@ -162,6 +163,25 @@ class AnalysisRunExecutorTest {
 
             verify(writer).finishRun(RUN_ID, AnalysisRunStatus.FAILED);
         }
+
+        @Test
+        @DisplayName("수집 중 installation token이 거부되면 캐시를 비우고 한 번 재시도한다")
+        void refreshesRejectedInstallationTokenOnce() {
+            givenTargets(target(1L, 11L, "wb/app", PERSONAL_INSTALLATION));
+            given(tokenService.issue(PERSONAL_INSTALLATION, List.of(11L)))
+                    .willReturn("expired_token", "fresh_token");
+            given(repositoryCollector.collect(any()))
+                    .willThrow(new GithubInstallationUnavailableException())
+                    .willReturn(result());
+
+            executor.execute(RUN_ID);
+
+            verify(tokenService).invalidate(PERSONAL_INSTALLATION, List.of(11L));
+            verify(tokenService, org.mockito.Mockito.times(2))
+                    .issue(PERSONAL_INSTALLATION, List.of(11L));
+            verify(writer).completeTarget(eq(1L), any());
+            verify(writer).finishRun(RUN_ID, AnalysisRunStatus.COMPLETED);
+        }
     }
 
     @Nested
@@ -199,7 +219,7 @@ class AnalysisRunExecutorTest {
             givenTargets(
                     target(1L, 11L, "wb/first", PERSONAL_INSTALLATION),
                     target(2L, 22L, "wb/second", PERSONAL_INSTALLATION));
-            given(rateLimitRecorder.latest("core")).willReturn(new RateLimitSnapshot(
+            given(rateLimitRecorder.latest("ghs_token", "core")).willReturn(new RateLimitSnapshot(
                     5000, 40, 4960, Instant.now().plusSeconds(600), "core"));
 
             executor.execute(RUN_ID);
@@ -215,7 +235,7 @@ class AnalysisRunExecutorTest {
         @DisplayName("여유가 있으면 임계 검사에 걸리지 않는다")
         void proceedsWhenLimitHasHeadroom() {
             givenTargets(target(1L, 11L, "wb/first", PERSONAL_INSTALLATION));
-            given(rateLimitRecorder.latest("core")).willReturn(new RateLimitSnapshot(
+            given(rateLimitRecorder.latest("ghs_token", "core")).willReturn(new RateLimitSnapshot(
                     5000, 4800, 200, Instant.now().plusSeconds(600), "core"));
 
             executor.execute(RUN_ID);

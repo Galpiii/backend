@@ -26,6 +26,6 @@ public record AnalysisWorkerProperties(
         @DefaultValue("5s") @NotNull Duration pollInterval,
         @DefaultValue("30m") @NotNull Duration lease,
         @DefaultValue("3") @Min(1) int maxAttempts,
-        @DefaultValue("100") @Min(0) int rateLimitThreshold
+        @DefaultValue("1000") @Min(0) int rateLimitThreshold
 ) {
 }

@@ -5,6 +5,7 @@ import com.github.galpiii.galpi.domain.analysis.entity.AnalysisConfig;
 import com.github.galpiii.galpi.domain.analysis.entity.AnalysisRun;
 import com.github.galpiii.galpi.domain.analysis.entity.AnalysisRunStatus;
 import com.github.galpiii.galpi.domain.analysis.entity.AnalysisRunTarget;
+import com.github.galpiii.galpi.domain.analysis.entity.AnalysisRunTargetStatus;
 import com.github.galpiii.galpi.domain.analysis.repository.AnalysisConfigRepository;
 import com.github.galpiii.galpi.domain.analysis.repository.AnalysisRunTargetRepository;
 import com.github.galpiii.galpi.domain.analysis.service.AnalysisRunWriter;
@@ -74,14 +75,17 @@ public class AnalysisRunExecutor {
             return;
         }
 
-        List<AnalysisRunTarget> targets =
+        List<AnalysisRunTarget> allTargets =
                 targetRepository.findAllWithRepositoryByAnalysisRunId(runId);
-        if (targets.isEmpty()) {
+        if (allTargets.isEmpty()) {
             writer.finishRun(runId, AnalysisRunStatus.COMPLETED);
             return;
         }
 
-        Progress progress = new Progress();
+        Progress progress = Progress.from(allTargets);
+        List<AnalysisRunTarget> targets = allTargets.stream()
+                .filter(AnalysisRunExecutor::isProcessable)
+                .toList();
         Map<Long, List<AnalysisRunTarget>> byInstallation = groupByInstallation(targets);
 
         for (Map.Entry<Long, List<AnalysisRunTarget>> group : byInstallation.entrySet()) {
@@ -121,22 +125,51 @@ public class AnalysisRunExecutor {
             return;
         }
 
-        for (AnalysisRunTarget target : targets) {
+        boolean tokenRefreshed = false;
+        int index = 0;
+        while (index < targets.size()) {
+            AnalysisRunTarget target = targets.get(index);
             if (progress.rateLimited) {
                 markSkipped(target, progress);
+                index++;
                 continue;
             }
             // 403을 맞고 나서 멈추면 절반쯤 수집한 저장소를 버리게 된다. 다음 저장소를
             // 시작하기 전에 남은 호출 수를 보고 미리 접는다.
-            Optional<OffsetDateTime> resumeAt = nearRateLimit();
+            Optional<OffsetDateTime> resumeAt = nearRateLimit(token);
             if (resumeAt.isPresent()) {
                 log.warn("[분석] 남은 호출 수가 임계({}) 이하라 수집을 중단한다 runId={}",
                         properties.rateLimitThreshold(), run.getId());
                 progress.rateLimited(resumeAt.get());
                 markSkipped(target, progress);
+                index++;
                 continue;
             }
-            collectOne(run, target, token, installationId, progress);
+            try {
+                collectOne(run, target, token, installationId, progress);
+                index++;
+            } catch (GithubInstallationUnavailableException e) {
+                if (tokenRefreshed) {
+                    failInstallationTargets(targets.subList(index, targets.size()), e, progress);
+                    return;
+                }
+
+                // 캐시된 토큰이 수집 도중 만료·폐기됐을 수 있다. 정확히 한 번만 새로 발급해
+                // 같은 저장소부터 재시도한다. 계속 401이면 설치 자체의 문제로 확정한다.
+                tokenRefreshed = true;
+                tokenService.invalidate(installationId, githubRepositoryIds);
+                try {
+                    token = tokenService.issue(installationId, githubRepositoryIds);
+                } catch (GithubRateLimitedException rateLimited) {
+                    progress.rateLimited(rateLimited.getRetryAfterSeconds());
+                    markRemainingSkipped(targets.subList(index, targets.size()), progress);
+                    return;
+                } catch (GlobalException unavailable) {
+                    failInstallationTargets(targets.subList(index, targets.size()),
+                            unavailable, progress);
+                    return;
+                }
+            }
         }
     }
 
@@ -147,11 +180,11 @@ public class AnalysisRunExecutor {
      * 저장소 수와 조직 인원에 따라 달라져서, 5,000을 가정하면 큰 조직에서 일찍 멈추고
      * 작은 조직에서는 늦게 멈춘다.
      *
-     * <p>기록은 클라이언트 전역이라 사용자 토큰 호출과 섞일 수 있다. Phase 1의 워커는 한 번에
-     * 하나만 돌기 때문에 직전 값은 사실상 이 작업이 방금 쓴 토큰의 것이다.
+     * <p>토큰의 원문은 저장하지 않고 해시를 키로 삼는다. 사용자 OAuth 호출이나 다른
+     * installation의 응답이 현재 작업의 중단 판단을 오염시키지 않는다.
      */
-    private Optional<OffsetDateTime> nearRateLimit() {
-        RateLimitSnapshot snapshot = rateLimitRecorder.latest(CORE_RESOURCE);
+    private Optional<OffsetDateTime> nearRateLimit(String token) {
+        RateLimitSnapshot snapshot = rateLimitRecorder.latest(token, CORE_RESOURCE);
         if (snapshot == null || snapshot.remaining() == null
                 || snapshot.remaining() > properties.rateLimitThreshold()) {
             return Optional.empty();
@@ -177,6 +210,7 @@ public class AnalysisRunExecutor {
                             repository.getGithubRepositoryId(),
                             config == null ? AnalysisConfig.DEFAULT_PR_LIMIT : config.getPrLimit(),
                             config == null ? null : config.getPrSince(),
+                            config == null ? List.of() : config.getIncludePaths(),
                             config == null ? List.of() : config.getExcludePaths()));
 
             writer.refreshRepositorySnapshot(repository.getId(),
@@ -189,10 +223,12 @@ public class AnalysisRunExecutor {
                     run.getId(), repository.getId(), e.getRetryAfterSeconds());
             progress.rateLimited(e.getRetryAfterSeconds());
             markSkipped(target, progress);
-        } catch (GithubRepositoryUnavailableException | GithubInstallationUnavailableException e) {
+        } catch (GithubRepositoryUnavailableException e) {
             // 저장소 하나가 404여도 나머지는 계속 간다.
             writer.markRepositoryInaccessible(repository.getId());
             failTarget(target, e, progress);
+        } catch (GithubInstallationUnavailableException e) {
+            throw e;
         } catch (GlobalException e) {
             failTarget(target, e, progress);
         } catch (RuntimeException e) {
@@ -210,6 +246,16 @@ public class AnalysisRunExecutor {
         writer.failTarget(target.getId(), e.getErrorCode().getCode(),
                 LogSafe.text(e.getErrorCode().getMessage()));
         progress.failed++;
+    }
+
+    private void failInstallationTargets(List<AnalysisRunTarget> targets, GlobalException e,
+                                         Progress progress) {
+        log.warn("[분석] installation token 재발급 후에도 접근할 수 없어 그룹을 실패 처리한다 "
+                + "repositoryCount={} code={}", targets.size(), e.getErrorCode().getCode());
+        for (AnalysisRunTarget target : targets) {
+            writer.markRepositoryInaccessible(target.getRepository().getId());
+            failTarget(target, e, progress);
+        }
     }
 
     /**
@@ -259,6 +305,11 @@ public class AnalysisRunExecutor {
         return grouped;
     }
 
+    private static boolean isProcessable(AnalysisRunTarget target) {
+        return target.getStatus() == AnalysisRunTargetStatus.PENDING
+                || target.getStatus() == AnalysisRunTargetStatus.COLLECTING;
+    }
+
     private static RepositorySnapshot toSnapshot(GithubRepositoryResponse repository,
                                                  Long installationId) {
         return new RepositorySnapshot(
@@ -279,6 +330,21 @@ public class AnalysisRunExecutor {
         private int skipped;
         private boolean rateLimited;
         private OffsetDateTime resumeAt;
+
+        private static Progress from(List<AnalysisRunTarget> targets) {
+            Progress progress = new Progress();
+            for (AnalysisRunTarget target : targets) {
+                switch (target.getStatus()) {
+                    case COMPLETED -> progress.completed++;
+                    case FAILED -> progress.failed++;
+                    case SKIPPED -> progress.skipped++;
+                    case PENDING, COLLECTING -> {
+                        // 이번 실행이나 stale lease 복구에서 처리한다.
+                    }
+                }
+            }
+            return progress;
+        }
 
         private void rateLimited(long retryAfterSeconds) {
             rateLimited(OffsetDateTime.now().plusSeconds(retryAfterSeconds));

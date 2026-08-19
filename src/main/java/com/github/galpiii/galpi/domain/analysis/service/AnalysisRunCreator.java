@@ -4,6 +4,7 @@ import com.github.galpiii.galpi.domain.analysis.entity.AnalysisRun;
 import com.github.galpiii.galpi.domain.analysis.entity.AnalysisRunTarget;
 import com.github.galpiii.galpi.domain.analysis.repository.AnalysisRunRepository;
 import com.github.galpiii.galpi.domain.analysis.repository.AnalysisRunTargetRepository;
+import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.entity.GithubRepository;
 import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
 import com.github.galpiii.galpi.domain.project.entity.Project;
@@ -17,6 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * 작업과 저장소별 행을 만드는 짧은 트랜잭션.
@@ -50,10 +53,23 @@ public class AnalysisRunCreator {
         AnalysisRun run = runRepository.save(
                 AnalysisRun.queue(project, project.getUser(), installationSnapshot));
 
+        Map<Long, GithubRepository> repositories = repositoryRepository.findAllById(
+                        targets.stream().map(TargetSpec::repositoryId).toList()).stream()
+                .collect(Collectors.toMap(GithubRepository::getId, Function.identity()));
+
         List<AnalysisRunTarget> rows = targets.stream()
-                .map(target -> AnalysisRunTarget.pending(run,
-                        repositoryRepository.getReferenceById(target.repositoryId()),
-                        target.installationId()))
+                .map(target -> {
+                    GithubRepository repository = repositories.get(target.repositoryId());
+                    if (repository == null
+                            || !repository.getProject().getId().equals(projectId)) {
+                        throw new NotFoundException(ErrorCode.PROJECT_REPOSITORY_NOT_FOUND);
+                    }
+                    // 권한 재검증에서 받은 최신 이름·기본 브랜치·installation을 작업 생성과 함께
+                    // 반영한다. 이름이 바뀐 저장소를 과거 owner/name으로 호출하지 않게 한다.
+                    repository.refresh(target.snapshot());
+                    return AnalysisRunTarget.pending(
+                            run, repository, target.snapshot().installationId());
+                })
                 .toList();
         targetRepository.saveAll(rows);
 
@@ -74,6 +90,6 @@ public class AnalysisRunCreator {
                 .forEach(GithubRepository::markInaccessible);
     }
 
-    public record TargetSpec(Long repositoryId, Long installationId) {
+    public record TargetSpec(Long repositoryId, RepositorySnapshot snapshot) {
     }
 }

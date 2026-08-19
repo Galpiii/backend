@@ -8,7 +8,11 @@ import org.springframework.stereotype.Component;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * {@code analysis_runs}를 폴링해 작업을 집어 실행한다.
@@ -64,15 +68,47 @@ public class AnalysisRunWorker {
 
         Long runId = claimed.get();
         log.info("[분석] 작업을 선점했다 runId={} worker={}", runId, workerId);
+        ScheduledExecutorService heartbeatExecutor = newHeartbeatExecutor();
+        long heartbeatMillis = heartbeatInterval(properties.lease()).toMillis();
+        heartbeatExecutor.scheduleWithFixedDelay(
+                () -> heartbeat(runId), heartbeatMillis, heartbeatMillis, TimeUnit.MILLISECONDS);
         try {
             executor.execute(runId);
         } catch (RuntimeException e) {
-            // 여기까지 올라온 예외는 실행기가 처리하지 못한 것이다. 작업이 RUNNING으로 남아
-            // 영영 끝나지 않는 것을 막아야 한다.
+            // 여기까지 올라온 예외는 실행기가 처리하지 못한 것이다. RUNNING 상태와 claimed_at을
+            // 남겨 lease가 만료된 뒤 다른 워커가 이어받게 한다.
             log.error("[분석] 작업 실행이 예상치 못하게 끝났다 runId={} cause={}",
                     runId, e.getClass().getSimpleName());
+        } finally {
+            heartbeatExecutor.shutdownNow();
         }
         return true;
+    }
+
+    private void heartbeat(Long runId) {
+        try {
+            if (!claimer.heartbeat(runId, workerId)) {
+                log.warn("[분석] lease를 연장하지 못했다 runId={} worker={}", runId, workerId);
+            }
+        } catch (RuntimeException e) {
+            // 한 번 실패해도 다음 주기에 다시 갱신한다. DB 장애가 lease 전체보다 길면 다른
+            // 워커가 회수할 수 있고, 그 경우 소유자 조건 때문에 이 워커의 갱신은 거부된다.
+            log.warn("[분석] lease 갱신에 실패했다 runId={} cause={}",
+                    runId, e.getClass().getSimpleName());
+        }
+    }
+
+    private static Duration heartbeatInterval(Duration lease) {
+        long millis = Math.max(1_000, lease.toMillis() / 3);
+        return Duration.ofMillis(millis);
+    }
+
+    private static ScheduledExecutorService newHeartbeatExecutor() {
+        return Executors.newSingleThreadScheduledExecutor(task -> {
+            Thread thread = new Thread(task, "analysis-run-heartbeat");
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 
     /**

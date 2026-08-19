@@ -14,7 +14,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -52,6 +54,8 @@ class AnalysisRunClaimIntegrationTest extends IntegrationTestSupport {
     private ProjectRepository projectRepository;
     @Autowired
     private UserRepository userRepository;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private Project project;
 
@@ -112,7 +116,8 @@ class AnalysisRunClaimIntegrationTest extends IntegrationTestSupport {
     @DisplayName("작업이 둘이면 워커 둘이 서로 다른 작업을 집는다")
     void distributesRunsAcrossWorkers() throws Exception {
         Long first = queueRun();
-        Long second = queueRun();
+        Project secondProject = projectRepository.save(Project.create(project.getUser(), "갈피2"));
+        Long second = queueRun(secondProject);
 
         List<Optional<Long>> results = runConcurrently(
                 () -> claimer.claim("worker-1"),
@@ -134,14 +139,52 @@ class AnalysisRunClaimIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("lease가 지난 RUNNING 작업은 다른 워커가 다시 선점한다")
+    void reclaimsStaleRunningRun() {
+        Long runId = queueRun();
+        claimer.claim("dead-worker");
+        jdbcTemplate.update("""
+                update analysis_runs
+                   set claimed_at = now() - interval '31 minutes'
+                 where id = ?
+                """, runId);
+
+        assertThat(claimer.claim("recovery-worker")).contains(runId);
+        AnalysisRun reclaimed = runRepository.findById(runId).orElseThrow();
+        assertThat(reclaimed.getClaimedBy()).isEqualTo("recovery-worker");
+        assertThat(reclaimed.getAttempts()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("현재 소유 워커의 heartbeat는 lease를 연장하고 다른 워커의 갱신은 거부한다")
+    void renewsLeaseOnlyForOwner() {
+        Long runId = queueRun();
+        claimer.claim("worker-1");
+        jdbcTemplate.update("""
+                update analysis_runs
+                   set claimed_at = now() - interval '20 minutes'
+                 where id = ?
+                """, runId);
+
+        assertThat(claimer.heartbeat(runId, "worker-2")).isFalse();
+        assertThat(claimer.heartbeat(runId, "worker-1")).isTrue();
+        AnalysisRun renewed = runRepository.findById(runId).orElseThrow();
+        assertThat(renewed.getClaimedAt()).isAfter(OffsetDateTime.now().minusMinutes(1));
+    }
+
+    @Test
     @DisplayName("집을 작업이 없으면 빈 값을 돌려준다")
     void returnsEmptyWhenNothingQueued() {
         assertThat(claimer.claim("worker-1")).isEmpty();
     }
 
     private Long queueRun() {
+        return queueRun(project);
+    }
+
+    private Long queueRun(Project targetProject) {
         return runRepository.save(
-                AnalysisRun.queue(project, project.getUser(), Map.of(1L, 100L))).getId();
+                AnalysisRun.queue(targetProject, targetProject.getUser(), Map.of(1L, 100L))).getId();
     }
 
     /**

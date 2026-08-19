@@ -35,12 +35,19 @@ public class AnalysisRunClaimer {
 
         return runRepository.findClaimableId(leaseExpiredBefore)
                 .filter(runId -> {
-                    boolean claimed = runRepository.claim(runId, workerId) > 0;
+                    boolean claimed = runRepository.claim(
+                            runId, workerId, leaseExpiredBefore) > 0;
                     if (!claimed) {
                         // 잠금이 있으니 거의 오지 않는 경로다. 왔다면 상태 전이 가정이 깨진 것이다.
                         log.warn("[분석] 선점 직후 상태가 달라져 건너뛴다 runId={}", runId);
                     }
                     return claimed;
                 });
+    }
+
+    /** 긴 수집 중 정상 워커가 stale로 오인돼 다른 워커에게 재선점되지 않게 한다. */
+    @Transactional
+    public boolean heartbeat(Long runId, String workerId) {
+        return runRepository.heartbeat(runId, workerId) > 0;
     }
 }
