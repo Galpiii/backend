@@ -72,6 +72,7 @@ class FeatureSpecAiServiceTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private FeatureSpecAiService service;
+    private FeatureSpecPrompt prompt;
     private File pdf;
 
     @BeforeEach
@@ -81,13 +82,16 @@ class FeatureSpecAiServiceTest {
 
         pdf = Files.write(tempDir.resolve("spec.pdf"), "pdf".getBytes()).toFile();
 
-        FeatureSpecPrompt prompt = new FeatureSpecPrompt();
+        prompt = new FeatureSpecPrompt();
         prompt.load();
 
-        OpenAiProperties properties = new OpenAiProperties(
-                "test-api-key", "gpt-5", 64000L, Duration.ofMinutes(5), 3, Duration.ofMillis(1));
+        service = new FeatureSpecAiService(openAIClient, properties(Duration.ofMinutes(5)), prompt);
+    }
 
-        service = new FeatureSpecAiService(openAIClient, properties, prompt);
+    private OpenAiProperties properties(Duration analysisBudget) {
+        return new OpenAiProperties(
+                "test-api-key", "gpt-5", 64000L, Duration.ofMinutes(5), 3,
+                Duration.ofMillis(1), analysisBudget);
     }
 
     private void givenUploadSucceeds() {
@@ -248,6 +252,21 @@ class FeatureSpecAiServiceTest {
                 .isInstanceOf(FeatureSpecAiException.class);
 
         verify(responseService, times(1)).create(any(ResponseCreateParams.class));
+    }
+
+    @Test
+    @DisplayName("예산이 끝나면 재시도하지 않는다 — 한 건이 분석 슬롯을 붙잡는 시간을 묶는다")
+    void stopsRetryingWhenBudgetIsSpent() {
+        service = new FeatureSpecAiService(openAIClient, properties(Duration.ofMillis(20)), prompt);
+        given(fileService.create(any(FileCreateParams.class))).willAnswer(invocation -> {
+            Thread.sleep(40);
+            throw mock(RateLimitException.class);
+        });
+
+        assertThatThrownBy(() -> service.analyze(pdf))
+                .isInstanceOf(FeatureSpecAiException.class);
+
+        verify(fileService, times(1)).create(any(FileCreateParams.class));
     }
 
     @Test

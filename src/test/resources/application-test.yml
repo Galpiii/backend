@@ -41,6 +41,7 @@ galpi:
     timeout: 10m
     max-attempts: 3
     retry-backoff: 1ms
+    analysis-budget: 15m
 
   feature-extraction:
     core-pool-size: 1

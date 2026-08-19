@@ -27,6 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
+import java.time.Instant;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -45,20 +46,20 @@ public class FeatureSpecAiService {
     private final OpenAiProperties properties;
     private final FeatureSpecPrompt prompt;
 
-    // 기능명세서에서 기능 추출
     public FeatureSpecExtractionResult analyze(File pdf) {
-        String fileId = uploadPdf(pdf);
+        Instant deadline = Instant.now().plus(properties.analysisBudget());
+        String fileId = uploadPdf(pdf, deadline);
 
         try {
-            return extract(fileId);
+            return extract(fileId, deadline);
         } finally {
             deleteFile(fileId);
         }
     }
 
     // pdf를 OpenAI에 업로드
-    private String uploadPdf(File pdf) {
-        return withRetry("Files API 업로드", () -> {
+    private String uploadPdf(File pdf, Instant deadline) {
+        return withRetry("Files API 업로드", deadline, () -> {
             try {
                 return openAIClient.files().create(fileCreateParams(pdf)).id();
             } catch (RuntimeException e) {
@@ -68,8 +69,8 @@ public class FeatureSpecAiService {
     }
 
     // 분석 요청 및 결과 반환
-    private FeatureSpecExtractionResult extract(String fileId) {
-        return withRetry("Responses API 호출", () -> {
+    private FeatureSpecExtractionResult extract(String fileId, Instant deadline) {
+        return withRetry("Responses API 호출", deadline, () -> {
             Response response;
 
             try {
@@ -191,10 +192,20 @@ public class FeatureSpecAiService {
         return new FeatureSpecAiException("OpenAI 호출에 실패했습니다.", e);
     }
 
-    private <T> T withRetry(String operation, Supplier<T> action) {
+    private <T> T withRetry(String operation, Instant deadline, Supplier<T> action) {
         RuntimeException lastFailure = null;
 
         for (int attempt = 1; attempt <= properties.maxAttempts(); attempt++) {
+            if (Instant.now().isAfter(deadline)) {
+                log.warn(
+                        "[기능명세서 분석] 분석 예산이 끝나 {}를 더 시도하지 않습니다. attempt: {}/{}",
+                        operation,
+                        attempt,
+                        properties.maxAttempts()
+                );
+                throw new FeatureSpecAiException(operation + "가 분석 예산 안에 끝나지 않았습니다.", lastFailure);
+            }
+
             try {
                 return action.get();
             } catch (RetryableAiException e) {

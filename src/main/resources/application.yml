@@ -47,6 +47,7 @@ galpi:
     max-output-tokens: ${OPENAI_MAX_OUTPUT_TOKENS}
     timeout: ${OPENAI_TIMEOUT}
     max-attempts: ${OPENAI_MAX_ATTEMPTS}
+    analysis-budget: ${OPENAI_ANALYSIS_BUDGET}
 
   feature-extraction:
     core-pool-size: ${FEATURE_EXTRACTION_CORE_POOL_SIZE}
