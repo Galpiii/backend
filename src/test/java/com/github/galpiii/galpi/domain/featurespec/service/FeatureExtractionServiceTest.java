@@ -14,6 +14,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -52,7 +53,8 @@ class FeatureExtractionServiceTest {
                 featureSpecAiService,
                 new FeatureExtractionResultNormalizer(),
                 featureExtractionWriter,
-                featureSpecFileValidator
+                featureSpecFileValidator,
+                new ThreadPoolTaskExecutor()
         );
 
         pdf = Files.write(tempDir.resolve("spec.pdf"), "pdf".getBytes()).toFile();

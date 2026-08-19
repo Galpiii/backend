@@ -96,6 +96,19 @@ class FeatureSpecServiceTest {
     }
 
     @Test
+    @DisplayName("분석 큐가 꽉 차면 PDF를 파싱하기 전에 거절한다")
+    void rejectsBeforeParsingWhenQueueIsFull() {
+        givenUploadableProject();
+        given(featureExtractionService.isBusy()).willReturn(true);
+
+        assertThatThrownBy(() -> service.upload(PROJECT_ID, USER_ID, file))
+                .isInstanceOf(GlobalException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_SPEC_EXTRACTION_BUSY);
+
+        verify(featureSpecFileValidator, never()).validate(any());
+    }
+
+    @Test
     @DisplayName("업로드에 성공하면 PENDING 상태로 접수 정보를 돌려준다")
     void returnsPendingDocumentOnSuccess() {
         givenUploadableProject();

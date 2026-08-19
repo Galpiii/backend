@@ -39,6 +39,7 @@ public class FeatureSpecService {
     ) {
         verifyProjectOwner(projectId, userId);
         verifyNoRegisteredSpecDocument(projectId);
+        verifyExtractionCapacity(projectId);
 
         ValidatedFeatureSpec validatedFeatureSpec = featureSpecFileValidator.validate(file);
 
@@ -115,6 +116,14 @@ public class FeatureSpecService {
                     userId
             );
             throw new NotFoundException(ErrorCode.PROJECT_NOT_FOUND);
+        }
+    }
+
+    // 어차피 거절할 요청에 임시 파일 쓰기와 PDF 파싱 비용을 들이지 않는다.
+    private void verifyExtractionCapacity(Long projectId) {
+        if (featureExtractionService.isBusy()) {
+            log.warn("[기능명세서 업로드] 분석 큐가 가득 차 업로드를 거절합니다. projectId: {}", projectId);
+            throw new GlobalException(ErrorCode.FEATURE_SPEC_EXTRACTION_BUSY);
         }
     }
 

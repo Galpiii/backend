@@ -9,9 +9,11 @@ import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileVali
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
+import java.util.concurrent.ThreadPoolExecutor;
 
 @Slf4j
 @Service
@@ -22,6 +24,7 @@ public class FeatureExtractionService {
     private final FeatureExtractionResultNormalizer normalizer;
     private final FeatureExtractionWriter featureExtractionWriter;
     private final FeatureSpecFileValidator featureSpecFileValidator;
+    private final ThreadPoolTaskExecutor featureExtractionExecutor;
 
     @Async(FeatureExtractionAsyncConfig.EXECUTOR)
     public void extract(Long specDocumentId, File pdf) {
@@ -67,5 +70,13 @@ public class FeatureExtractionService {
                     e
             );
         }
+    }
+
+    // 분석을 더 받을 수 없는 상태인지 확인
+    public boolean isBusy() {
+        ThreadPoolExecutor pool = featureExtractionExecutor.getThreadPoolExecutor();
+
+        return pool.getActiveCount() >= pool.getMaximumPoolSize()
+                && pool.getQueue().remainingCapacity() == 0;
     }
 }
