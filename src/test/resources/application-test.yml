@@ -88,11 +88,13 @@ galpi:
     max-entry-count: 20000
     max-file-size: 1MB
     max-total-content-size: 20MB
+    max-pull-request-content-size: 20MB
     max-redirects: 3
     download-timeout: 120s
     max-pull-request-file-pages: 30
     max-pull-request-commit-pages: 30
     max-pull-request-list-pages: 30
+    max-pull-request-api-requests: 930
 
   analysis:
     worker:
@@ -102,6 +104,7 @@ galpi:
       poll-interval: 5s
       lease: 30m
       max-attempts: 3
+      rate-limit-threshold: 1000
 
 logging:
   level:

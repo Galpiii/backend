@@ -97,11 +97,13 @@ galpi:
     max-entry-count: ${COLLECTION_MAX_ENTRY_COUNT:20000}
     max-file-size: ${COLLECTION_MAX_FILE_SIZE:1MB}
     max-total-content-size: ${COLLECTION_MAX_TOTAL_CONTENT_SIZE:20MB}
+    max-pull-request-content-size: ${COLLECTION_MAX_PR_CONTENT_SIZE:20MB}
     max-redirects: ${COLLECTION_MAX_REDIRECTS:3}
     download-timeout: ${COLLECTION_DOWNLOAD_TIMEOUT:120s}
     max-pull-request-file-pages: ${COLLECTION_MAX_PR_FILE_PAGES:30}
     max-pull-request-commit-pages: ${COLLECTION_MAX_PR_COMMIT_PAGES:30}
     max-pull-request-list-pages: ${COLLECTION_MAX_PR_LIST_PAGES:30}
+    max-pull-request-api-requests: ${COLLECTION_MAX_PR_API_REQUESTS:930}
 
   analysis:
     worker:
@@ -111,6 +113,7 @@ galpi:
       poll-interval: ${ANALYSIS_WORKER_POLL_INTERVAL:5s}
       lease: ${ANALYSIS_WORKER_LEASE:30m}
       max-attempts: ${ANALYSIS_WORKER_MAX_ATTEMPTS:3}
+      rate-limit-threshold: ${ANALYSIS_WORKER_RATE_LIMIT_THRESHOLD:1000}
 
 springdoc:
   api-docs:

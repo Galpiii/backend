@@ -62,9 +62,9 @@ class PullRequestCollectorTest {
                 new SecretContentScanner(), properties());
         given(exclusionRepository.findExcludedNumbersByRepositoryId(anyLong()))
                 .willReturn(List.of());
-        given(client.listFiles(anyString(), anyString(), anyString(), anyInt()))
+        given(client.listFiles(anyString(), anyString(), anyString(), anyInt(), any()))
                 .willReturn(new GithubCollectionClient.PagedResult<>(List.of(), false));
-        given(client.listCommits(anyString(), anyString(), anyString(), anyInt()))
+        given(client.listCommits(anyString(), anyString(), anyString(), anyInt(), any()))
                 .willReturn(new GithubCollectionClient.PagedResult<>(List.of(), false));
     }
 
@@ -84,7 +84,7 @@ class PullRequestCollectorTest {
             assertThat(result.pullRequests())
                     .extracting(CollectedPullRequest::number)
                     .containsExactly(1, 3);
-            verify(client, never()).getPullRequest(TOKEN, OWNER, REPO, 2);
+            verify(client, never()).getPullRequest(eq(TOKEN), eq(OWNER), eq(REPO), eq(2), any());
         }
 
         @Test
@@ -154,7 +154,8 @@ class PullRequestCollectorTest {
         @DisplayName("삭제된 계정이 작성한 PR도 오류 없이 수집한다")
         void collectsPullRequestFromDeletedAccount() {
             givenListPage(merged(1));
-            given(client.getPullRequest(TOKEN, OWNER, REPO, 1)).willReturn(detail(1, null));
+            given(client.getPullRequest(eq(TOKEN), eq(OWNER), eq(REPO), eq(1), any()))
+                    .willReturn(detail(1, null));
 
             PullRequestCollector.PullRequestCollectionResult result = collect(300, null);
 
@@ -170,7 +171,7 @@ class PullRequestCollectorTest {
         @DisplayName("PR 본문의 가짜 토큰을 마스킹해서 저장한다")
         void masksSecretInBody() {
             givenListPage(merged(1));
-            given(client.getPullRequest(TOKEN, OWNER, REPO, 1))
+            given(client.getPullRequest(eq(TOKEN), eq(OWNER), eq(REPO), eq(1), any()))
                     .willReturn(detailWithBody(1, "배포 토큰: " + FAKE_GITHUB_TOKEN));
 
             collect(300, null);
@@ -188,7 +189,7 @@ class PullRequestCollectorTest {
         void masksSecretInCommitMessage() {
             givenListPage(merged(1));
             givenDetails(1);
-            given(client.listCommits(TOKEN, OWNER, REPO, 1)).willReturn(
+            given(client.listCommits(eq(TOKEN), eq(OWNER), eq(REPO), eq(1), any())).willReturn(
                     new GithubCollectionClient.PagedResult<>(List.of(commit("abc123",
                             "fix: 토큰 " + FAKE_GITHUB_TOKEN + " 제거")), false));
 
@@ -201,6 +202,26 @@ class PullRequestCollectorTest {
                     .doesNotContain(FAKE_GITHUB_TOKEN)
                     .contains("***");
         }
+
+        @Test
+        @DisplayName("PR patch의 가짜 토큰을 마스킹해서 파이프라인에 넘긴다")
+        void masksSecretInPatch() {
+            givenListPage(merged(1));
+            givenDetails(1);
+            given(client.listFiles(eq(TOKEN), eq(OWNER), eq(REPO), eq(1), any())).willReturn(
+                    new GithubCollectionClient.PagedResult<>(List.of(
+                            new GithubPullRequestFileResponse("deploy.sh", null, "modified",
+                                    1, 0, 1, "+TOKEN=" + FAKE_GITHUB_TOKEN)), false));
+
+            PullRequestCollector.PullRequestCollectionResult result = collect(300, null);
+
+            CollectedPullRequest pullRequest = result.pullRequests().getFirst();
+            assertThat(pullRequest.files().getFirst().patch())
+                    .doesNotContain(FAKE_GITHUB_TOKEN)
+                    .contains("***");
+            assertThat(pullRequest.incompleteReasons())
+                    .contains(IncompleteReason.SECRET_REDACTED);
+        }
     }
 
     @Nested
@@ -212,7 +233,7 @@ class PullRequestCollectorTest {
         void keepsPatchOutOfPersistedData() {
             givenListPage(merged(1));
             givenDetails(1);
-            given(client.listFiles(TOKEN, OWNER, REPO, 1)).willReturn(
+            given(client.listFiles(eq(TOKEN), eq(OWNER), eq(REPO), eq(1), any())).willReturn(
                     new GithubCollectionClient.PagedResult<>(List.of(new GithubPullRequestFileResponse(
                             "src/App.java", null, "modified", 3, 1, 4,
                             "@@ -1 +1 @@\n-old\n+new")), false));
@@ -234,7 +255,7 @@ class PullRequestCollectorTest {
         void recordsPatchOmitted() {
             givenListPage(merged(1));
             givenDetails(1);
-            given(client.listFiles(TOKEN, OWNER, REPO, 1)).willReturn(
+            given(client.listFiles(eq(TOKEN), eq(OWNER), eq(REPO), eq(1), any())).willReturn(
                     new GithubCollectionClient.PagedResult<>(List.of(new GithubPullRequestFileResponse(
                             "assets/logo.png", null, "added", 0, 0, 0, null)), false));
 
@@ -249,13 +270,56 @@ class PullRequestCollectorTest {
         void recordsFileLimitExceeded() {
             givenListPage(merged(1));
             givenDetails(1);
-            given(client.listFiles(TOKEN, OWNER, REPO, 1)).willReturn(
+            given(client.listFiles(eq(TOKEN), eq(OWNER), eq(REPO), eq(1), any())).willReturn(
                     new GithubCollectionClient.PagedResult<>(List.of(), true));
 
             PullRequestCollector.PullRequestCollectionResult result = collect(300, null);
 
             assertThat(result.pullRequests().getFirst().incompleteReasons())
                     .contains(IncompleteReason.FILE_LIMIT_EXCEEDED);
+        }
+
+        @Test
+        @DisplayName("커밋 목록이 페이지 상한에 걸리면 COMMIT_LIMIT_EXCEEDED를 기록한다")
+        void recordsCommitLimitExceeded() {
+            givenListPage(merged(1));
+            givenDetails(1);
+            given(client.listCommits(eq(TOKEN), eq(OWNER), eq(REPO), eq(1), any())).willReturn(
+                    new GithubCollectionClient.PagedResult<>(List.of(), true));
+
+            PullRequestCollector.PullRequestCollectionResult result = collect(300, null);
+
+            assertThat(result.pullRequests().getFirst().incompleteReasons())
+                    .contains(IncompleteReason.COMMIT_LIMIT_EXCEEDED);
+        }
+
+        @Test
+        @DisplayName("파이프라인 PR 문자열 총량을 넘으면 내용을 버리고 사유를 기록한다")
+        void boundsPipelineContent() {
+            collector = new PullRequestCollector(client, writer, exclusionRepository,
+                    new SecretContentScanner(), properties(DataSize.ofBytes(3), 900));
+            givenListPage(merged(1));
+            givenDetails(1);
+
+            PullRequestCollector.PullRequestCollectionResult result = collect(300, null);
+
+            assertThat(result.pullRequests().getFirst().title()).isEmpty();
+            assertThat(result.pullRequests().getFirst().incompleteReasons())
+                    .contains(IncompleteReason.PR_CONTENT_LIMIT);
+        }
+
+        @Test
+        @DisplayName("저장소 PR API 요청 budget이 소진되면 나머지 수집을 중단한다")
+        void boundsApiRequests() {
+            givenListPage(merged(1));
+            givenDetails(1);
+            given(client.listCommits(eq(TOKEN), eq(OWNER), eq(REPO), eq(1), any()))
+                    .willThrow(new GithubCollectionClient.RequestBudgetExceededException());
+
+            PullRequestCollector.PullRequestCollectionResult result = collect(300, null);
+
+            assertThat(result.collectedCount()).isZero();
+            assertThat(result.incompleteReasons()).contains(IncompleteReason.PR_REQUEST_LIMIT);
         }
     }
 
@@ -265,13 +329,13 @@ class PullRequestCollectorTest {
     }
 
     private void givenListPage(GithubPullRequestResponse... items) {
-        given(client.listClosedPullRequests(eq(TOKEN), eq(OWNER), eq(REPO), any()))
+        given(client.listClosedPullRequests(eq(TOKEN), eq(OWNER), eq(REPO), any(), any()))
                 .willReturn(new GithubCollectionClient.GithubPage<>(List.of(items), null));
     }
 
     private void givenDetails(int... numbers) {
         for (int number : numbers) {
-            given(client.getPullRequest(TOKEN, OWNER, REPO, number))
+            given(client.getPullRequest(eq(TOKEN), eq(OWNER), eq(REPO), eq(number), any()))
                     .willReturn(detail(number, user()));
         }
     }
@@ -326,8 +390,14 @@ class PullRequestCollectorTest {
     }
 
     private static CollectionProperties properties() {
+        return properties(DataSize.ofMegabytes(20), 900);
+    }
+
+    private static CollectionProperties properties(DataSize maxPullRequestContentSize,
+                                                   int maxPullRequestApiRequests) {
         return new CollectionProperties(DataSize.ofMegabytes(200), DataSize.ofGigabytes(1),
-                20_000, DataSize.ofMegabytes(1), DataSize.ofMegabytes(20), 3,
-                Duration.ofSeconds(120), 30, 30, 30);
+                20_000, DataSize.ofMegabytes(1), DataSize.ofMegabytes(20),
+                maxPullRequestContentSize, 3, Duration.ofSeconds(120), 30, 30, 30,
+                maxPullRequestApiRequests);
     }
 }

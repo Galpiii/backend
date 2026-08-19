@@ -81,22 +81,32 @@ public class GithubCollectionClient {
     public GithubPage<GithubPullRequestResponse> listClosedPullRequests(String token, String owner,
                                                                         String repo,
                                                                         String nextUri) {
+        return listClosedPullRequests(token, owner, repo, nextUri, null);
+    }
+
+    public GithubPage<GithubPullRequestResponse> listClosedPullRequests(
+            String token, String owner, String repo, String nextUri, RequestBudget budget) {
         String uri = nextUri != null ? nextUri
                 : repositoryPath(owner, repo) + "/pulls?state=closed&sort=updated"
                         + "&direction=desc&per_page=" + PER_PAGE;
-        return page(uri, token, PR_LIST);
+        return page(uri, token, PR_LIST, budget);
     }
 
     public GithubPullRequestResponse getPullRequest(String token, String owner, String repo,
                                                     int number) {
+        return getPullRequest(token, owner, repo, number, null);
+    }
+
+    public GithubPullRequestResponse getPullRequest(String token, String owner, String repo,
+                                                    int number, RequestBudget budget) {
         return execute(repositoryPath(owner, repo) + "/pulls/" + number, token,
-                spec -> spec.toEntity(GithubPullRequestResponse.class)).getBody();
+                spec -> spec.toEntity(GithubPullRequestResponse.class), budget).getBody();
     }
 
     /** 저장소 스냅샷. default branch가 바뀌었는지도 여기서 확인한다. */
     public GithubRepositoryResponse getRepository(String token, String owner, String repo) {
         GithubRepositoryResponse response = execute(repositoryPath(owner, repo), token,
-                spec -> spec.toEntity(GithubRepositoryResponse.class)).getBody();
+                spec -> spec.toEntity(GithubRepositoryResponse.class), null).getBody();
         if (response == null) {
             throw new GithubApiException();
         }
@@ -113,7 +123,7 @@ public class GithubCollectionClient {
         GithubCommitResponse response = execute(
                 repositoryPath(owner, repo) + "/commits/"
                         + UriUtils.encodePathSegment(ref, StandardCharsets.UTF_8),
-                token, spec -> spec.toEntity(GithubCommitResponse.class)).getBody();
+                token, spec -> spec.toEntity(GithubCommitResponse.class), null).getBody();
         if (response == null || response.sha() == null || response.sha().isBlank()) {
             throw new GithubApiException();
         }
@@ -128,24 +138,36 @@ public class GithubCollectionClient {
      */
     public PagedResult<GithubPullRequestFileResponse> listFiles(String token, String owner,
                                                                 String repo, int number) {
+        return listFiles(token, owner, repo, number, null);
+    }
+
+    public PagedResult<GithubPullRequestFileResponse> listFiles(
+            String token, String owner, String repo, int number, RequestBudget budget) {
         return collect(repositoryPath(owner, repo) + "/pulls/" + number + "/files?per_page="
-                + PER_PAGE, token, FILE_LIST, collectionProperties.maxPullRequestFilePages());
+                + PER_PAGE, token, FILE_LIST, collectionProperties.maxPullRequestFilePages(), budget);
     }
 
     public PagedResult<GithubCommitResponse> listCommits(String token, String owner, String repo,
                                                          int number) {
+        return listCommits(token, owner, repo, number, null);
+    }
+
+    public PagedResult<GithubCommitResponse> listCommits(
+            String token, String owner, String repo, int number, RequestBudget budget) {
         return collect(repositoryPath(owner, repo) + "/pulls/" + number + "/commits?per_page="
-                + PER_PAGE, token, COMMIT_LIST, collectionProperties.maxPullRequestCommitPages());
+                + PER_PAGE, token, COMMIT_LIST,
+                collectionProperties.maxPullRequestCommitPages(), budget);
     }
 
     private <T> PagedResult<T> collect(String firstUri, String token,
-                                       ParameterizedTypeReference<List<T>> type, int maxPages) {
+                                       ParameterizedTypeReference<List<T>> type, int maxPages,
+                                       RequestBudget budget) {
         List<T> items = new ArrayList<>();
         String uri = firstUri;
         int pages = 0;
 
         while (uri != null && pages < maxPages) {
-            GithubPage<T> page = page(uri, token, type);
+            GithubPage<T> page = page(uri, token, type, budget);
             items.addAll(page.items());
             uri = page.nextUri();
             pages++;
@@ -154,8 +176,9 @@ public class GithubCollectionClient {
     }
 
     private <T> GithubPage<T> page(String uri, String token,
-                                   ParameterizedTypeReference<List<T>> type) {
-        ResponseEntity<List<T>> response = execute(uri, token, spec -> spec.toEntity(type));
+                                   ParameterizedTypeReference<List<T>> type,
+                                   RequestBudget budget) {
+        ResponseEntity<List<T>> response = execute(uri, token, spec -> spec.toEntity(type), budget);
         List<T> items = response.getBody() == null ? List.of() : response.getBody();
         String next = LinkHeaderParser.next(response.getHeaders().getFirst(HttpHeaders.LINK))
                 .flatMap(this::resolveWithinApi)
@@ -163,13 +186,17 @@ public class GithubCollectionClient {
         return new GithubPage<>(items, next);
     }
 
-    private <T> ResponseEntity<T> execute(String uri, String token, ResponseExtractor<T> extractor) {
+    private <T> ResponseEntity<T> execute(String uri, String token, ResponseExtractor<T> extractor,
+                                          RequestBudget budget) {
         try {
-            return extractor.extract(restClient.get()
+            RestClient.RequestHeadersSpec<?> request = restClient.get()
                     .uri(uri)
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-                    .retrieve()
-                    .onStatus(HttpStatusCode::isError, (request, res) -> {
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+            if (budget != null) {
+                request.attribute(RequestBudget.REQUEST_ATTRIBUTE, budget);
+            }
+            return extractor.extract(request.retrieve()
+                    .onStatus(HttpStatusCode::isError, (ignoredRequest, res) -> {
                         String body = new String(res.getBody().readNBytes(8_192),
                                 StandardCharsets.UTF_8);
                         throw toException(uri, res.getStatusCode().value(), res.getHeaders(), body);
@@ -261,6 +288,34 @@ public class GithubCollectionClient {
 
     /** @param truncated 페이지 상한에 걸려 뒤쪽을 못 읽었는지 */
     public record PagedResult<T>(List<T> items, boolean truncated) {
+    }
+
+    /** 저장소 하나의 PR 수집이 사용할 수 있는 GitHub 요청 총량. */
+    public static final class RequestBudget {
+
+        static final String REQUEST_ATTRIBUTE = RequestBudget.class.getName();
+        private int remaining;
+
+        public RequestBudget(int maxRequests) {
+            if (maxRequests < 1) {
+                throw new IllegalArgumentException("PR 요청 budget은 1 이상이어야 한다");
+            }
+            this.remaining = maxRequests;
+        }
+
+        public int remaining() {
+            return remaining;
+        }
+
+        void consume() {
+            if (remaining == 0) {
+                throw new RequestBudgetExceededException();
+            }
+            remaining--;
+        }
+    }
+
+    public static final class RequestBudgetExceededException extends RuntimeException {
     }
 
     @FunctionalInterface

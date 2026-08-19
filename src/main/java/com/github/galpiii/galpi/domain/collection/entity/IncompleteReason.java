@@ -25,5 +25,20 @@ public enum IncompleteReason {
     RATE_LIMITED,
 
     /** 일부 PR을 가져오지 못했지만 나머지는 수집했다. */
-    PR_COLLECTION_PARTIAL
+    PR_COLLECTION_PARTIAL,
+
+    /** PR 커밋 페이지 상한에 걸려 일부 커밋을 가져오지 못했다. */
+    COMMIT_LIMIT_EXCEEDED,
+
+    /** PR 텍스트와 patch가 저장소별 파이프라인 인계 상한을 넘었다. */
+    PR_CONTENT_LIMIT,
+
+    /** 저장소별 PR API 요청 budget이 소진돼 뒤쪽 PR을 가져오지 못했다. */
+    PR_REQUEST_LIMIT,
+
+    /** 분석 파이프라인으로 넘기는 PR 텍스트에서 비밀정보를 마스킹했다. */
+    SECRET_REDACTED,
+
+    /** 저장소 파일을 읽지 못해 일부 내용이 빠졌다. */
+    FILE_READ_FAILED
 }

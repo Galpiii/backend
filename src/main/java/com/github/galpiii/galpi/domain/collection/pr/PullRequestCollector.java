@@ -62,7 +62,13 @@ public class PullRequestCollector {
     public PullRequestCollectionResult collect(String token, String owner, String repo,
                                                Long repositoryId, int prLimit,
                                                OffsetDateTime prSince) {
-        MergedPullRequests merged = listMergedPullRequests(token, owner, repo, prLimit, prSince);
+        GithubCollectionClient.RequestBudget requestBudget =
+                new GithubCollectionClient.RequestBudget(
+                        properties.maxPullRequestApiRequests());
+        PipelineContentBudget contentBudget =
+                new PipelineContentBudget(properties.maxPullRequestContentBytes());
+        MergedPullRequests merged = listMergedPullRequests(
+                token, owner, repo, prLimit, prSince, requestBudget);
         Set<Integer> excludedNumbers =
                 new HashSet<>(exclusionRepository.findExcludedNumbersByRepositoryId(repositoryId));
 
@@ -70,15 +76,23 @@ public class PullRequestCollector {
         List<IncompleteReason> reasons = new ArrayList<>();
         int collectedCount = 0;
         int failedCount = 0;
+        boolean requestLimitReached = merged.requestLimitReached();
 
         for (GithubPullRequestResponse summary : merged.items()) {
             try {
                 CollectedPullRequest collected = collectOne(token, owner, repo, repositoryId,
-                        summary.number());
+                        summary.number(), requestBudget, contentBudget);
                 collectedCount++;
+                reasons.addAll(collected.incompleteReasons());
                 if (!excludedNumbers.contains(summary.number())) {
                     forPipeline.add(collected);
                 }
+            } catch (GithubCollectionClient.RequestBudgetExceededException e) {
+                requestLimitReached = true;
+                log.info("[수집] PR API 요청 상한({})에 도달해 나머지를 건너뛴다 repo={}/{}",
+                        properties.maxPullRequestApiRequests(), LogSafe.text(owner),
+                        LogSafe.text(repo));
+                break;
             } catch (GithubRateLimitedException e) {
                 throw e;
             } catch (GithubRepositoryUnavailableException e) {
@@ -99,6 +113,9 @@ public class PullRequestCollector {
         if (merged.exceededLimit()) {
             reasons.add(IncompleteReason.PR_LIMIT_EXCEEDED);
         }
+        if (requestLimitReached) {
+            reasons.add(IncompleteReason.PR_REQUEST_LIMIT);
+        }
         return new PullRequestCollectionResult(List.copyOf(forPipeline), collectedCount,
                 List.copyOf(new LinkedHashSet<>(reasons)));
     }
@@ -114,14 +131,19 @@ public class PullRequestCollector {
      * 것"과 "잘린 것"을 구분할 수 없고, 그 구분이 화면에 나가야 한다.
      */
     private MergedPullRequests listMergedPullRequests(String token, String owner, String repo,
-                                                      int prLimit, OffsetDateTime prSince) {
+                                                      int prLimit, OffsetDateTime prSince,
+                                                      GithubCollectionClient.RequestBudget budget) {
         List<GithubPullRequestResponse> merged = new ArrayList<>();
         String nextUri = null;
         int pages = 0;
 
         do {
-            GithubCollectionClient.GithubPage<GithubPullRequestResponse> page =
-                    client.listClosedPullRequests(token, owner, repo, nextUri);
+            GithubCollectionClient.GithubPage<GithubPullRequestResponse> page;
+            try {
+                page = client.listClosedPullRequests(token, owner, repo, nextUri, budget);
+            } catch (GithubCollectionClient.RequestBudgetExceededException e) {
+                return new MergedPullRequests(List.copyOf(merged), false, true);
+            }
             pages++;
 
             for (GithubPullRequestResponse pullRequest : page.items()) {
@@ -132,7 +154,7 @@ public class PullRequestCollector {
                     continue;
                 }
                 if (merged.size() >= prLimit) {
-                    return new MergedPullRequests(List.copyOf(merged), true);
+                    return new MergedPullRequests(List.copyOf(merged), true, false);
                 }
                 merged.add(pullRequest);
             }
@@ -144,7 +166,7 @@ public class PullRequestCollector {
             log.info("[수집] PR 목록 페이지 상한({})에 걸려 더 훑지 않는다 repo={}/{}",
                     listPageLimit(), LogSafe.text(owner), LogSafe.text(repo));
         }
-        return new MergedPullRequests(List.copyOf(merged), truncatedByPages);
+        return new MergedPullRequests(List.copyOf(merged), truncatedByPages, false);
     }
 
     private int listPageLimit() {
@@ -153,25 +175,35 @@ public class PullRequestCollector {
 
     /** @param exceededLimit 상한이나 페이지 한계 때문에 뒤쪽 PR을 보지 못했는지 */
     private record MergedPullRequests(List<GithubPullRequestResponse> items,
-                                      boolean exceededLimit) {
+                                      boolean exceededLimit,
+                                      boolean requestLimitReached) {
     }
 
     private CollectedPullRequest collectOne(String token, String owner, String repo,
-                                            Long repositoryId, int number) {
-        GithubPullRequestResponse detail = client.getPullRequest(token, owner, repo, number);
+                                            Long repositoryId, int number,
+                                            GithubCollectionClient.RequestBudget requestBudget,
+                                            PipelineContentBudget contentBudget) {
+        GithubPullRequestResponse detail =
+                client.getPullRequest(token, owner, repo, number, requestBudget);
         GithubCollectionClient.PagedResult<GithubPullRequestFileResponse> files =
-                client.listFiles(token, owner, repo, number);
+                client.listFiles(token, owner, repo, number, requestBudget);
         GithubCollectionClient.PagedResult<GithubCommitResponse> commits =
-                client.listCommits(token, owner, repo, number);
+                client.listCommits(token, owner, repo, number, requestBudget);
 
-        List<IncompleteReason> reasons = incompleteReasons(files);
+        List<IncompleteReason> reasons = new ArrayList<>(incompleteReasons(files, commits));
 
-        // 본문과 커밋 메시지는 사람이 자유롭게 쓰는 필드다. 저장 전에 마스킹한다.
+        // 제목·본문·커밋 메시지는 사람이 자유롭게 쓰는 필드다. 저장 전에 마스킹한다.
+        SecretContentScanner.MaskedText maskedTitle = secretContentScanner.mask(detail.title());
         SecretContentScanner.MaskedText maskedBody = secretContentScanner.mask(detail.body());
-        if (maskedBody.masked()) {
-            log.info("[수집] PR 본문에서 비밀정보를 마스킹했다 repo={}/{} number={} kinds={}",
-                    LogSafe.text(owner), LogSafe.text(repo), number, maskedBody.kindsForLog());
+        if (maskedTitle.masked() || maskedBody.masked()) {
+            reasons.add(IncompleteReason.SECRET_REDACTED);
+            log.info("[수집] PR 텍스트에서 비밀정보를 마스킹했다 repo={}/{} number={}",
+                    LogSafe.text(owner), LogSafe.text(repo), number);
         }
+        String pipelineTitle = contentBudget.retain(maskedTitle.text());
+        String pipelineBody = contentBudget.retain(maskedBody.text());
+        boolean contentLimited = (maskedTitle.text() != null && pipelineTitle == null)
+                || (maskedBody.text() != null && pipelineBody == null);
 
         List<PullRequestWriter.CollectedCommitData> commitData = new ArrayList<>();
         List<CollectedCommit> pipelineCommits = new ArrayList<>();
@@ -179,15 +211,22 @@ public class PullRequestCollector {
             SecretContentScanner.MaskedText maskedMessage =
                     secretContentScanner.mask(commit.message());
             if (maskedMessage.masked()) {
+                reasons.add(IncompleteReason.SECRET_REDACTED);
                 log.info("[수집] 커밋 메시지에서 비밀정보를 마스킹했다 repo={}/{} number={} kinds={}",
                         LogSafe.text(owner), LogSafe.text(repo), number,
                         maskedMessage.kindsForLog());
             }
             String message = maskedMessage.text() == null ? "" : maskedMessage.text();
             commitData.add(new PullRequestWriter.CollectedCommitData(commit.sha(), message,
-                    commit.authorLogin(), commit.authorGithubId(), authoredAt(commit, detail)));
-            pipelineCommits.add(new CollectedCommit(commit.sha(), message, commit.authorLogin(),
+                    limit(commit.authorLogin(), 255), commit.authorGithubId(),
                     authoredAt(commit, detail)));
+            String pipelineMessage = contentBudget.retain(message);
+            if (pipelineMessage == null && !message.isEmpty()) {
+                contentLimited = true;
+                pipelineMessage = "";
+            }
+            pipelineCommits.add(new CollectedCommit(commit.sha(), pipelineMessage,
+                    limit(commit.authorLogin(), 255), authoredAt(commit, detail)));
         }
 
         List<PullRequestWriter.CollectedFileData> fileData = new ArrayList<>();
@@ -198,24 +237,48 @@ public class PullRequestCollector {
             fileData.add(new PullRequestWriter.CollectedFileData(file.filename(),
                     file.previousFilename(), changeStatus, nullSafe(file.additions()),
                     nullSafe(file.deletions()), nullSafe(file.changes()), omitted));
+            String pipelinePatch = null;
+            if (file.patch() != null && !file.patch().isEmpty()) {
+                if (contentBudget.canFit(file.patch())) {
+                    SecretContentScanner.MaskedText maskedPatch =
+                            secretContentScanner.mask(file.patch());
+                    if (maskedPatch.masked()) {
+                        reasons.add(IncompleteReason.SECRET_REDACTED);
+                        log.info("[수집] PR patch에서 비밀정보를 마스킹했다 repo={}/{} number={}",
+                                LogSafe.text(owner), LogSafe.text(repo), number);
+                    }
+                    pipelinePatch = contentBudget.retain(maskedPatch.text());
+                }
+                if (pipelinePatch == null) {
+                    contentLimited = true;
+                }
+            }
             // patch는 여기에만 담긴다. writer로 가는 fileData에는 없다.
             pipelineFiles.add(new CollectedPullRequestFile(file.filename(), file.previousFilename(),
                     changeStatus, nullSafe(file.additions()), nullSafe(file.deletions()),
-                    nullSafe(file.changes()), file.patch(), omitted));
+                    nullSafe(file.changes()), pipelinePatch,
+                    omitted || file.patch() != null && pipelinePatch == null));
         }
 
+        if (contentLimited) {
+            reasons.add(IncompleteReason.PR_CONTENT_LIMIT);
+        }
+        List<IncompleteReason> distinctReasons =
+                List.copyOf(new LinkedHashSet<>(reasons));
+
         writer.save(repositoryId, new PullRequestWriter.CollectedPullRequestData(
-                detail.id(), detail.number(), detail.title(), maskedBody.text(), detail.baseRef(),
+                detail.id(), detail.number(), maskedTitle.text(), maskedBody.text(), detail.baseRef(),
                 detail.headRef(), detail.baseSha(), detail.headSha(), detail.mergeCommitSha(),
                 detail.mergedAt(), detail.createdAt(), nullSafe(detail.changedFiles()),
                 nullSafe(detail.additions()), nullSafe(detail.deletions()), detail.htmlUrl(),
                 authorGithubId(detail), authorLogin(detail), authorAvatarUrl(detail),
-                reasons, fileData, commitData));
+                distinctReasons, fileData, commitData));
 
-        return new CollectedPullRequest(detail.number(), detail.title(), maskedBody.text(),
+        return new CollectedPullRequest(detail.number(),
+                pipelineTitle == null ? "" : pipelineTitle, pipelineBody,
                 detail.mergedAt(), List.copyOf(pipelineFiles), List.copyOf(pipelineCommits),
-                reasons.isEmpty() ? DataCompleteness.COMPLETE : DataCompleteness.PARTIAL,
-                reasons);
+                distinctReasons.isEmpty() ? DataCompleteness.COMPLETE : DataCompleteness.PARTIAL,
+                distinctReasons);
     }
 
     /**
@@ -225,10 +288,14 @@ public class PullRequestCollector {
      * 바이너리로 본다 — 텍스트 파일이 바뀌었는데 additions와 deletions가 모두 0인 경우는 없다.
      */
     private static List<IncompleteReason> incompleteReasons(
-            GithubCollectionClient.PagedResult<GithubPullRequestFileResponse> files) {
+            GithubCollectionClient.PagedResult<GithubPullRequestFileResponse> files,
+            GithubCollectionClient.PagedResult<GithubCommitResponse> commits) {
         List<IncompleteReason> reasons = new ArrayList<>();
         if (files.truncated()) {
             reasons.add(IncompleteReason.FILE_LIMIT_EXCEEDED);
+        }
+        if (commits.truncated()) {
+            reasons.add(IncompleteReason.COMMIT_LIMIT_EXCEEDED);
         }
 
         boolean anyOmitted = false;
@@ -271,6 +338,58 @@ public class PullRequestCollector {
 
     private static int nullSafe(Integer value) {
         return value == null ? 0 : value;
+    }
+
+    private static String limit(String value, int maxLength) {
+        return value == null || value.length() <= maxLength
+                ? value
+                : value.substring(0, maxLength);
+    }
+
+    /** 파이프라인이 한 저장소의 PR 문자열을 무제한으로 붙잡지 않게 하는 누적 budget. */
+    private static final class PipelineContentBudget {
+
+        private long remaining;
+
+        private PipelineContentBudget(long maxBytes) {
+            this.remaining = Math.max(0, maxBytes);
+        }
+
+        private boolean canFit(String value) {
+            return value == null || utf8Length(value) <= remaining;
+        }
+
+        private String retain(String value) {
+            if (value == null || value.isEmpty()) {
+                return value;
+            }
+            long bytes = utf8Length(value);
+            if (bytes > remaining) {
+                return null;
+            }
+            remaining -= bytes;
+            return value;
+        }
+
+        private static long utf8Length(String value) {
+            long bytes = 0;
+            for (int index = 0; index < value.length(); index++) {
+                char character = value.charAt(index);
+                if (character <= 0x7f) {
+                    bytes++;
+                } else if (character <= 0x7ff) {
+                    bytes += 2;
+                } else if (Character.isHighSurrogate(character)
+                        && index + 1 < value.length()
+                        && Character.isLowSurrogate(value.charAt(index + 1))) {
+                    bytes += 4;
+                    index++;
+                } else {
+                    bytes += 3;
+                }
+            }
+            return bytes;
+        }
     }
 
     /**

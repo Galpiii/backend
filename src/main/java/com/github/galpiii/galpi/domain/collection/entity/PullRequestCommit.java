@@ -43,7 +43,8 @@ public class PullRequestCommit extends BaseEntity {
     @Column(nullable = false, columnDefinition = "text")
     private String message;
 
-    @Column(length = 39)
+    // GitHub 계정이 매칭되지 않으면 login 대신 git author name이 들어올 수 있다.
+    @Column(length = 255)
     private String authorLogin;
 
     private Long authorGithubId;

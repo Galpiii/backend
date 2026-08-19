@@ -34,6 +34,9 @@ public record CollectionProperties(
         /** 저장소당 수집 내용 총합. 우선순위가 낮은 파일부터 잘린다. */
         @DefaultValue("20MB") @NotNull DataSize maxTotalContentSize,
 
+        /** 저장소당 PR 제목·본문·커밋 메시지·patch를 파이프라인에 유지할 총량. */
+        @DefaultValue("20MB") @NotNull DataSize maxPullRequestContentSize,
+
         /** tarball 다운로드에서 따라갈 리다이렉트 횟수. */
         @DefaultValue("3") @Min(0) int maxRedirects,
 
@@ -51,7 +54,10 @@ public record CollectionProperties(
         @DefaultValue("30") @Min(1) int maxPullRequestCommitPages,
 
         /** PR 목록 페이지 상한. 병합 PR을 찾으려면 closed 목록을 더 훑어야 할 수 있다. */
-        @DefaultValue("30") @Min(1) int maxPullRequestListPages
+        @DefaultValue("30") @Min(1) int maxPullRequestListPages,
+
+        /** 저장소 하나의 PR 수집에 허용할 GitHub API 요청 총량(목록 30 + PR 300 × 3). */
+        @DefaultValue("930") @Min(3) int maxPullRequestApiRequests
 ) {
 
     public long maxDownloadBytes() {
@@ -68,5 +74,9 @@ public record CollectionProperties(
 
     public long maxTotalContentBytes() {
         return maxTotalContentSize.toBytes();
+    }
+
+    public long maxPullRequestContentBytes() {
+        return maxPullRequestContentSize.toBytes();
     }
 }

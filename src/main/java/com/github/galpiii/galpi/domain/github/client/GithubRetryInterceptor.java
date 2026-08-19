@@ -43,6 +43,12 @@ public class GithubRetryInterceptor implements ClientHttpRequestInterceptor {
         Object value = request.getAttributes().get(GithubRequestBudget.REQUEST_ATTRIBUTE);
         if (value instanceof GithubRequestBudget budget) {
             budget.consume();
+            return;
+        }
+        Object collectionValue =
+                request.getAttributes().get(GithubCollectionClient.RequestBudget.REQUEST_ATTRIBUTE);
+        if (collectionValue instanceof GithubCollectionClient.RequestBudget budget) {
+            budget.consume();
         }
     }
 
