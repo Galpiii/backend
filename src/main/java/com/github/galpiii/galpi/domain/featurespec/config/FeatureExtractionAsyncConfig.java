@@ -32,8 +32,6 @@ public class FeatureExtractionAsyncConfig {
         executor.setQueueCapacity(properties.queueCapacity());
         executor.setThreadNamePrefix("feature-extraction-");
 
-        // 배포로 종료될 때 진행 중인 분석은 마무리할 시간을 준다. 대기 중이던 작업은 버려지고
-        // StaleExtractionCleaner가 다음 기동 때 FAILED로 정리한다.
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds((int) properties.awaitTermination().toSeconds());
 
