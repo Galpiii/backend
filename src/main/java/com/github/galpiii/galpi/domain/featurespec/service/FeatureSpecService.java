@@ -5,6 +5,7 @@ import com.github.galpiii.galpi.domain.featurespec.dto.response.FeatureSpecUploa
 import com.github.galpiii.galpi.domain.featurespec.entity.SpecDocument;
 import com.github.galpiii.galpi.domain.featurespec.repository.SpecDocumentRepository;
 import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileValidator;
+import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecTempFileStore;
 import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileValidator.ValidatedFeatureSpec;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
@@ -28,6 +29,7 @@ public class FeatureSpecService {
     private final ProjectRepository projectRepository;
     private final SpecDocumentRepository specDocumentRepository;
     private final FeatureSpecFileValidator featureSpecFileValidator;
+    private final FeatureSpecTempFileStore tempFileStore;
     private final SpecDocumentWriter specDocumentWriter;
     private final FeatureExtractionService featureExtractionService;
 
@@ -65,7 +67,7 @@ public class FeatureSpecService {
         try {
             return specDocumentWriter.save(projectId, userId, validatedFeatureSpec.fileName());
         } catch (RuntimeException e) {
-            featureSpecFileValidator.deleteTempFile(validatedFeatureSpec.tempFile());
+            tempFileStore.delete(validatedFeatureSpec.tempFile());
             throw e;
         }
     }
@@ -82,7 +84,7 @@ public class FeatureSpecService {
                     e
             );
             specDocumentWriter.delete(specDocumentId);
-            featureSpecFileValidator.deleteTempFile(tempFile);
+            tempFileStore.delete(tempFile);
 
             throw new GlobalException(ErrorCode.FEATURE_SPEC_EXTRACTION_BUSY);
         }

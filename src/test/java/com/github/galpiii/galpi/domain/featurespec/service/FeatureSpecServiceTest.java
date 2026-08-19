@@ -5,6 +5,7 @@ import com.github.galpiii.galpi.domain.featurespec.entity.ExtractionStatus;
 import com.github.galpiii.galpi.domain.featurespec.entity.SpecDocument;
 import com.github.galpiii.galpi.domain.featurespec.repository.SpecDocumentRepository;
 import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileValidator;
+import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecTempFileStore;
 import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileValidator.ValidatedFeatureSpec;
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
@@ -56,6 +57,8 @@ class FeatureSpecServiceTest {
     private SpecDocumentRepository specDocumentRepository;
     @Mock
     private FeatureSpecFileValidator featureSpecFileValidator;
+    @Mock
+    private FeatureSpecTempFileStore tempFileStore;
     @Mock
     private SpecDocumentWriter specDocumentWriter;
     @Mock
@@ -132,7 +135,7 @@ class FeatureSpecServiceTest {
         service.upload(PROJECT_ID, USER_ID, file);
 
         verify(featureExtractionService).extract(SPEC_DOCUMENT_ID, tempFile);
-        verify(featureSpecFileValidator, never()).deleteTempFile(any());
+        verify(tempFileStore, never()).delete(any());
     }
 
     @Test
@@ -149,7 +152,7 @@ class FeatureSpecServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_SPEC_EXTRACTION_BUSY);
 
         verify(specDocumentWriter).delete(SPEC_DOCUMENT_ID);
-        verify(featureSpecFileValidator).deleteTempFile(tempFile);
+        verify(tempFileStore).delete(tempFile);
     }
 
     @Test
@@ -163,7 +166,7 @@ class FeatureSpecServiceTest {
         assertThatThrownBy(() -> service.upload(PROJECT_ID, USER_ID, file))
                 .isInstanceOf(DataIntegrityViolationException.class);
 
-        verify(featureSpecFileValidator).deleteTempFile(tempFile);
+        verify(tempFileStore).delete(tempFile);
         verify(featureExtractionService, never()).extract(anyLong(), any());
     }
 
@@ -206,6 +209,6 @@ class FeatureSpecServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_SPEC_PDF_INVALID);
 
         verify(specDocumentWriter, never()).save(anyLong(), anyLong(), anyString());
-        verify(featureSpecFileValidator, never()).deleteTempFile(any());
+        verify(tempFileStore, never()).delete(any());
     }
 }

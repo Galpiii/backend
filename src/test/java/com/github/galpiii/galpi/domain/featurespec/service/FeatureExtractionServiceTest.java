@@ -8,7 +8,7 @@ import com.github.galpiii.galpi.ai.dto.FeatureSpecExtractionResult.Source;
 import com.github.galpiii.galpi.ai.exception.FeatureSpecAiException;
 import com.github.galpiii.galpi.domain.featurespec.entity.ExtractionFailureCode;
 import com.github.galpiii.galpi.domain.featurespec.support.FeatureExtractionResultNormalizer;
-import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileValidator;
+import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecTempFileStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,7 +42,7 @@ class FeatureExtractionServiceTest {
     @Mock
     private FeatureExtractionWriter featureExtractionWriter;
     @Mock
-    private FeatureSpecFileValidator featureSpecFileValidator;
+    private FeatureSpecTempFileStore tempFileStore;
 
     private FeatureExtractionService service;
     private File pdf;
@@ -53,7 +53,7 @@ class FeatureExtractionServiceTest {
                 featureSpecAiService,
                 new FeatureExtractionResultNormalizer(),
                 featureExtractionWriter,
-                featureSpecFileValidator,
+                tempFileStore,
                 new ThreadPoolTaskExecutor()
         );
 
@@ -127,7 +127,7 @@ class FeatureExtractionServiceTest {
 
         service.extract(SPEC_DOCUMENT_ID, pdf);
 
-        verify(featureSpecFileValidator).deleteTempFile(pdf);
+        verify(tempFileStore).delete(pdf);
     }
 
     /**
@@ -144,7 +144,7 @@ class FeatureExtractionServiceTest {
 
         service.extract(SPEC_DOCUMENT_ID, pdf);
 
-        verify(featureSpecFileValidator).deleteTempFile(pdf);
+        verify(tempFileStore).delete(pdf);
     }
 
     private long eqId() {

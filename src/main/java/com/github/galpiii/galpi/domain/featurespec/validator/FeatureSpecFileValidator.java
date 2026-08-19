@@ -3,6 +3,7 @@ package com.github.galpiii.galpi.domain.featurespec.validator;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.BadRequestException;
 import com.github.galpiii.galpi.global.error.exception.GlobalException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.io.RandomAccessReadBufferedFile;
@@ -15,30 +16,30 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class FeatureSpecFileValidator {
+
+    private final FeatureSpecTempFileStore tempFileStore;
+
 
     private static final long MAX_FILE_SIZE = 20L * 1024 * 1024;
     private static final int MAX_FILE_NAME_LENGTH = 255;
     private static final int MIN_PAGE_COUNT = 1;
     private static final int MAX_PAGE_COUNT = 100;
     private static final String PDF_EXTENSION = "pdf";
-    private static final String TEMP_FILE_PREFIX = "feature-spec-";
-    private static final String TEMP_FILE_SUFFIX = ".pdf";
 
     public ValidatedFeatureSpec validate(MultipartFile file) {
         String fileName = validateBasicFile(file);
-        File tempFile = createTempFile(file);
+        File tempFile = tempFileStore.create(file);
 
         try {
             validatePdfStructure(tempFile);
         } catch (RuntimeException | Error e) {
-            deleteTempFile(tempFile);
+            tempFileStore.delete(tempFile);
             throw e;
         }
 
@@ -105,34 +106,6 @@ public class FeatureSpecFileValidator {
         }
 
         validatePageCount(pageCount);
-    }
-
-    private File createTempFile(MultipartFile file) {
-        File tempFile = null;
-
-        try {
-            tempFile = File.createTempFile(TEMP_FILE_PREFIX, TEMP_FILE_SUFFIX);
-
-            try (InputStream source = file.getInputStream()) {
-                Files.copy(source, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            }
-
-            return tempFile;
-        } catch (IOException | IllegalStateException e) {
-            if (tempFile != null) {
-                deleteTempFile(tempFile);
-            }
-
-            log.error("[기능명세서 업로드] 임시 파일 생성 실패.", e);
-            throw new GlobalException(ErrorCode.INTERNAL_SERVER_ERROR);
-        }
-    }
-
-    // 검증에 쓴 임시 파일 삭제
-    public void deleteTempFile(File tempFile) {
-        if (!tempFile.delete()) {
-            log.warn("[기능명세서 업로드] 임시 파일 삭제 실패. path: {}", tempFile.getAbsolutePath());
-        }
     }
 
     // PDF 페이지 수가 1페이지 이상 100페이지 이하인지 검증

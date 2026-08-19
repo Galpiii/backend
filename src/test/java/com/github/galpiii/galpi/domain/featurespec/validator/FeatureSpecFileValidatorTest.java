@@ -17,6 +17,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -27,7 +29,8 @@ class FeatureSpecFileValidatorTest {
     private static final String FILE_NAME = "기능명세서.pdf";
     private static final long MAX_FILE_SIZE = 20L * 1024 * 1024;
 
-    private final FeatureSpecFileValidator validator = new FeatureSpecFileValidator();
+    private final FeatureSpecTempFileStore tempFileStore = new FeatureSpecTempFileStore();
+    private final FeatureSpecFileValidator validator = new FeatureSpecFileValidator(tempFileStore);
 
     private static byte[] pdfWithPages(int pageCount) throws IOException {
         try (PDDocument document = new PDDocument()) {
@@ -78,7 +81,7 @@ class FeatureSpecFileValidatorTest {
         assertThat(validated.tempFile()).exists();
         assertThat(validated.tempFile()).hasBinaryContent(content);
 
-        validator.deleteTempFile(validated.tempFile());
+        tempFileStore.delete(validated.tempFile());
     }
 
     @Test
@@ -89,7 +92,7 @@ class FeatureSpecFileValidatorTest {
 
         assertThat(validated.fileName()).isEqualTo(FILE_NAME);
 
-        validator.deleteTempFile(validated.tempFile());
+        tempFileStore.delete(validated.tempFile());
     }
 
     @Test
@@ -99,7 +102,7 @@ class FeatureSpecFileValidatorTest {
 
         assertThat(validated.tempFile()).exists();
 
-        validator.deleteTempFile(validated.tempFile());
+        tempFileStore.delete(validated.tempFile());
     }
 
     @Test

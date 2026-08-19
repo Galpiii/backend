@@ -5,7 +5,7 @@ import com.github.galpiii.galpi.ai.dto.FeatureSpecExtractionResult;
 import com.github.galpiii.galpi.domain.featurespec.config.FeatureExtractionAsyncConfig;
 import com.github.galpiii.galpi.domain.featurespec.entity.ExtractionFailureCode;
 import com.github.galpiii.galpi.domain.featurespec.support.FeatureExtractionResultNormalizer;
-import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileValidator;
+import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecTempFileStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -23,7 +23,7 @@ public class FeatureExtractionService {
     private final FeatureSpecAiService featureSpecAiService;
     private final FeatureExtractionResultNormalizer normalizer;
     private final FeatureExtractionWriter featureExtractionWriter;
-    private final FeatureSpecFileValidator featureSpecFileValidator;
+    private final FeatureSpecTempFileStore tempFileStore;
     private final ThreadPoolTaskExecutor featureExtractionExecutor;
 
     @Async(FeatureExtractionAsyncConfig.EXECUTOR)
@@ -56,7 +56,7 @@ public class FeatureExtractionService {
             log.error("[기능명세서 분석] 분석에 실패했습니다. specDocumentId: {}", specDocumentId, e);
             markFailed(specDocumentId, ExtractionFailureCode.ANALYSIS_FAILED);
         } finally {
-            featureSpecFileValidator.deleteTempFile(pdf);
+            tempFileStore.delete(pdf);
         }
     }
 

@@ -1,12 +1,14 @@
 package com.github.galpiii.galpi.domain.featurespec.service;
 
 import com.github.galpiii.galpi.domain.featurespec.config.FeatureExtractionProperties;
+import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecTempFileStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.time.OffsetDateTime;
 
 /**
@@ -26,6 +28,7 @@ import java.time.OffsetDateTime;
 class StaleExtractionCleaner {
 
     private final FeatureExtractionWriter featureExtractionWriter;
+    private final FeatureSpecTempFileStore tempFileStore;
     private final FeatureExtractionProperties properties;
 
     @Scheduled(fixedDelayString = "PT10M", initialDelayString = "PT1M")
@@ -39,6 +42,20 @@ class StaleExtractionCleaner {
             }
         } catch (RuntimeException e) {
             log.error("[기능명세서 분석] 유령 분석 정리 배치가 실패했습니다.", e);
+        }
+    }
+
+    @Scheduled(fixedDelayString = "PT1H", initialDelayString = "PT5M")
+    public void cleanStaleTempFiles() {
+        try {
+            int deleted = tempFileStore.deleteOlderThan(
+                    Instant.now().minus(properties.staleAfter()));
+
+            if (deleted > 0) {
+                log.warn("[기능명세서 분석] 주인이 사라진 임시 파일 {}건을 지웠습니다.", deleted);
+            }
+        } catch (RuntimeException e) {
+            log.error("[기능명세서 분석] 임시 파일 정리 배치가 실패했습니다.", e);
         }
     }
 }
