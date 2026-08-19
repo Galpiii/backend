@@ -31,8 +31,6 @@ import org.springframework.web.client.RestClientException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -302,21 +300,21 @@ public class GithubApiClient {
     private RuntimeException toException(String uri, HttpStatusCode status, HttpHeaders headers,
                                          String body) {
         RateLimitSnapshot snapshot = RateLimitSnapshot.from(headers);
-        boolean secondaryLimit = headers.getFirst(HttpHeaders.RETRY_AFTER) != null
-                || isSecondaryRateLimit(body);
 
         if (status.value() == 401) {
             log.info("[GitHub] 401 — user token 만료/무효 uri={}", TokenMasker.mask(uri));
             return new GithubReauthRequiredException();
         }
-        if (status.value() == 403 && (snapshot.isExhausted() || secondaryLimit)) {
+        if (status.value() == 403 && GithubRateLimits.isRateLimited(headers, body)) {
             log.warn("[GitHub] rate limit uri={} remaining={} resetAt={} retryAfter={}",
                     TokenMasker.mask(uri), snapshot.remaining(), snapshot.resetAt(),
                     headers.getFirst(HttpHeaders.RETRY_AFTER));
-            return new GithubRateLimitedException(retryAfterSeconds(headers, snapshot));
+            return new GithubRateLimitedException(
+                    GithubRateLimits.retryAfterSeconds(headers, snapshot));
         }
         if (status.value() == 429) {
-            return new GithubRateLimitedException(retryAfterSeconds(headers, snapshot));
+            return new GithubRateLimitedException(
+                    GithubRateLimits.retryAfterSeconds(headers, snapshot));
         }
         if (isInstallationRepositoriesUri(uri)
                 && (status.value() == 404
@@ -328,17 +326,6 @@ public class GithubApiClient {
         return new GithubApiException();
     }
 
-    private static boolean isSecondaryRateLimit(String body) {
-        // GitHub은 secondary limit의 안정적인 machine-readable code를 제공하지 않는다.
-        // 호출부가 403으로 먼저 한정한 뒤 공식 영문 메시지를 best-effort로 식별한다.
-        if (body == null || body.isBlank()) {
-            return false;
-        }
-        String normalized = body.toLowerCase(Locale.ROOT);
-        return normalized.contains("secondary rate limit")
-                || normalized.contains("abuse detection mechanism");
-    }
-
     private static boolean isSuspendedInstallation(String body) {
         // 이 403도 별도 code가 없어 repository endpoint로 먼저 한정한 뒤 메시지를 보조로 쓴다.
         // 문구가 바뀌면 일반 GITHUB-005로 실패하며 권한을 잘못 허용하지는 않는다.
@@ -347,22 +334,6 @@ public class GithubApiClient {
         }
         String normalized = body.toLowerCase(Locale.ROOT);
         return normalized.contains("installation") && normalized.contains("suspend");
-    }
-
-    private static long retryAfterSeconds(HttpHeaders headers, RateLimitSnapshot snapshot) {
-        String retryAfter = headers.getFirst(HttpHeaders.RETRY_AFTER);
-        if (retryAfter != null) {
-            try {
-                return Math.max(1L, Long.parseLong(retryAfter));
-            } catch (NumberFormatException ignored) {
-                // GitHub이 정수 초가 아닌 값을 보내면 primary reset 시각이나 보수적 기본값을 쓴다.
-            }
-        }
-        if (snapshot.resetAt() != null) {
-            long millis = Duration.between(Instant.now(), snapshot.resetAt()).toMillis();
-            return Math.max(1L, (millis + 999L) / 1_000L);
-        }
-        return 60L;
     }
 
     private static boolean isInstallationRepositoriesUri(String uri) {
