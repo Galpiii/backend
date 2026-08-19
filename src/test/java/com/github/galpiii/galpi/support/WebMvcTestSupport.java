@@ -1,5 +1,6 @@
 package com.github.galpiii.galpi.support;
 
+import com.github.galpiii.galpi.domain.analysis.service.AnalysisRunService;
 import com.github.galpiii.galpi.domain.auth.config.JwtProperties;
 import com.github.galpiii.galpi.domain.auth.jwt.JwtAccessDeniedHandler;
 import com.github.galpiii.galpi.domain.auth.jwt.JwtAuthenticationEntryPoint;
@@ -58,4 +59,6 @@ public abstract class WebMvcTestSupport {
     // 여기 추가해야 하며, 빠뜨리면 이 클래스를 쓰는 모든 테스트가 함께 죽는다.
     @MockitoBean
     protected FeatureSpecService featureSpecService;
+    @MockitoBean
+    protected AnalysisRunService analysisRunService;
 }
