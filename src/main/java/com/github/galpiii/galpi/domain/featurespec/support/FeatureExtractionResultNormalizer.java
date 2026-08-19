@@ -174,7 +174,7 @@ public class FeatureExtractionResultNormalizer {
     }
 
     private String resolveSection(Long specDocumentId, Feature feature, Set<String> sectionTitles) {
-        String section = feature.section();
+        String section = truncate(specDocumentId, "기능의 섹션명", feature.section());
 
         if (section == null || sectionTitles.contains(section)) {
             return section;
