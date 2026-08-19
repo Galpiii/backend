@@ -24,6 +24,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -53,18 +54,23 @@ class FeatureExtractionWriter {
     }
 
     /**
-     * 아직 끝나지 않은 분석을 모두 실패로 정리한다.
+     * 죽은 프로세스가 남긴 분석을 실패로 정리한다.
      *
      * <p>작업 큐가 JVM 힙에 있어 프로세스가 죽으면 대기 중이던 작업이 사라진다. 분석에 쓸 임시
      * PDF도 함께 사라져 이어서 처리할 방법이 없으므로, 남은 문서는 실패로 표시해 사용자가
      * 다시 업로드하게 한다.
+     *
+     * <p>대상은 {@code staleBefore} 이전에 마지막으로 바뀐 문서뿐이다. 지금 다른 서버가 처리
+     * 중인 문서를 죽이지 않으려면 상태가 아니라 나이로 판단해야 한다.
      */
     @Transactional
-    public int failAllInProgress() {
-        return specDocumentRepository.failAll(
+    public int failStale(OffsetDateTime staleBefore) {
+        return specDocumentRepository.failStale(
                 List.of(ExtractionStatus.PENDING, ExtractionStatus.PROCESSING),
                 ExtractionStatus.FAILED,
-                ExtractionFailureCode.ANALYSIS_FAILED
+                ExtractionFailureCode.ANALYSIS_FAILED,
+                staleBefore,
+                OffsetDateTime.now()
         );
     }
 

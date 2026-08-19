@@ -13,6 +13,7 @@ public record FeatureExtractionProperties(
         @DefaultValue("3") @Min(1) int corePoolSize,
         @DefaultValue("3") @Min(1) int maxPoolSize,
         @DefaultValue("20") @Min(0) int queueCapacity,
-        @DefaultValue("60s") Duration awaitTermination
+        @DefaultValue("60s") Duration awaitTermination,
+        @DefaultValue("3h") Duration staleAfter
 ) {
 }

@@ -48,6 +48,7 @@ galpi:
     max-pool-size: 1
     queue-capacity: 5
     await-termination: 1s
+    stale-after: 3h
 
   crypto:
     token:

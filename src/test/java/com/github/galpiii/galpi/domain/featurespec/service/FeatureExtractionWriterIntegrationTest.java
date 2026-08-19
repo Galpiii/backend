@@ -29,8 +29,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,6 +66,8 @@ class FeatureExtractionWriterIntegrationTest extends IntegrationTestSupport {
     private UserRepository userRepository;
     @Autowired
     private TransactionTemplate transactionTemplate;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private Long specDocumentId;
     private User user;
@@ -78,6 +83,14 @@ class FeatureExtractionWriterIntegrationTest extends IntegrationTestSupport {
 
         specDocumentId = specDocument.getId();
         writer.markProcessing(specDocumentId);
+    }
+
+    /** updatedAt은 감사 필드라 코드로 못 바꾼다. 나이 조건을 시험하려면 DB에서 직접 되돌린다. */
+    private void backdate(Long specDocumentId, Duration age) {
+        jdbcTemplate.update(
+                "update spec_documents set updated_at = ? where id = ?",
+                OffsetDateTime.now().minus(age),
+                specDocumentId);
     }
 
     private SpecDocument reloadSpecDocument() {
@@ -235,18 +248,19 @@ class FeatureExtractionWriterIntegrationTest extends IntegrationTestSupport {
          * 그대로 두면 프론트가 끝나지 않는 상태를 계속 polling한다.
          */
         @Test
-        @DisplayName("끝나지 않은 분석을 한 번에 실패로 정리한다")
-        void failsAllInProgress() {
+        @DisplayName("오래 남은 분석을 실패로 정리한다")
+        void failsStaleInProgress() {
             Project other = projectRepository.save(Project.create(user, "다른 프로젝트"));
             SpecDocument pending = specDocumentRepository.save(SpecDocument.builder()
                     .project(other)
                     .user(user)
                     .fileName("대기중.pdf")
                     .build());
+            backdate(pending.getId(), Duration.ofHours(4));
 
             writer.saveResult(specDocumentId, fullResult());
 
-            int cleaned = writer.failAllInProgress();
+            int cleaned = writer.failStale(OffsetDateTime.now().minus(Duration.ofHours(3)));
 
             assertThat(cleaned).isEqualTo(1);
             assertThat(specDocumentRepository.findById(pending.getId()).orElseThrow())
@@ -257,6 +271,16 @@ class FeatureExtractionWriterIntegrationTest extends IntegrationTestSupport {
                     });
             assertThat(reloadSpecDocument().getExtractionStatus())
                     .isEqualTo(ExtractionStatus.COMPLETED);
+        }
+
+        @Test
+        @DisplayName("방금 갱신된 분석은 건드리지 않는다 — 다른 서버가 처리 중일 수 있다")
+        void keepsFreshInProgress() {
+            int cleaned = writer.failStale(OffsetDateTime.now().minus(Duration.ofHours(3)));
+
+            assertThat(cleaned).isZero();
+            assertThat(reloadSpecDocument().getExtractionStatus())
+                    .isEqualTo(ExtractionStatus.PROCESSING);
         }
 
         @Test
