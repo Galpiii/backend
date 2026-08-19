@@ -3,10 +3,8 @@ package com.github.galpiii.galpi.domain.collection.pipeline;
 /**
  * 파일이 수집 대상에서 빠진 이유.
  *
- * <p>앞의 여섯 개는 인계 계약이 지정한 값 그대로다. {@link #CONFIGURED_EXCLUDE} 하나만
- * 더했다 — 계약에는 없지만 {@code analysis_configs.exclude_paths}로 사용자가 직접 뺀 파일에
- * 붙일 사유가 목록에 없었다. 이걸 {@link #DEPENDENCY}로 접으면 "라이브러리라서 빠졌다"고
- * 거짓말을 하게 된다.
+ * <p>앞의 여섯 개는 인계 계약이 지정한 값 그대로다. 나머지는 사용자 경로 설정과 읽기 실패를
+ * 다른 사유로 거짓 기록하지 않기 위해 추가했다.
  */
 public enum ExclusionReason {
 
@@ -29,5 +27,11 @@ public enum ExclusionReason {
     TOTAL_CONTENT_LIMIT,
 
     /** 사용자가 {@code analysis_configs.exclude_paths}로 직접 뺐다. */
-    CONFIGURED_EXCLUDE
+    CONFIGURED_EXCLUDE,
+
+    /** 사용자가 {@code analysis_configs.include_paths}로 지정한 범위 밖이다. */
+    CONFIGURED_INCLUDE,
+
+    /** 순회·스니핑·비밀정보 검사 중 읽지 못한 파일. */
+    READ_FAILED
 }

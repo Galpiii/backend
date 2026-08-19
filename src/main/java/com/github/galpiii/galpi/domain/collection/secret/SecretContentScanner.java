@@ -124,11 +124,18 @@ public class SecretContentScanner {
      * 실제로는 바이너리 판별에서 이미 걸러진 텍스트 파일만 들어온다.
      */
     public Optional<SecretFinding> firstFinding(Path file) {
-        try (Reader reader = newReader(file)) {
-            return firstFinding(reader);
+        try {
+            return firstFindingOrThrow(file);
         } catch (IOException e) {
             log.warn("[수집] 비밀정보 스캔 중 파일을 읽지 못했다 cause={}", e.getClass().getSimpleName());
             return Optional.empty();
+        }
+    }
+
+    /** 읽기 실패를 불완전 수집으로 기록해야 하는 호출부를 위한 변형. */
+    public Optional<SecretFinding> firstFindingOrThrow(Path file) throws IOException {
+        try (Reader reader = newReader(file)) {
+            return firstFinding(reader);
         }
     }
 

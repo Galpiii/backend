@@ -80,11 +80,21 @@ public class FileExclusionRules {
      * 해석할 수 없는 패턴은 무시하고 넘어간다.
      */
     public boolean matchesConfiguredExclude(String relativePath, List<String> excludePaths) {
-        if (excludePaths == null || excludePaths.isEmpty()) {
+        return matchesAny(relativePath, excludePaths);
+    }
+
+    /** include 목록이 없으면 전부 포함하고, 있으면 하나 이상의 glob에 맞아야 한다. */
+    public boolean matchesConfiguredInclude(String relativePath, List<String> includePaths) {
+        return includePaths == null || includePaths.isEmpty()
+                || matchesAny(relativePath, includePaths);
+    }
+
+    private static boolean matchesAny(String relativePath, List<String> patterns) {
+        if (patterns == null || patterns.isEmpty()) {
             return false;
         }
         Path candidate = Path.of(relativePath);
-        for (String pattern : excludePaths) {
+        for (String pattern : patterns) {
             if (pattern == null || pattern.isBlank()) {
                 continue;
             }

@@ -61,7 +61,8 @@ public class RepositoryCollector {
                 commitSha, request.installationToken());
              ExtractedRepository extracted = extractor.extract(archive)) {
 
-            FileSelectionResult selection = fileSelector.select(extracted, request.excludePaths());
+            FileSelectionResult selection = fileSelector.select(
+                    extracted, request.includePaths(), request.excludePaths());
 
             List<IncompleteReason> reasons = new ArrayList<>(selection.incompleteReasons());
             reasons.addAll(pullRequests.incompleteReasons());
@@ -113,6 +114,7 @@ public class RepositoryCollector {
                                     Long githubRepositoryId,
                                     int prLimit,
                                     OffsetDateTime prSince,
+                                    List<String> includePaths,
                                     List<String> excludePaths) {
     }
 

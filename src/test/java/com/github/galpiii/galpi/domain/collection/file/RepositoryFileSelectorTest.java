@@ -140,6 +140,20 @@ class RepositoryFileSelectorTest {
             assertThat(reasonOf(result, "legacy/Old.java"))
                     .isEqualTo(ExclusionReason.CONFIGURED_EXCLUDE);
         }
+
+        @Test
+        @DisplayName("사용자가 지정한 포함 경로 밖의 파일을 뺀다")
+        void includesOnlyConfiguredPaths() throws IOException {
+            write("src/App.java", "class App {}");
+            write("docs/guide.md", "guide");
+
+            FileSelectionResult result = select(List.of("src/**"), List.of(),
+                    DataSize.ofMegabytes(20), DataSize.ofMegabytes(1));
+
+            assertThat(collectedPaths(result)).containsExactly("src/App.java");
+            assertThat(reasonOf(result, "docs/guide.md"))
+                    .isEqualTo(ExclusionReason.CONFIGURED_INCLUDE);
+        }
     }
 
     @Nested
@@ -223,15 +237,21 @@ class RepositoryFileSelectorTest {
 
     private FileSelectionResult select(List<String> excludePaths, DataSize maxTotalContent,
                                        DataSize maxFileSize) {
+        return select(List.of(), excludePaths, maxTotalContent, maxFileSize);
+    }
+
+    private FileSelectionResult select(List<String> includePaths, List<String> excludePaths,
+                                       DataSize maxTotalContent, DataSize maxFileSize) {
         CollectionProperties properties = new CollectionProperties(
                 DataSize.ofMegabytes(200), DataSize.ofGigabytes(1), 20_000, maxFileSize,
-                maxTotalContent, 3, Duration.ofSeconds(120), 30, 30, 30);
+                maxTotalContent, DataSize.ofMegabytes(20), 3, Duration.ofSeconds(120),
+                30, 30, 30, 900);
         RepositoryFileSelector selector = new RepositoryFileSelector(properties,
                 new SecretPathRules(), new SecretContentScanner(), new FileExclusionRules());
 
         ExtractedRepository extracted = new ExtractedRepository(repository, repository, 0, 0,
                 List.of(), List.of());
-        return selector.select(extracted, excludePaths);
+        return selector.select(extracted, includePaths, excludePaths);
     }
 
     private void write(String relativePath, String content) throws IOException {

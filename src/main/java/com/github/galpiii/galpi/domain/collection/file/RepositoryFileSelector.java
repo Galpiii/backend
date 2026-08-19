@@ -61,8 +61,9 @@ public class RepositoryFileSelector {
     private final SecretContentScanner secretContentScanner;
     private final FileExclusionRules exclusionRules;
 
-    public FileSelectionResult select(ExtractedRepository repository, List<String> excludePaths) {
-        Scan scan = walk(repository, excludePaths);
+    public FileSelectionResult select(ExtractedRepository repository, List<String> includePaths,
+                                      List<String> excludePaths) {
+        Scan scan = walk(repository, includePaths, excludePaths);
 
         // 상한에 걸릴 때 무엇을 남길지가 여기서 정해진다. 같은 우선순위면 경로 순서라 결과가
         // 재현 가능하다 — 같은 커밋을 두 번 분석했는데 다른 파일이 빠지면 원인을 못 찾는다.
@@ -74,6 +75,7 @@ public class RepositoryFileSelector {
         List<ExcludedFile> excluded = new ArrayList<>(scan.excluded);
         List<IncompleteReason> incompleteReasons = new ArrayList<>(
                 repository.incompleteReasons());
+        incompleteReasons.addAll(scan.incompleteReasons);
         long budget = properties.maxTotalContentBytes();
         long usedBytes = 0;
         boolean budgetExhausted = false;
@@ -104,7 +106,8 @@ public class RepositoryFileSelector {
                 List.copyOf(scan.fileTree), List.copyOf(incompleteReasons), usedBytes);
     }
 
-    private Scan walk(ExtractedRepository repository, List<String> excludePaths) {
+    private Scan walk(ExtractedRepository repository, List<String> includePaths,
+                      List<String> excludePaths) {
         Scan scan = new Scan();
         Path root = repository.root();
 
@@ -138,29 +141,31 @@ public class RepositoryFileSelector {
                     if (!attributes.isRegularFile()) {
                         return FileVisitResult.CONTINUE;
                     }
-                    classify(root, file, attributes.size(), excludePaths, scan);
+                    classify(root, file, attributes.size(), includePaths, excludePaths, scan);
                     return FileVisitResult.CONTINUE;
                 }
 
                 @Override
                 public FileVisitResult visitFileFailed(Path file, IOException e) {
                     log.warn("[수집] 파일을 읽지 못해 건너뛴다 cause={}", e.getClass().getSimpleName());
+                    scan.incompleteReasons.add(IncompleteReason.FILE_READ_FAILED);
                     return FileVisitResult.CONTINUE;
                 }
             });
         } catch (IOException e) {
             log.warn("[수집] 저장소 트리를 순회하지 못했다 cause={}", e.getClass().getSimpleName());
+            scan.incompleteReasons.add(IncompleteReason.FILE_READ_FAILED);
         }
         return scan;
     }
 
-    private void classify(Path root, Path file, long sizeBytes, List<String> excludePaths,
-                          Scan scan) {
+    private void classify(Path root, Path file, long sizeBytes, List<String> includePaths,
+                          List<String> excludePaths, Scan scan) {
         String relativePath = relativize(root, file);
         scan.fileTree.add(relativePath);
 
         Optional<ExclusionReason> reason = exclusionReason(file, relativePath, sizeBytes,
-                excludePaths);
+                includePaths, excludePaths, scan);
         if (reason.isPresent()) {
             scan.excluded.add(new ExcludedFile(relativePath, reason.get()));
             return;
@@ -170,9 +175,13 @@ public class RepositoryFileSelector {
     }
 
     private Optional<ExclusionReason> exclusionReason(Path file, String relativePath,
-                                                      long sizeBytes, List<String> excludePaths) {
+                                                      long sizeBytes, List<String> includePaths,
+                                                      List<String> excludePaths, Scan scan) {
         if (secretPathRules.isSecretPath(relativePath)) {
             return Optional.of(ExclusionReason.SECRET_SUSPECTED);
+        }
+        if (!exclusionRules.matchesConfiguredInclude(relativePath, includePaths)) {
+            return Optional.of(ExclusionReason.CONFIGURED_INCLUDE);
         }
         if (exclusionRules.matchesConfiguredExclude(relativePath, excludePaths)) {
             return Optional.of(ExclusionReason.CONFIGURED_EXCLUDE);
@@ -192,14 +201,26 @@ public class RepositoryFileSelector {
         }
 
         Sniffed sniffed = sniff(file);
-        if (sniffed == Sniffed.UNREADABLE || sniffed == Sniffed.BINARY) {
+        if (sniffed == Sniffed.UNREADABLE) {
+            scan.incompleteReasons.add(IncompleteReason.FILE_READ_FAILED);
+            return Optional.of(ExclusionReason.READ_FAILED);
+        }
+        if (sniffed == Sniffed.BINARY) {
             return Optional.of(ExclusionReason.BINARY);
         }
         if (sniffed == Sniffed.LFS_POINTER) {
             return Optional.of(ExclusionReason.LFS_POINTER);
         }
 
-        Optional<SecretFinding> finding = secretContentScanner.firstFinding(file);
+        Optional<SecretFinding> finding;
+        try {
+            finding = secretContentScanner.firstFindingOrThrow(file);
+        } catch (IOException e) {
+            log.warn("[수집] 비밀정보 검사 중 파일을 읽지 못했다 cause={}",
+                    e.getClass().getSimpleName());
+            scan.incompleteReasons.add(IncompleteReason.FILE_READ_FAILED);
+            return Optional.of(ExclusionReason.READ_FAILED);
+        }
         if (finding.isPresent()) {
             // 경로와 패턴 종류만 남긴다. 탐지된 값은 로그에도 반환값에도 넣지 않는다.
             log.info("[수집] 비밀정보가 의심되어 파일을 제외한다 path={} kind={} line={}",
@@ -250,5 +271,6 @@ public class RepositoryFileSelector {
         private final List<Candidate> candidates = new ArrayList<>();
         private final List<ExcludedFile> excluded = new ArrayList<>();
         private final List<String> fileTree = new ArrayList<>();
+        private final List<IncompleteReason> incompleteReasons = new ArrayList<>();
     }
 }
