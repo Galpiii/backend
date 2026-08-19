@@ -70,10 +70,6 @@ class FeatureExtractionWriterIntegrationTest extends IntegrationTestSupport {
 
     @BeforeEach
     void setUp() {
-        specDocumentRepository.deleteAllInBatch();
-        projectRepository.deleteAllInBatch();
-        userRepository.deleteAllInBatch();
-
         user = userRepository.save(
                 User.ofGithub(System.nanoTime(), "galpi-tester", "테스터", null, null));
         project = projectRepository.save(Project.create(user, "갈피"));
@@ -241,8 +237,9 @@ class FeatureExtractionWriterIntegrationTest extends IntegrationTestSupport {
         @Test
         @DisplayName("끝나지 않은 분석을 한 번에 실패로 정리한다")
         void failsAllInProgress() {
+            Project other = projectRepository.save(Project.create(user, "다른 프로젝트"));
             SpecDocument pending = specDocumentRepository.save(SpecDocument.builder()
-                    .project(project)
+                    .project(other)
                     .user(user)
                     .fileName("대기중.pdf")
                     .build());

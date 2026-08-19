@@ -41,10 +41,6 @@ class FeatureSpecStatusIntegrationTest extends IntegrationTestSupport {
 
     @BeforeEach
     void setUp() {
-        specDocumentRepository.deleteAllInBatch();
-        projectRepository.deleteAllInBatch();
-        userRepository.deleteAllInBatch();
-
         owner = userRepository.save(
                 User.ofGithub(System.nanoTime(), "galpi-tester", "테스터", null, null));
         project = projectRepository.save(

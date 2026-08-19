@@ -56,10 +56,6 @@ class FeatureSpecUploadIntegrationTest extends IntegrationTestSupport {
 
     @BeforeEach
     void setUp() {
-        specDocumentRepository.deleteAllInBatch();
-        projectRepository.deleteAllInBatch();
-        userRepository.deleteAllInBatch();
-
         User user = userRepository.save(
                 User.ofGithub(System.nanoTime(), "galpi-tester", "테스터", null, null));
         Project project = projectRepository.save(
