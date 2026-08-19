@@ -215,7 +215,7 @@ public class FeatureSpecAiService {
                         operation,
                         attempt,
                         properties.maxAttempts(),
-                        e.getMessage()
+                        reasonOf(e)
                 );
 
                 if (attempt < properties.maxAttempts()) {
@@ -225,6 +225,22 @@ public class FeatureSpecAiService {
         }
 
         throw new FeatureSpecAiException(operation + "에 최종 실패했습니다.", lastFailure);
+    }
+
+    /**
+     * 재시도 로그에 남길 실패 사유.
+     *
+     * <p>classify가 감싸면서 붙인 메시지는 모든 실패에 대해 같은 문구라 그것만 남기면 타임아웃인지
+     * 429인지 알 수 없다. 재시도했다는 사실보다 무엇 때문이었는지가 원인 추적에 필요하다.
+     */
+    private static String reasonOf(RetryableAiException e) {
+        Throwable cause = e.getCause();
+
+        if (cause == null) {
+            return e.getMessage();
+        }
+
+        return cause.getClass().getSimpleName() + ": " + cause.getMessage();
     }
 
     private void sleepBeforeRetry(int attempt) {

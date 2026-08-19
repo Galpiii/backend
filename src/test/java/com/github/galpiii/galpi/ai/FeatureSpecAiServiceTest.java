@@ -20,7 +20,10 @@ import com.openai.services.blocking.ResponseService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -40,6 +43,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+@ExtendWith(OutputCaptureExtension.class)
 @DisplayName("FeatureSpecAiService — OpenAI 분석 호출")
 class FeatureSpecAiServiceTest {
 
@@ -252,6 +256,20 @@ class FeatureSpecAiServiceTest {
                 .isInstanceOf(FeatureSpecAiException.class);
 
         verify(responseService, times(1)).create(any(ResponseCreateParams.class));
+    }
+
+    @Test
+    @DisplayName("재시도 로그에 감싼 문구가 아니라 실제 원인을 남긴다")
+    void logsUnderlyingFailureReason(CapturedOutput output) {
+        givenUploadSucceeds();
+        Response response = completedResponse(VALID_JSON);
+        given(responseService.create(any(ResponseCreateParams.class)))
+                .willThrow(mock(RateLimitException.class))
+                .willReturn(response);
+
+        service.analyze(pdf);
+
+        assertThat(output).contains("RateLimitException");
     }
 
     @Test
