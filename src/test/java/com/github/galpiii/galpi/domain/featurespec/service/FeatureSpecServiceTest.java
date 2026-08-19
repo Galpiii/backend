@@ -6,6 +6,7 @@ import com.github.galpiii.galpi.domain.featurespec.entity.SpecDocument;
 import com.github.galpiii.galpi.domain.featurespec.repository.SpecDocumentRepository;
 import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileValidator;
 import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileValidator.ValidatedFeatureSpec;
+import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.BadRequestException;
@@ -27,6 +28,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -35,6 +37,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -74,7 +77,8 @@ class FeatureSpecServiceTest {
     }
 
     private void givenOwnedProject() {
-        given(projectRepository.existsByIdAndUserId(PROJECT_ID, USER_ID)).willReturn(true);
+        given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID))
+                .willReturn(Optional.of(mock(Project.class)));
     }
 
     private void givenUploadableProject() {
@@ -153,11 +157,11 @@ class FeatureSpecServiceTest {
     @Test
     @DisplayName("타인 프로젝트이거나 없는 프로젝트면 파일을 읽지 않는다")
     void rejectsInaccessibleProjectBeforeTouchingFile() {
-        given(projectRepository.existsByIdAndUserId(PROJECT_ID, USER_ID)).willReturn(false);
+        given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.upload(PROJECT_ID, USER_ID, file))
                 .isInstanceOf(NotFoundException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_ACCESSIBLE);
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_FOUND);
 
         verify(featureSpecFileValidator, never()).validate(any());
         verify(featureExtractionService, never()).extract(anyLong(), any());

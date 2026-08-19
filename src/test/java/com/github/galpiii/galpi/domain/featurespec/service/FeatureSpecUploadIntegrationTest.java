@@ -63,7 +63,7 @@ class FeatureSpecUploadIntegrationTest extends IntegrationTestSupport {
         User user = userRepository.save(
                 User.ofGithub(System.nanoTime(), "galpi-tester", "테스터", null, null));
         Project project = projectRepository.save(
-                Project.builder().name("갈피").user(user).build());
+                Project.create(user, "갈피"));
 
         userId = user.getId();
         projectId = project.getId();
@@ -126,7 +126,7 @@ class FeatureSpecUploadIntegrationTest extends IntegrationTestSupport {
 
         assertThatThrownBy(() -> service.upload(projectId, other.getId(), pdfFile()))
                 .isInstanceOf(NotFoundException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_ACCESSIBLE);
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_FOUND);
 
         assertThat(specDocumentRepository.count()).isZero();
     }
@@ -136,7 +136,7 @@ class FeatureSpecUploadIntegrationTest extends IntegrationTestSupport {
     void rejectsMissingProject() throws IOException {
         assertThatThrownBy(() -> service.upload(projectId + 1000, userId, pdfFile()))
                 .isInstanceOf(NotFoundException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_ACCESSIBLE);
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_FOUND);
 
         assertThat(specDocumentRepository.count()).isZero();
     }

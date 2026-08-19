@@ -108,14 +108,14 @@ class FeatureSpecControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("접근할 수 없는 프로젝트면 404 PROJECT-002를 내려준다")
         void returnsNotFoundWhenProjectInaccessible() throws Exception {
-            willThrow(new NotFoundException(ErrorCode.PROJECT_NOT_ACCESSIBLE))
+            willThrow(new NotFoundException(ErrorCode.PROJECT_NOT_FOUND))
                     .given(featureSpecService).upload(eq(PROJECT_ID), eq(USER_ID), any());
 
             mockMvc.perform(multipart(UPLOAD_PATH, PROJECT_ID)
                             .file(pdfPart())
                             .header(HttpHeaders.AUTHORIZATION, bearer()))
                     .andExpect(status().isNotFound())
-                    .andExpect(jsonPath("$.code").value(ErrorCode.PROJECT_NOT_ACCESSIBLE.getCode()))
+                    .andExpect(jsonPath("$.code").value(ErrorCode.PROJECT_NOT_FOUND.getCode()))
                     .andExpect(jsonPath("$.data").doesNotExist());
         }
 

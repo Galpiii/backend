@@ -31,14 +31,4 @@ public class OAuthStateStore {
         }
         return Optional.ofNullable(redisTemplate.opsForValue().getAndDelete(KEY_PREFIX + state));
     }
-
-    public void rememberInstallIntent(Long userId, String returnPath, Duration ttl) {
-        redisTemplate.opsForValue()
-                .set("github:install-intent:" + userId, returnPath == null ? "" : returnPath, ttl);
-    }
-
-    public Optional<String> consumeInstallIntent(Long userId) {
-        return Optional.ofNullable(
-                redisTemplate.opsForValue().getAndDelete("github:install-intent:" + userId));
-    }
 }

@@ -29,6 +29,9 @@ public class SecurityConfig {
     private static final String[] PUBLIC_ENDPOINTS = {
             "/auth/github/authorize",
             "/auth/github/callback",
+            // GitHub이 브라우저를 직접 보내므로 Authorization 헤더가 붙을 수 없다.
+            // 사용자 식별은 state 또는 설치 시작 기록으로 서비스 안에서 한다.
+            "/auth/github/setup/callback",
             "/auth/token",
             "/auth/refresh",
             "/auth/logout"

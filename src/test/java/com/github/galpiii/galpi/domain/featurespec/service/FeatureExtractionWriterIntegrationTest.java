@@ -76,7 +76,7 @@ class FeatureExtractionWriterIntegrationTest extends IntegrationTestSupport {
 
         user = userRepository.save(
                 User.ofGithub(System.nanoTime(), "galpi-tester", "테스터", null, null));
-        project = projectRepository.save(Project.builder().name("갈피").user(user).build());
+        project = projectRepository.save(Project.create(user, "갈피"));
         SpecDocument specDocument = specDocumentRepository.save(
                 SpecDocument.builder().project(project).user(user).fileName("기능명세서.pdf").build());
 

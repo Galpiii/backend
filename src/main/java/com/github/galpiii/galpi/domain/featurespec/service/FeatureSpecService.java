@@ -108,13 +108,13 @@ public class FeatureSpecService {
 
     // 프로젝트 존재 및 소유자 검증
     private void verifyProjectOwner(Long projectId, Long userId) {
-        if (!projectRepository.existsByIdAndUserId(projectId, userId)) {
+        if (projectRepository.findByIdAndUserId(projectId, userId).isEmpty()) {
             log.warn(
                     "[기능명세서] 프로젝트가 없거나 접근 권한이 없습니다. projectId: {}, userId: {}",
                     projectId,
                     userId
             );
-            throw new NotFoundException(ErrorCode.PROJECT_NOT_ACCESSIBLE);
+            throw new NotFoundException(ErrorCode.PROJECT_NOT_FOUND);
         }
     }
 

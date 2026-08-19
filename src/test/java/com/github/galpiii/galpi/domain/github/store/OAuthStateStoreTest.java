@@ -101,24 +101,4 @@ class OAuthStateStoreTest {
 
         assertThat(store.consume("expired")).isEmpty();
     }
-
-    @Test
-    @DisplayName("state 키와 install-intent 키는 네임스페이스가 겹치지 않는다")
-    void separatesInstallIntentNamespace() {
-        store.rememberInstallIntent(7L, "/projects", Duration.ofMinutes(10));
-
-        ArgumentCaptor<String> key = ArgumentCaptor.forClass(String.class);
-        verify(valueOperations).set(key.capture(), any(), any(Duration.class));
-        assertThat(key.getValue()).isEqualTo("github:install-intent:7").doesNotStartWith("oauth:state:");
-    }
-
-    @Test
-    @DisplayName("install-intent도 한 번 읽으면 사라진다")
-    void consumesInstallIntentOnce() {
-        given(valueOperations.getAndDelete("github:install-intent:7")).willReturn("/projects");
-
-        assertThat(store.consumeInstallIntent(7L)).contains("/projects");
-
-        verify(valueOperations).getAndDelete("github:install-intent:7");
-    }
 }

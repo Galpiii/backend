@@ -48,7 +48,7 @@ class FeatureSpecStatusIntegrationTest extends IntegrationTestSupport {
         owner = userRepository.save(
                 User.ofGithub(System.nanoTime(), "galpi-tester", "테스터", null, null));
         project = projectRepository.save(
-                Project.builder().name("갈피").user(owner).build());
+                Project.create(owner, "갈피"));
         specDocument = specDocumentRepository.save(
                 SpecDocument.builder().project(project).user(owner).fileName(FILE_NAME).build());
     }
@@ -88,14 +88,14 @@ class FeatureSpecStatusIntegrationTest extends IntegrationTestSupport {
         assertThatThrownBy(() ->
                 service.getStatus(project.getId(), specDocument.getId(), other.getId()))
                 .isInstanceOf(NotFoundException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_ACCESSIBLE);
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_FOUND);
     }
 
     @Test
     @DisplayName("내 프로젝트 경로로 다른 프로젝트의 문서 id를 넣으면 거절한다")
     void rejectsSpecDocumentOfAnotherProject() {
         Project otherProject = projectRepository.save(
-                Project.builder().name("다른 프로젝트").user(owner).build());
+                Project.create(owner, "다른 프로젝트"));
         SpecDocument otherSpecDocument = specDocumentRepository.save(
                 SpecDocument.builder().project(otherProject).user(owner).fileName(FILE_NAME).build());
 

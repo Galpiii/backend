@@ -51,7 +51,7 @@ class GithubAppJwtGeneratorTest {
 
     private static GithubAppProperties propertiesWith(String privateKey) {
         return new GithubAppProperties(
-                APP_ID, "Iv1.client", "secret", privateKey, "https://api.galpi.dev",
+                APP_ID, "galpi-app", "Iv1.client", "secret", privateKey, "https://api.galpi.dev",
                 "2022-11-28", "https://api.github.com", "https://github.com", "Galpi",
                 List.of("https://galpi.dev"), "https://galpi.dev/auth/callback",
                 Duration.ofSeconds(5), Duration.ofSeconds(15), 2, 10);

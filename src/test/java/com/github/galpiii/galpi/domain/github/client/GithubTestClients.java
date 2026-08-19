@@ -2,6 +2,7 @@ package com.github.galpiii.galpi.domain.github.client;
 
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.config.GithubClientConfig;
+import com.github.galpiii.galpi.domain.github.config.GithubOperationProperties;
 
 import java.time.Duration;
 import java.util.List;
@@ -22,6 +23,7 @@ final class GithubTestClients {
     static GithubAppProperties properties(int maxRetries, int maxPages) {
         return new GithubAppProperties(
                 "12345",
+                "galpi-app",
                 "Iv1.testclient",
                 "test-client-secret",
                 "-----BEGIN PRIVATE KEY-----\nunused\n-----END PRIVATE KEY-----",
@@ -40,5 +42,14 @@ final class GithubTestClients {
 
     static GithubClientConfig config() {
         return new GithubClientConfig();
+    }
+
+    static GithubOperationProperties operationProperties() {
+        return operationProperties(50);
+    }
+
+    static GithubOperationProperties operationProperties(int maxRequests) {
+        return new GithubOperationProperties(
+                maxRequests, Duration.ofSeconds(30), 1, Duration.ofSeconds(3));
     }
 }
