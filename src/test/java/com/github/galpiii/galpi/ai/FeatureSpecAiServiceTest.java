@@ -238,19 +238,16 @@ class FeatureSpecAiServiceTest {
     }
 
     @Test
-    @DisplayName("응답이 잘리면 재시도한다 — reasoning 토큰은 호출마다 달라진다")
-    void retriesWhenTruncated() {
+    @DisplayName("응답이 잘리면 재시도하지 않는다 — 토큰 한도를 넘긴 문서는 다시 불러도 같은 자리에서 잘린다")
+    void doesNotRetryWhenTruncated() {
         givenUploadSucceeds();
         Response truncated = incompleteResponse(Response.IncompleteDetails.Reason.MAX_OUTPUT_TOKENS);
-        Response response = completedResponse(VALID_JSON);
-        given(responseService.create(any(ResponseCreateParams.class)))
-                .willReturn(truncated)
-                .willReturn(response);
+        given(responseService.create(any(ResponseCreateParams.class))).willReturn(truncated);
 
-        FeatureSpecExtractionResult result = service.analyze(pdf);
+        assertThatThrownBy(() -> service.analyze(pdf))
+                .isInstanceOf(FeatureSpecAiException.class);
 
-        assertThat(result.features()).hasSize(1);
-        verify(responseService, times(2)).create(any(ResponseCreateParams.class));
+        verify(responseService, times(1)).create(any(ResponseCreateParams.class));
     }
 
     @Test

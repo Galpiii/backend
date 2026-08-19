@@ -143,16 +143,11 @@ public class FeatureSpecAiService {
                     .flatMap(Response.IncompleteDetails::reason)
                     .orElse(null);
 
-            if (Response.IncompleteDetails.Reason.CONTENT_FILTER.equals(reason)) {
-                log.error("[기능명세서 분석] 콘텐츠 정책으로 응답이 중단됐습니다. 재시도하지 않습니다.");
-                throw new FeatureSpecAiException("콘텐츠 정책으로 응답이 중단되었습니다.");
-            }
-
             log.error(
-                    "[기능명세서 분석] 응답이 잘렸습니다. maxOutputTokens 상향이 필요할 수 있습니다. reason: {}",
+                    "[기능명세서 분석] 응답이 완결되지 않아 재시도하지 않습니다. reason: {}",
                     reason
             );
-            throw new RetryableAiException("응답이 완결되지 않았습니다. reason: " + reason);
+            throw new FeatureSpecAiException("응답이 완결되지 않았습니다. reason: " + reason);
         }
 
         throw new RetryableAiException("응답 상태가 완료가 아닙니다. status: " + status);
