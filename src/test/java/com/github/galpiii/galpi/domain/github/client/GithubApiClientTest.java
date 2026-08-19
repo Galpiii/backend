@@ -275,8 +275,8 @@ class GithubApiClientTest {
 
             retryClient.getAuthenticatedUser(TOKEN);
 
-            assertThat(recorder.latest("core")).isNotNull();
-            assertThat(recorder.latest("core").remaining()).isEqualTo(4321);
+            assertThat(recorder.latest(TOKEN, "core")).isNotNull();
+            assertThat(recorder.latest(TOKEN, "core").remaining()).isEqualTo(4321);
             retryServer.verify();
         }
 

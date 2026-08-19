@@ -26,7 +26,8 @@ public class GithubLoggingInterceptor implements ClientHttpRequestInterceptor {
         try {
             ClientHttpResponse response = execution.execute(request, body);
             long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000;
-            rateLimitRecorder.record(RateLimitSnapshot.from(response.getHeaders()));
+            rateLimitRecorder.record(request.getHeaders().getFirst("Authorization"),
+                    RateLimitSnapshot.from(response.getHeaders()));
             log.debug("[GitHub] {} {} -> {} ({}ms)",
                     request.getMethod(), safeUri, response.getStatusCode().value(), elapsedMs);
             return response;
