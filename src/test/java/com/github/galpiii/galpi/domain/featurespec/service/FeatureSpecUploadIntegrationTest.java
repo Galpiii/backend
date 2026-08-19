@@ -13,12 +13,14 @@ import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.ConflictException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import com.github.galpiii.galpi.support.IntegrationTestSupport;
+import org.hibernate.exception.ConstraintViolationException;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -74,6 +76,27 @@ class FeatureSpecUploadIntegrationTest extends IntegrationTestSupport {
             return new MockMultipartFile(
                     "file", FILE_NAME, MediaType.APPLICATION_PDF_VALUE, out.toByteArray());
         }
+    }
+
+    /**
+     * 제약 이름이 어긋나면 동시 업로드가 409 대신 500으로 나가는데, 애플리케이션 사전 검사가
+     * 평소에 다 걸러주기 때문에 그 사실이 드러나지 않는다.
+     */
+    @Test
+    @DisplayName("실제 UNIQUE 위반이 writer가 찾는 제약 이름을 달고 온다")
+    void realViolationCarriesTheExpectedConstraintName() {
+        Project project = projectRepository.findById(projectId).orElseThrow();
+        User user = userRepository.findById(userId).orElseThrow();
+        specDocumentRepository.saveAndFlush(SpecDocument.builder()
+                .project(project).user(user).fileName(FILE_NAME).build());
+
+        assertThatThrownBy(() -> specDocumentRepository.saveAndFlush(SpecDocument.builder()
+                .project(project).user(user).fileName("두번째.pdf").build()))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .cause().isInstanceOf(ConstraintViolationException.class)
+                .extracting(cause -> ((ConstraintViolationException) cause).getConstraintName())
+                .asString()
+                .isEqualToIgnoringCase("uk_spec_documents_project");
     }
 
     @Test
