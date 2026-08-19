@@ -123,6 +123,7 @@ public class FeatureSpecAiService {
                 .model(properties.model())
                 .instructions(prompt.instructions())
                 .maxOutputTokens(properties.maxOutputTokens())
+                .store(false)
                 .text(ResponseTextConfig.builder()
                         .format(prompt.schemaConfig())
                         .build())
