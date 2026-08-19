@@ -36,7 +36,7 @@ public abstract class IntegrationTestSupport {
                 WHERE schemaname = 'public' AND tablename <> 'flyway_schema_history'
                 """, String.class);
 
-        jdbcTemplate.execute("TRUNCATE TABLE " + tables + " RESTART IDENTITY CASCADE");
+        jdbcTemplate.execute("TRUNCATE TABLE " + tables + " CASCADE");
     }
 
     @DynamicPropertySource
