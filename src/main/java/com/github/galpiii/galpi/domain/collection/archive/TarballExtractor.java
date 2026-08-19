@@ -11,6 +11,7 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedInputStream;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -73,17 +74,26 @@ public class TarballExtractor {
         List<IncompleteReason> incompleteReasons = new ArrayList<>();
         long totalBytes = 0;
         int fileCount = 0;
+        int entryCount = 0;
 
         try (InputStream fileStream = Files.newInputStream(archive.path());
              InputStream buffered = new BufferedInputStream(fileStream, BUFFER_SIZE);
              GZIPInputStream gzip = new GZIPInputStream(buffered, BUFFER_SIZE);
-             TarArchiveInputStream tar = new TarArchiveInputStream(gzip)) {
+             InputStream limited = new ExtractionLimitInputStream(
+                     gzip, properties.maxExtractedBytes());
+             TarArchiveInputStream tar = new TarArchiveInputStream(limited)) {
 
             TarArchiveEntry entry;
             while ((entry = tar.getNextEntry()) != null) {
+                if (entryCount >= properties.maxEntryCount()) {
+                    log.warn("[수집] 압축 해제 엔트리 개수 상한({})에 도달해 나머지를 건너뛴다",
+                            properties.maxEntryCount());
+                    incompleteReasons.add(IncompleteReason.FILE_LIMIT_EXCEEDED);
+                    break;
+                }
+                entryCount++;
                 if (entry.isPaxHeader() || entry.isGlobalPaxHeader()) {
-                    // commons-compress가 보통 알아서 소화하지만, 새어 나오면 파일도 디렉터리도
-                    // 아니라서 아래 검사에 걸린다. 메타데이터일 뿐이니 조용히 넘긴다.
+                    // 메타데이터도 파싱 비용이 있으므로 상한에는 포함하되 파일로 만들지는 않는다.
                     continue;
                 }
                 rejectUnsafeType(entry);
@@ -100,12 +110,6 @@ public class TarballExtractor {
                     continue;
                 }
 
-                if (fileCount >= properties.maxEntryCount()) {
-                    log.warn("[수집] 압축 해제 파일 개수 상한({})에 도달해 나머지를 건너뛴다",
-                            properties.maxEntryCount());
-                    incompleteReasons.add(IncompleteReason.FILE_LIMIT_EXCEEDED);
-                    break;
-                }
                 if (totalBytes >= properties.maxExtractedBytes()) {
                     log.warn("[수집] 압축 해제 총 용량 상한({} bytes)에 도달해 나머지를 건너뛴다",
                             properties.maxExtractedBytes());
@@ -121,6 +125,10 @@ public class TarballExtractor {
                 totalBytes += written;
                 fileCount++;
             }
+        } catch (ExtractionLimitExceededException e) {
+            log.warn("[수집] 실제 압축 해제 바이트가 상한({} bytes)을 넘어 중단한다",
+                    properties.maxExtractedBytes());
+            incompleteReasons.add(IncompleteReason.ARCHIVE_SIZE_LIMIT);
         } catch (IOException e) {
             log.warn("[수집] tarball을 풀지 못했다 cause={}", e.getClass().getSimpleName());
             throw new ArchiveLimitExceededException(ErrorCode.COLLECTION_ARCHIVE_INVALID);
@@ -133,9 +141,8 @@ public class TarballExtractor {
     /**
      * 엔트리를 파일로 옮긴다.
      *
-     * <p>전체 용량 상한은 여기서 보지 않는다. 바깥 루프가 파일 하나를 시작하기 전에 확인하므로
-     * 초과분은 최대 파일 하나(1MB)이고, 그 정도는 1GB 상한 앞에서 의미가 없다. 반대로 여기서
-     * 남은 예산까지 함께 재면, 예산이 모자라 잘린 파일이 "크기 초과"로 잘못 기록된다.
+     * <p>전체 용량 상한은 GZIP 바로 위의 제한 스트림이 모든 엔트리와 건너뛴 바이트를 포함해
+     * 강제한다. 여기서는 실제 파일로 쓴 바이트만 세어 결과 통계에 사용한다.
      *
      * @return 쓴 바이트. 단일 파일 상한을 넘어 건너뛰었으면 -1
      */
@@ -161,6 +168,9 @@ public class TarballExtractor {
                 }
                 out.write(buffer, 0, read);
             }
+        } catch (ExtractionLimitExceededException e) {
+            Files.deleteIfExists(destination);
+            throw e;
         } catch (FileAlreadyExistsException e) {
             log.warn("[수집] 같은 경로가 아카이브에 두 번 나타나 뒤쪽을 버린다");
             return -1;
@@ -267,5 +277,67 @@ public class TarballExtractor {
         } catch (IOException e) {
             throw new ArchiveLimitExceededException(ErrorCode.COLLECTION_ARCHIVE_INVALID);
         }
+    }
+
+    /**
+     * tar 엔트리를 저장했는지와 무관하게 GZIP에서 실제로 풀린 모든 바이트를 제한한다.
+     *
+     * <p>큰 파일을 디스크에 쓰지 않고 건너뛰더라도 {@link TarArchiveInputStream}은 다음 엔트리로
+     * 이동하기 위해 남은 내용을 읽어 버린다. 이 계층에서 제한하지 않으면 그 바이트가 총량에서
+     * 빠져 압축 폭탄 방어를 우회할 수 있다.
+     */
+    private static final class ExtractionLimitInputStream extends FilterInputStream {
+
+        private final long limit;
+        private long consumed;
+
+        private ExtractionLimitInputStream(InputStream delegate, long limit) {
+            super(delegate);
+            this.limit = limit;
+        }
+
+        @Override
+        public int read() throws IOException {
+            ensureRemaining();
+            int value = super.read();
+            if (value != -1) {
+                consumed++;
+            }
+            return value;
+        }
+
+        @Override
+        public int read(byte[] bytes, int offset, int length) throws IOException {
+            if (length == 0) {
+                return 0;
+            }
+            ensureRemaining();
+            int allowed = (int) Math.min(length, limit - consumed);
+            int read = super.read(bytes, offset, allowed);
+            if (read > 0) {
+                consumed += read;
+            }
+            return read;
+        }
+
+        @Override
+        public long skip(long length) throws IOException {
+            if (length <= 0) {
+                return 0;
+            }
+            ensureRemaining();
+            long skipped = super.skip(Math.min(length, limit - consumed));
+            consumed += skipped;
+            return skipped;
+        }
+
+        private void ensureRemaining() throws ExtractionLimitExceededException {
+            if (consumed >= limit) {
+                throw new ExtractionLimitExceededException();
+            }
+        }
+    }
+
+    private static final class ExtractionLimitExceededException extends IOException {
     }
 }

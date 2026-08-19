@@ -130,6 +130,36 @@ class TarballExtractorTest {
         }
 
         @Test
+        @DisplayName("단일 파일 상한으로 버린 바이트도 압축 해제 총량에 포함한다")
+        void countsDiscardedOversizedBytesTowardExtractionLimit() throws IOException {
+            Path archive = archive(tar ->
+                    writeFile(tar, ROOT + "bomb.txt", "x".repeat(16 * 1024)));
+
+            try (ExtractedRepository extracted = extract(archive,
+                    properties(DataSize.ofBytes(1024), DataSize.ofBytes(2048), 20_000))) {
+                assertThat(extracted.incompleteReasons())
+                        .contains(IncompleteReason.ARCHIVE_SIZE_LIMIT);
+                assertThat(Files.exists(extracted.root().resolve("bomb.txt"))).isFalse();
+            }
+        }
+
+        @Test
+        @DisplayName("크기 초과로 버린 파일도 엔트리 개수 상한에 포함한다")
+        void countsOversizedFilesTowardEntryLimit() throws IOException {
+            Path archive = archive(tar -> {
+                writeFile(tar, ROOT + "first.txt", "x".repeat(2048));
+                writeFile(tar, ROOT + "second.txt", "x".repeat(2048));
+            });
+
+            try (ExtractedRepository extracted = extract(archive,
+                    properties(DataSize.ofBytes(1024), DataSize.ofMegabytes(1), 1))) {
+                assertThat(extracted.oversizedPaths()).containsExactly("first.txt");
+                assertThat(extracted.incompleteReasons())
+                        .contains(IncompleteReason.FILE_LIMIT_EXCEEDED);
+            }
+        }
+
+        @Test
         @DisplayName("파일 개수 상한에 도달하면 멈추고 사유를 남긴다")
         void stopsAtEntryCountLimit() throws IOException {
             Path archive = archive(tar -> {
@@ -249,7 +279,8 @@ class TarballExtractorTest {
                                                    int maxEntryCount) {
         return new CollectionProperties(
                 DataSize.ofMegabytes(200), maxExtracted, maxEntryCount, maxFileSize,
-                DataSize.ofMegabytes(20), 3, Duration.ofSeconds(120), 30, 30, 30);
+                DataSize.ofMegabytes(20), DataSize.ofMegabytes(20), 3,
+                Duration.ofSeconds(120), 30, 30, 30, 900);
     }
 
     private Path archive(Consumer<TarArchiveOutputStream> content) throws IOException {

@@ -4,6 +4,8 @@ import com.github.galpiii.galpi.domain.collection.config.CollectionProperties;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.domain.github.exception.GithubInstallationUnavailableException;
+import com.github.galpiii.galpi.domain.github.exception.GithubRateLimitedException;
+import com.github.galpiii.galpi.domain.github.exception.GithubRepositoryUnavailableException;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
@@ -166,7 +168,55 @@ class TarballDownloaderTest {
                 exchange -> respondStatus(exchange, 404));
 
         assertThatThrownBy(() -> downloader().download("octocat", "hello", "abc123", TOKEN))
+                .isInstanceOf(GithubRepositoryUnavailableException.class);
+    }
+
+    @Test
+    @DisplayName("401은 만료되거나 거부된 installation token으로 다룬다")
+    void mapsUnauthorizedToInstallationUnavailable() {
+        apiServer.createContext("/repos/octocat/hello/tarball/abc123",
+                exchange -> respondStatus(exchange, 401));
+
+        assertThatThrownBy(() -> downloader().download("octocat", "hello", "abc123", TOKEN))
                 .isInstanceOf(GithubInstallationUnavailableException.class);
+    }
+
+    @Test
+    @DisplayName("429는 일반 다운로드 실패가 아니라 rate limit으로 전달한다")
+    void mapsTooManyRequestsToRateLimit() {
+        apiServer.createContext("/repos/octocat/hello/tarball/abc123", exchange -> {
+            exchange.getResponseHeaders().add("Retry-After", "60");
+            respondStatus(exchange, 429);
+        });
+
+        assertThatThrownBy(() -> downloader().download("octocat", "hello", "abc123", TOKEN))
+                .isInstanceOf(GithubRateLimitedException.class);
+    }
+
+    @Test
+    @DisplayName("헤더 뒤 본문이 멈춰도 다운로드 타임아웃 안에 중단한다")
+    void timesOutStalledResponseBody() {
+        apiServer.createContext("/repos/octocat/hello/tarball/abc123", exchange -> {
+            exchange.sendResponseHeaders(200, 0);
+            try (OutputStream body = exchange.getResponseBody()) {
+                body.write("partial".getBytes(StandardCharsets.UTF_8));
+                body.flush();
+                Thread.sleep(3_000);
+                body.write("late".getBytes(StandardCharsets.UTF_8));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (IOException ignored) {
+                // deadline이 스트림을 먼저 닫으면 서버 쓰기가 실패한다.
+            }
+        });
+
+        long startedAt = System.nanoTime();
+        assertThatThrownBy(() -> downloader(DataSize.ofMegabytes(1), Duration.ofSeconds(1))
+                .download("octocat", "hello", "abc123", TOKEN))
+                .isInstanceOf(GithubApiException.class);
+
+        assertThat(Duration.ofNanos(System.nanoTime() - startedAt))
+                .isLessThan(Duration.ofMillis(2_500));
     }
 
     private TarballDownloader downloader() {
@@ -174,7 +224,12 @@ class TarballDownloaderTest {
     }
 
     private TarballDownloader downloader(DataSize maxDownloadSize) {
-        return new TarballDownloader(githubProperties(), collectionProperties(maxDownloadSize));
+        return downloader(maxDownloadSize, Duration.ofSeconds(30));
+    }
+
+    private TarballDownloader downloader(DataSize maxDownloadSize, Duration downloadTimeout) {
+        return new TarballDownloader(githubProperties(),
+                collectionProperties(maxDownloadSize, downloadTimeout));
     }
 
     private String apiUrl() {
@@ -222,8 +277,13 @@ class TarballDownloaderTest {
     }
 
     private static CollectionProperties collectionProperties(DataSize maxDownloadSize) {
+        return collectionProperties(maxDownloadSize, Duration.ofSeconds(30));
+    }
+
+    private static CollectionProperties collectionProperties(DataSize maxDownloadSize,
+                                                             Duration downloadTimeout) {
         return new CollectionProperties(maxDownloadSize, DataSize.ofGigabytes(1), 20_000,
-                DataSize.ofMegabytes(1), DataSize.ofMegabytes(20), 3, Duration.ofSeconds(30),
-                30, 30, 30);
+                DataSize.ofMegabytes(1), DataSize.ofMegabytes(20), DataSize.ofMegabytes(20),
+                3, downloadTimeout, 30, 30, 30, 900);
     }
 }

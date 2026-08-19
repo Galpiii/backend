@@ -2,8 +2,12 @@ package com.github.galpiii.galpi.domain.collection.archive;
 
 import com.github.galpiii.galpi.domain.collection.config.CollectionProperties;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
+import com.github.galpiii.galpi.domain.github.client.GithubRateLimits;
+import com.github.galpiii.galpi.domain.github.client.RateLimitSnapshot;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.domain.github.exception.GithubInstallationUnavailableException;
+import com.github.galpiii.galpi.domain.github.exception.GithubRateLimitedException;
+import com.github.galpiii.galpi.domain.github.exception.GithubRepositoryUnavailableException;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.util.LogSafe;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +24,13 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.util.Locale;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * {@code GET /repos/{owner}/{repo}/tarball/{sha}}를 스트리밍으로 내려받는다.
@@ -98,8 +108,8 @@ public class TarballDownloader {
                 return writeBody(response, tempFile);
             }
             if (!isRedirect(status)) {
-                drain(response);
-                throw toException(status, target);
+                String body = readErrorBody(response);
+                throw toException(status, target, response, body);
             }
 
             URI next = redirectTarget(response, target);
@@ -148,6 +158,8 @@ public class TarballDownloader {
         byte[] buffer = new byte[BUFFER_SIZE];
 
         try (InputStream body = response.body();
+             BodyReadDeadline deadline = new BodyReadDeadline(
+                     body, collectionProperties.downloadTimeout());
              OutputStream out = Files.newOutputStream(tempFile, StandardOpenOption.WRITE,
                      StandardOpenOption.TRUNCATE_EXISTING)) {
             int read;
@@ -159,6 +171,7 @@ public class TarballDownloader {
                 }
                 out.write(buffer, 0, read);
             }
+            deadline.ensureNotExpired();
         } catch (IOException e) {
             log.warn("[수집] tarball 본문을 쓰지 못했다 cause={}", e.getClass().getSimpleName());
             throw new GithubApiException(ErrorCode.COLLECTION_ARCHIVE_DOWNLOAD_FAILED);
@@ -193,11 +206,23 @@ public class TarballDownloader {
         return next;
     }
 
-    private RuntimeException toException(int status, URI target) {
-        if (status == 401 || status == 403 || status == 404) {
+    private RuntimeException toException(int status, URI target,
+                                         HttpResponse<InputStream> response, String body) {
+        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+        response.headers().map().forEach(headers::put);
+        if ((status == 403 && GithubRateLimits.isRateLimited(headers, body)) || status == 429) {
+            return new GithubRateLimitedException(GithubRateLimits.retryAfterSeconds(
+                    headers, RateLimitSnapshot.from(headers)));
+        }
+        if (status == 401) {
             log.info("[수집] tarball 접근 거부 status={} host={}",
                     status, LogSafe.text(target.getHost()));
             return new GithubInstallationUnavailableException();
+        }
+        if (status == 403 || status == 404) {
+            log.info("[수집] tarball 저장소 접근 거부 status={} host={}",
+                    status, LogSafe.text(target.getHost()));
+            return new GithubRepositoryUnavailableException();
         }
         log.warn("[수집] tarball 다운로드 실패 status={} host={}",
                 status, LogSafe.text(target.getHost()));
@@ -208,12 +233,24 @@ public class TarballDownloader {
         return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
     }
 
-    /** 리다이렉트 응답 본문은 쓰지 않는다. 닫지 않으면 커넥션이 반환되지 않는다. */
+    /** 리다이렉트 응답 본문은 신뢰하지 않고 즉시 닫는다. readAllBytes로 메모리를 열어 두지 않는다. */
     private static void drain(HttpResponse<InputStream> response) {
         try (InputStream body = response.body()) {
-            body.readAllBytes();
         } catch (IOException ignored) {
             // 버릴 본문이라 실패해도 할 일이 없다.
+        }
+    }
+
+    /** 오류 판정에 필요한 앞부분만 읽고 닫는다. 오류 본문 자체가 메모리 공격면이 되면 안 된다. */
+    private String readErrorBody(HttpResponse<InputStream> response) {
+        try (InputStream body = response.body();
+             BodyReadDeadline deadline = new BodyReadDeadline(
+                     body, collectionProperties.downloadTimeout())) {
+            byte[] bytes = body.readNBytes(8_192);
+            deadline.ensureNotExpired();
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IOException ignored) {
+            return "";
         }
     }
 
@@ -259,5 +296,50 @@ public class TarballDownloader {
             return "";
         }
         return path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+    }
+
+    /**
+     * {@link HttpRequest.Builder#timeout(Duration)}이 헤더를 받은 뒤 반환된 body stream의 정지를
+     * 끝까지 막아 주지는 않는다. 별도 deadline에서 스트림을 닫아 느린 서버가 워커를 영구히
+     * 붙들지 못하게 한다.
+     */
+    private static final class BodyReadDeadline implements AutoCloseable {
+
+        private final ScheduledExecutorService executor;
+        private final ScheduledFuture<?> closeTask;
+        private final AtomicBoolean expired = new AtomicBoolean();
+
+        private BodyReadDeadline(InputStream body, Duration timeout) {
+            this.executor = Executors.newSingleThreadScheduledExecutor(task -> {
+                Thread thread = new Thread(task, "tarball-body-deadline");
+                thread.setDaemon(true);
+                return thread;
+            });
+            long timeoutMillis = Math.max(1, timeout.toMillis());
+            this.closeTask = executor.schedule(() -> {
+                expired.set(true);
+                closeQuietly(body);
+            }, timeoutMillis, TimeUnit.MILLISECONDS);
+        }
+
+        private void ensureNotExpired() throws IOException {
+            if (expired.get()) {
+                throw new IOException("tarball body read timed out");
+            }
+        }
+
+        @Override
+        public void close() {
+            closeTask.cancel(false);
+            executor.shutdownNow();
+        }
+
+        private static void closeQuietly(InputStream body) {
+            try {
+                body.close();
+            } catch (IOException ignored) {
+                // 닫아서 read를 깨우는 것이 목적이다.
+            }
+        }
     }
 }
