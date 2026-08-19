@@ -54,6 +54,27 @@ public enum ErrorCode {
             "GitHub 조회가 이미 진행 중입니다. 완료된 뒤 다시 시도해 주세요."),
     GITHUB_INSTALLATION_UNAVAILABLE("GITHUB-015", HttpStatus.BAD_GATEWAY,
             "GitHub 설치 정보를 더 이상 조회할 수 없습니다."),
+    GITHUB_REPOSITORY_UNAVAILABLE("GITHUB-016", HttpStatus.NOT_FOUND,
+            "GitHub 저장소에 접근할 수 없습니다. 삭제되었거나 권한이 회수되었습니다."),
+
+    // Analysis
+    ANALYSIS_RUN_NOT_FOUND("ANALYSIS-001", HttpStatus.NOT_FOUND, "분석 작업을 찾을 수 없습니다."),
+    ANALYSIS_NO_REPOSITORY("ANALYSIS-002", HttpStatus.BAD_REQUEST,
+            "분석할 저장소가 없습니다. 프로젝트에 저장소를 먼저 연결해 주세요."),
+    ANALYSIS_NO_ACCESSIBLE_REPOSITORY("ANALYSIS-003", HttpStatus.FORBIDDEN,
+            "접근할 수 있는 저장소가 없습니다. GitHub 권한을 확인해 주세요."),
+    ANALYSIS_ALREADY_RUNNING("ANALYSIS-004", HttpStatus.CONFLICT,
+            "이미 진행 중인 분석이 있습니다. 완료된 뒤 다시 시도해 주세요."),
+
+    // Collection
+    COLLECTION_ARCHIVE_TOO_LARGE("COLLECTION-001", HttpStatus.UNPROCESSABLE_CONTENT,
+            "저장소 아카이브가 허용 크기를 초과했습니다."),
+    COLLECTION_ARCHIVE_UNSAFE_ENTRY("COLLECTION-002", HttpStatus.UNPROCESSABLE_CONTENT,
+            "저장소 아카이브에 안전하게 처리할 수 없는 항목이 있습니다."),
+    COLLECTION_ARCHIVE_DOWNLOAD_FAILED("COLLECTION-003", HttpStatus.BAD_GATEWAY,
+            "저장소 아카이브를 내려받지 못했습니다."),
+    COLLECTION_ARCHIVE_INVALID("COLLECTION-004", HttpStatus.UNPROCESSABLE_CONTENT,
+            "저장소 아카이브를 읽을 수 없습니다."),
 
     // Project
     PROJECT_NOT_FOUND("PROJECT-001", HttpStatus.NOT_FOUND, "프로젝트를 찾을 수 없습니다."),
