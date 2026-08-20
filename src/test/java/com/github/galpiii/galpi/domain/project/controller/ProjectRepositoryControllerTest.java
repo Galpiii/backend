@@ -1,10 +1,12 @@
 package com.github.galpiii.galpi.domain.project.controller;
 
 import com.github.galpiii.galpi.domain.auth.jwt.JwtTokenProvider;
+import com.github.galpiii.galpi.domain.github.dto.SelectableRepositoryResponse;
 import com.github.galpiii.galpi.domain.project.dto.LinkRepositoriesRequest;
 import com.github.galpiii.galpi.domain.project.dto.LinkedRepositoryResponse;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.ForbiddenException;
+import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import com.github.galpiii.galpi.support.WebMvcTestSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -14,11 +16,13 @@ import org.springframework.http.MediaType;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -150,6 +154,61 @@ class ProjectRepositoryControllerTest extends WebMvcTestSupport {
                     .andExpect(status().isOk());
 
             verify(projectRepositoryService).unlink(USER_ID, PROJECT_ID, 55L);
+        }
+    }
+
+    @Nested
+    @DisplayName("URL로 찾기 — POST /projects/{projectId}/repositories/resolve")
+    class Resolve {
+
+        @Test
+        @DisplayName("확인된 저장소 정보를 돌려준다")
+        void resolvesRepository() throws Exception {
+            given(projectRepositoryService.resolve(anyLong(), anyLong(), any()))
+                    .willReturn(new SelectableRepositoryResponse(1L, "galpiii", "backend",
+                            "galpiii/backend", true, "main", "https://github.com/galpiii/backend",
+                            "동아리 통합 플랫폼 백엔드 API", "Java",
+                            OffsetDateTime.parse("2026-08-18T00:00:00Z"),
+                            Map.of("pull", true), false));
+
+            mockMvc.perform(post("/projects/{projectId}/repositories/resolve", PROJECT_ID)
+                            .header("Authorization", bearer())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"url\":\"https://github.com/galpiii/backend.git\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.githubRepositoryId").value(1))
+                    .andExpect(jsonPath("$.data.language").value("Java"))
+                    .andExpect(jsonPath("$.data.linked").value(false));
+
+            verify(projectRepositoryService).resolve(USER_ID, PROJECT_ID,
+                    "https://github.com/galpiii/backend.git");
+        }
+
+        @Test
+        @DisplayName("접근할 수 없는 저장소는 없는 것과 같은 404로 나간다")
+        void hidesInaccessibleRepository() throws Exception {
+            willThrow(new NotFoundException(ErrorCode.PROJECT_REPOSITORY_NOT_ACCESSIBLE))
+                    .given(projectRepositoryService).resolve(anyLong(), anyLong(), any());
+
+            mockMvc.perform(post("/projects/{projectId}/repositories/resolve", PROJECT_ID)
+                            .header("Authorization", bearer())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"url\":\"https://github.com/someone/private\"}"))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.code")
+                            .value(ErrorCode.PROJECT_REPOSITORY_NOT_ACCESSIBLE.getCode()));
+        }
+
+        @Test
+        @DisplayName("빈 URL은 서비스까지 가지 않는다")
+        void rejectsBlankUrl() throws Exception {
+            mockMvc.perform(post("/projects/{projectId}/repositories/resolve", PROJECT_ID)
+                            .header("Authorization", bearer())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"url\":\"  \"}"))
+                    .andExpect(status().isBadRequest());
+
+            verify(projectRepositoryService, never()).resolve(anyLong(), anyLong(), any());
         }
     }
 }

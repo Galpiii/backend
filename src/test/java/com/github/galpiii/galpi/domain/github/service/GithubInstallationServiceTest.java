@@ -3,13 +3,17 @@ package com.github.galpiii.galpi.domain.github.service;
 import com.github.galpiii.galpi.domain.github.client.GithubApiClient;
 import com.github.galpiii.galpi.domain.github.client.GithubRequestBudget;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubInstallationResponse;
+import com.github.galpiii.galpi.domain.github.client.dto.GithubListResult;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubRepositoryResponse;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.config.GithubOperationProperties;
+import com.github.galpiii.galpi.domain.github.dto.InstallationFailureReason;
 import com.github.galpiii.galpi.domain.github.dto.InstallationRepositoriesResponse;
+import com.github.galpiii.galpi.domain.github.dto.SelectableRepositoriesResponse;
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.domain.github.exception.GithubInstallationUnavailableException;
+import com.github.galpiii.galpi.domain.github.exception.GithubRateLimitedException;
 import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
 import com.github.galpiii.galpi.domain.project.entity.Project;
@@ -108,11 +112,17 @@ class GithubInstallationServiceTest {
         return new GithubRepositoryResponse(
                 id, name, fullName,
                 new GithubRepositoryResponse.Owner(1L, owner, "User"),
-                isPrivate, "main", "https://github.com/" + fullName, Map.of("pull", true));
+                isPrivate, "main", "https://github.com/" + fullName, Map.of("pull", true),
+                "설명", "Java", OffsetDateTime.parse("2026-08-18T00:00:00Z"));
     }
 
     private static Project project() {
         return Project.create(mock(User.class), "갈피");
+    }
+
+    /** 화면용 조회 결과. 별도로 지정하지 않는 한 잘리지 않은 완전한 목록이다. */
+    private static <T> GithubListResult<T> page(List<T> items) {
+        return GithubListResult.of(items, false);
     }
 
     @Nested
@@ -122,15 +132,16 @@ class GithubInstallationServiceTest {
         @Test
         @DisplayName("개인 계정과 조직을 installation 단위로 나눠 준다")
         void groupsByInstallation() {
-            given(apiClient.getUserInstallations(TOKEN, budget)).willReturn(List.of(
+            given(apiClient.getUserInstallations(TOKEN, budget)).willReturn(page(List.of(
                     installation(PERSONAL_INSTALLATION, "wb", "User"),
-                    installation(ORG_INSTALLATION, "galpiii", "Organization")));
+                    installation(ORG_INSTALLATION, "galpiii", "Organization"))));
             given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
-                    .willReturn(List.of(repository(1L, "wb/notes", true)));
+                    .willReturn(page(List.of(repository(1L, "wb/notes", true))));
             given(apiClient.getInstallationRepositories(TOKEN, ORG_INSTALLATION, budget))
-                    .willReturn(List.of(repository(2L, "galpiii/backend", true)));
+                    .willReturn(page(List.of(repository(2L, "galpiii/backend", true))));
 
-            List<InstallationRepositoriesResponse> grouped = service.listRepositories(USER_ID, null);
+            List<InstallationRepositoriesResponse> grouped =
+                    service.listRepositories(USER_ID, null).installations();
 
             assertThat(grouped).hasSize(2);
             assertThat(grouped.getFirst().installation().accountType()).isEqualTo("User");
@@ -143,11 +154,12 @@ class GithubInstallationServiceTest {
         @DisplayName("조직 설치 설정 링크는 조직 경로로 만든다")
         void buildsOrgSettingsUrl() {
             given(apiClient.getUserInstallations(TOKEN, budget))
-                    .willReturn(List.of(installation(ORG_INSTALLATION, "galpiii", "Organization")));
+                    .willReturn(page(List.of(installation(ORG_INSTALLATION, "galpiii", "Organization"))));
             given(apiClient.getInstallationRepositories(TOKEN, ORG_INSTALLATION, budget))
-                    .willReturn(List.of());
+                    .willReturn(page(List.of()));
 
-            assertThat(service.listRepositories(USER_ID, null).getFirst().installation().settingsUrl())
+            assertThat(service.listRepositories(USER_ID, null)
+                    .installations().getFirst().installation().settingsUrl())
                     .isEqualTo("https://github.com/organizations/galpiii/settings/installations/200");
         }
 
@@ -155,11 +167,12 @@ class GithubInstallationServiceTest {
         @DisplayName("비공개 저장소만 있는 계정도 그대로 돌려준다")
         void keepsPrivateOnlyAccount() {
             given(apiClient.getUserInstallations(TOKEN, budget))
-                    .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
+                    .willReturn(page(List.of(installation(PERSONAL_INSTALLATION, "wb", "User"))));
             given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
-                    .willReturn(List.of(repository(1L, "wb/secret", true)));
+                    .willReturn(page(List.of(repository(1L, "wb/secret", true))));
 
-            assertThat(service.listRepositories(USER_ID, null).getFirst().repositories())
+            assertThat(service.listRepositories(USER_ID, null)
+                    .installations().getFirst().repositories())
                     .singleElement()
                     .satisfies(repo -> assertThat(repo.isPrivate()).isTrue());
         }
@@ -167,17 +180,18 @@ class GithubInstallationServiceTest {
         @Test
         @DisplayName("이미 연결된 저장소에 표시를 단다")
         void marksLinkedRepositories() {
-            given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID))
+            given(projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(PROJECT_ID, USER_ID))
                     .willReturn(Optional.of(project()));
             given(repositoryRepository.findGithubRepositoryIdsByProjectId(PROJECT_ID))
                     .willReturn(List.of(1L));
             given(apiClient.getUserInstallations(TOKEN, budget))
-                    .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
+                    .willReturn(page(List.of(installation(PERSONAL_INSTALLATION, "wb", "User"))));
             given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
-                    .willReturn(List.of(repository(1L, "wb/notes", true), repository(2L, "wb/other", false)));
+                    .willReturn(page(List.of(repository(1L, "wb/notes", true), repository(2L, "wb/other", false))));
 
             List<com.github.galpiii.galpi.domain.github.dto.SelectableRepositoryResponse> repos =
-                    service.listRepositories(USER_ID, PROJECT_ID).getFirst().repositories();
+                    service.listRepositories(USER_ID, PROJECT_ID)
+                            .installations().getFirst().repositories();
 
             assertThat(repos).extracting("githubRepositoryId", "linked")
                     .containsExactly(org.assertj.core.groups.Tuple.tuple(1L, true),
@@ -187,12 +201,12 @@ class GithubInstallationServiceTest {
         @Test
         @DisplayName("목록 GET은 연결된 저장소 스냅샷을 변경하지 않는다")
         void doesNotRefreshSnapshotsWhileListing() {
-            given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID))
+            given(projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(PROJECT_ID, USER_ID))
                     .willReturn(Optional.of(project()));
             given(apiClient.getUserInstallations(TOKEN, budget))
-                    .willReturn(List.of(installation(PERSONAL_INSTALLATION, "wb", "User")));
+                    .willReturn(page(List.of(installation(PERSONAL_INSTALLATION, "wb", "User"))));
             given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
-                    .willReturn(List.of(repository(1L, "galpiii/journal", true)));
+                    .willReturn(page(List.of(repository(1L, "galpiii/journal", true))));
 
             service.listRepositories(USER_ID, PROJECT_ID);
 
@@ -203,7 +217,7 @@ class GithubInstallationServiceTest {
         @Test
         @DisplayName("남의 프로젝트 id를 주면 거부한다")
         void rejectsForeignProject() {
-            given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID)).willReturn(Optional.empty());
+            given(projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(PROJECT_ID, USER_ID)).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> service.listRepositories(USER_ID, PROJECT_ID))
                     .isInstanceOf(NotFoundException.class)
@@ -221,55 +235,167 @@ class GithubInstallationServiceTest {
         }
 
         @Test
-        @DisplayName("정지된 installation은 상태만 돌려주고 저장소 API는 호출하지 않는다")
-        void keepsSuspendedInstallationWithoutFetchingRepositories() {
-            given(apiClient.getUserInstallations(TOKEN, budget)).willReturn(List.of(
+        @DisplayName("정지된 installation은 저장소 API를 부르지 않고 실패 목록으로 보낸다")
+        void reportsSuspendedInstallationAsFailed() {
+            given(apiClient.getUserInstallations(TOKEN, budget)).willReturn(page(List.of(
                     suspendedInstallation(PERSONAL_INSTALLATION, "wb", "User"),
-                    installation(ORG_INSTALLATION, "galpiii", "Organization")));
+                    installation(ORG_INSTALLATION, "galpiii", "Organization"))));
             given(apiClient.getInstallationRepositories(TOKEN, ORG_INSTALLATION, budget))
-                    .willReturn(List.of(repository(2L, "galpiii/backend", true)));
+                    .willReturn(page(List.of(repository(2L, "galpiii/backend", true))));
 
-            List<InstallationRepositoriesResponse> grouped =
-                    service.listRepositories(USER_ID, null);
+            SelectableRepositoriesResponse response = service.listRepositories(USER_ID, null);
 
-            assertThat(grouped).hasSize(2);
-            assertThat(grouped.getFirst().installation().suspended()).isTrue();
-            assertThat(grouped.getFirst().repositories()).isEmpty();
+            assertThat(response.installations()).singleElement()
+                    .satisfies(group -> assertThat(group.installation().installationId())
+                            .isEqualTo(ORG_INSTALLATION));
+            assertThat(response.failedInstallations()).singleElement()
+                    .satisfies(failed -> {
+                        assertThat(failed.installationId()).isEqualTo(PERSONAL_INSTALLATION);
+                        assertThat(failed.accountLogin()).isEqualTo("wb");
+                        assertThat(failed.reason())
+                                .isEqualTo(InstallationFailureReason.SUSPENDED);
+                    });
             verify(apiClient, never()).getInstallationRepositories(
                     TOKEN, PERSONAL_INSTALLATION, budget);
         }
 
         @Test
-        @DisplayName("목록과 상세 조회 사이에 삭제된 installation만 건너뛴다")
-        void skipsInstallationRemovedDuringListing() {
-            given(apiClient.getUserInstallations(TOKEN, budget)).willReturn(List.of(
+        @DisplayName("조회에 실패한 installation이 있어도 나머지 저장소는 그대로 보여 준다")
+        void keepsOtherRepositoriesWhenOneInstallationFails() {
+            given(apiClient.getUserInstallations(TOKEN, budget)).willReturn(page(List.of(
                     installation(PERSONAL_INSTALLATION, "wb", "User"),
-                    installation(ORG_INSTALLATION, "galpiii", "Organization")));
+                    installation(ORG_INSTALLATION, "galpiii", "Organization"))));
             given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
                     .willThrow(new GithubInstallationUnavailableException());
             given(apiClient.getInstallationRepositories(TOKEN, ORG_INSTALLATION, budget))
-                    .willReturn(List.of(repository(2L, "galpiii/backend", true)));
+                    .willReturn(page(List.of(repository(2L, "galpiii/backend", true))));
 
-            assertThat(service.listRepositories(USER_ID, null))
-                    .singleElement()
+            SelectableRepositoriesResponse response = service.listRepositories(USER_ID, null);
+
+            assertThat(response.installations()).singleElement()
                     .satisfies(group -> assertThat(group.installation().installationId())
                             .isEqualTo(ORG_INSTALLATION));
+            assertThat(response.failedInstallations()).singleElement()
+                    .satisfies(failed -> {
+                        assertThat(failed.installationId()).isEqualTo(PERSONAL_INSTALLATION);
+                        assertThat(failed.reason())
+                                .isEqualTo(InstallationFailureReason.NOT_FOUND);
+                    });
+        }
+
+        @Test
+        @DisplayName("권한 문제로 막힌 installation도 전체를 실패시키지 않는다")
+        void reportsForbiddenInstallationAsFailed() {
+            given(apiClient.getUserInstallations(TOKEN, budget)).willReturn(page(List.of(
+                    installation(PERSONAL_INSTALLATION, "wb", "User"),
+                    installation(ORG_INSTALLATION, "galpiii", "Organization"))));
+            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
+                    .willThrow(new GithubApiException(ErrorCode.GITHUB_API_ERROR, 403));
+            given(apiClient.getInstallationRepositories(TOKEN, ORG_INSTALLATION, budget))
+                    .willReturn(page(List.of(repository(2L, "galpiii/backend", true))));
+
+            SelectableRepositoriesResponse response = service.listRepositories(USER_ID, null);
+
+            assertThat(response.installations()).hasSize(1);
+            assertThat(response.failedInstallations()).singleElement()
+                    .satisfies(failed -> assertThat(failed.reason())
+                            .isEqualTo(InstallationFailureReason.FORBIDDEN));
+        }
+
+        @Test
+        @DisplayName("GitHub 5xx와 네트워크 오류는 권한 문제로 표시하지 않는다")
+        void separatesTemporaryFailureFromForbidden() {
+            given(apiClient.getUserInstallations(TOKEN, budget)).willReturn(page(List.of(
+                    installation(PERSONAL_INSTALLATION, "wb", "User"),
+                    installation(ORG_INSTALLATION, "galpiii", "Organization"))));
+            // 상태 코드가 없는 예외는 응답 자체를 받지 못한 경우다(네트워크·타임아웃).
+            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
+                    .willThrow(new GithubApiException());
+            given(apiClient.getInstallationRepositories(TOKEN, ORG_INSTALLATION, budget))
+                    .willThrow(new GithubApiException(ErrorCode.GITHUB_API_ERROR, 502));
+
+            assertThat(service.listRepositories(USER_ID, null).failedInstallations())
+                    .hasSize(2)
+                    .allSatisfy(failed -> assertThat(failed.reason())
+                            .isEqualTo(InstallationFailureReason.TEMPORARY_ERROR));
+        }
+
+        @Test
+        @DisplayName("설치 목록이 잘리면 목록 전체를 완전한 것으로 내보내지 않는다")
+        void marksTruncatedInstallationList() {
+            given(apiClient.getUserInstallations(TOKEN, budget)).willReturn(GithubListResult.of(
+                    List.of(installation(PERSONAL_INSTALLATION, "wb", "User")), true));
+            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
+                    .willReturn(page(List.of(repository(1L, "wb/notes", true))));
+
+            assertThat(service.listRepositories(USER_ID, null).truncated()).isTrue();
+        }
+
+        @Test
+        @DisplayName("저장소 페이지가 잘리면 그 installation과 목록 전체에 표시가 붙는다")
+        void marksTruncatedRepositoryPage() {
+            given(apiClient.getUserInstallations(TOKEN, budget))
+                    .willReturn(page(List.of(installation(PERSONAL_INSTALLATION, "wb", "User"))));
+            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
+                    .willReturn(GithubListResult.of(
+                            List.of(repository(1L, "wb/notes", true)), true));
+
+            SelectableRepositoriesResponse response = service.listRepositories(USER_ID, null);
+
+            assertThat(response.truncated()).isTrue();
+            assertThat(response.installations()).singleElement()
+                    .satisfies(group -> assertThat(group.truncated()).isTrue());
+        }
+
+        @Test
+        @DisplayName("rate limit은 설치 하나의 실패로 삼키지 않고 그대로 올린다")
+        void propagatesRateLimit() {
+            given(apiClient.getUserInstallations(TOKEN, budget))
+                    .willReturn(page(List.of(installation(PERSONAL_INSTALLATION, "wb", "User"))));
+            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
+                    .willThrow(new GithubRateLimitedException(60));
+
+            assertThatThrownBy(() -> service.listRepositories(USER_ID, null))
+                    .isInstanceOf(GithubRateLimitedException.class);
+        }
+
+        @Test
+        @DisplayName("선택 화면에 필요한 설명·언어·최근 업데이트를 함께 준다")
+        void includesDisplayFields() {
+            given(apiClient.getUserInstallations(TOKEN, budget))
+                    .willReturn(page(List.of(installation(PERSONAL_INSTALLATION, "wb", "User"))));
+            given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
+                    .willReturn(page(List.of(repository(1L, "wb/notes", true))));
+
+            assertThat(service.listRepositories(USER_ID, null)
+                    .installations().getFirst().repositories())
+                    .singleElement()
+                    .satisfies(repo -> {
+                        assertThat(repo.description()).isEqualTo("설명");
+                        assertThat(repo.language()).isEqualTo("Java");
+                        assertThat(repo.pushedAt()).isNotNull();
+                    });
         }
 
         @Test
         @DisplayName("화면용 요청 budget이 소진되면 처리한 installation까지만 반환한다")
         void stopsWithPartialResultWhenRequestBudgetIsExhausted() {
-            given(apiClient.getUserInstallations(TOKEN, budget)).willReturn(List.of(
+            given(apiClient.getUserInstallations(TOKEN, budget)).willReturn(page(List.of(
                     installation(PERSONAL_INSTALLATION, "wb", "User"),
-                    installation(ORG_INSTALLATION, "galpiii", "Organization")));
+                    installation(ORG_INSTALLATION, "galpiii", "Organization"))));
             given(budget.isRequestLimitReached()).willReturn(false, true);
             given(apiClient.getInstallationRepositories(TOKEN, PERSONAL_INSTALLATION, budget))
-                    .willReturn(List.of(repository(1L, "wb/notes", true)));
+                    .willReturn(page(List.of(repository(1L, "wb/notes", true))));
 
-            assertThat(service.listRepositories(USER_ID, null))
-                    .singleElement()
+            SelectableRepositoriesResponse response = service.listRepositories(USER_ID, null);
+
+            assertThat(response.installations()).singleElement()
                     .satisfies(group -> assertThat(group.installation().installationId())
                             .isEqualTo(PERSONAL_INSTALLATION));
+            // budget 때문에 건너뛴 installation은 성공에도 실패에도 남지 않는다.
+            // 이 플래그가 없으면 프론트는 그 조직이 아예 없는 것으로 본다.
+            assertThat(response.truncated()).isTrue();
+            assertThat(response.failedInstallations()).isEmpty();
             verify(apiClient, never()).getInstallationRepositories(
                     TOKEN, ORG_INSTALLATION, budget);
         }

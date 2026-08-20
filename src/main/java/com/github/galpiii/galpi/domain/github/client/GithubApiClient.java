@@ -2,6 +2,7 @@ package com.github.galpiii.galpi.domain.github.client;
 
 import com.github.galpiii.galpi.domain.github.client.dto.GithubInstallationResponse;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubInstallationsPage;
+import com.github.galpiii.galpi.domain.github.client.dto.GithubListResult;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubRepositoriesPage;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubRepositoryResponse;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubUserResponse;
@@ -90,10 +91,10 @@ public class GithubApiClient {
         return execute(uri, token, spec -> spec.toEntity(responseType));
     }
 
-    <T> List<T> getAllPages(String uri,
-                            String token,
-                            ParameterizedTypeReference<List<T>> pageType,
-                            GithubRequestBudget budget) {
+    <T> GithubListResult<T> getAllPages(String uri,
+                                        String token,
+                                        ParameterizedTypeReference<List<T>> pageType,
+                                        GithubRequestBudget budget) {
         return paginate(uri, token, spec -> spec.toEntity(pageType), body -> body, true, budget);
     }
 
@@ -104,12 +105,12 @@ public class GithubApiClient {
      * {@code total_count}와 목록을 함께 담은 객체를 돌려준다. Link 헤더 기반 순회는 같으므로
      * 목록을 꺼내는 방법만 받는다.
      */
-    private <P, T> List<T> getAllPagesWrapped(String uri,
-                                              String token,
-                                              Class<P> pageType,
-                                              Function<P, List<T>> itemsOf,
-                                              boolean partialAllowed,
-                                              GithubRequestBudget budget) {
+    private <P, T> GithubListResult<T> getAllPagesWrapped(String uri,
+                                                          String token,
+                                                          Class<P> pageType,
+                                                          Function<P, List<T>> itemsOf,
+                                                          boolean partialAllowed,
+                                                          GithubRequestBudget budget) {
         return paginate(uri, token, spec -> spec.toEntity(pageType),
                 body -> body == null ? List.of() : itemsOf.apply(body), partialAllowed, budget);
     }
@@ -120,12 +121,12 @@ public class GithubApiClient {
      * 저장소가 "접근 권한 없음"이 되어 정당한 요청을 403으로 막는다. 조용히 잘린 목록으로
      * 권한을 판단하느니 실패하는 편이 낫다.
      */
-    private <B, T> List<T> paginate(String uri,
-                                    String token,
-                                    ResponseExtractor<B> extractor,
-                                    Function<B, List<T>> itemsOf,
-                                    boolean partialAllowed,
-                                    GithubRequestBudget budget) {
+    private <B, T> GithubListResult<T> paginate(String uri,
+                                                String token,
+                                                ResponseExtractor<B> extractor,
+                                                Function<B, List<T>> itemsOf,
+                                                boolean partialAllowed,
+                                                GithubRequestBudget budget) {
         List<T> collected = new ArrayList<>();
         String nextUri = uri;
         int page = 0;
@@ -139,7 +140,9 @@ public class GithubApiClient {
                         && e.getErrorCode() == ErrorCode.GITHUB_OPERATION_BUDGET_EXCEEDED) {
                     log.warn("[GitHub] 작업 요청 budget 소진. 수집한 페이지까지만 반환 uri={}",
                             TokenMasker.mask(uri));
-                    break;
+                    // 남은 페이지를 읽지 못했다는 사실을 결과에 남긴다. 여기서 잃어버리면
+                    // 호출하는 쪽이 잘린 목록을 전부로 오해한다.
+                    return GithubListResult.of(collected, true);
                 }
                 throw e;
             }
@@ -164,18 +167,22 @@ public class GithubApiClient {
                     properties.maxPages(), TokenMasker.mask(uri));
         }
 
-        return collected;
+        return GithubListResult.of(collected, nextUri != null);
     }
 
-    /** 설치 범위 ∩ 사용자 접근 권한이 이미 적용된 목록이다. 교집합을 따로 계산하지 마라. */
-    public List<GithubInstallationResponse> getUserInstallations(String userAccessToken,
-                                                                 GithubRequestBudget budget) {
+    /**
+     * 설치 범위 ∩ 사용자 접근 권한이 이미 적용된 목록이다. 교집합을 따로 계산하지 마라.
+     *
+     * <p>화면용이라 상한에 걸려도 모은 데까지 돌려주며, 그 사실은 결과의 {@code truncated}로
+     * 함께 나간다.
+     */
+    public GithubListResult<GithubInstallationResponse> getUserInstallations(
+            String userAccessToken, GithubRequestBudget budget) {
         return userInstallations(userAccessToken, true, budget);
     }
 
-    public List<GithubRepositoryResponse> getInstallationRepositories(String userAccessToken,
-                                                                      Long installationId,
-                                                                      GithubRequestBudget budget) {
+    public GithubListResult<GithubRepositoryResponse> getInstallationRepositories(
+            String userAccessToken, Long installationId, GithubRequestBudget budget) {
         return installationRepositories(userAccessToken, installationId, true, budget);
     }
 
@@ -188,27 +195,26 @@ public class GithubApiClient {
      */
     public List<GithubInstallationResponse> getUserInstallationsComplete(
             String userAccessToken, GithubRequestBudget budget) {
-        return userInstallations(userAccessToken, false, budget);
+        // 잘린 목록이면 위에서 이미 예외가 났다. 여기까지 왔다면 이것이 전부다.
+        return userInstallations(userAccessToken, false, budget).items();
     }
 
     /** 권한 판정용. 상한에 걸려 목록이 잘리면 예외를 던진다. */
     public List<GithubRepositoryResponse> getInstallationRepositoriesComplete(
             String userAccessToken, Long installationId, GithubRequestBudget budget) {
-        return installationRepositories(userAccessToken, installationId, false, budget);
+        return installationRepositories(userAccessToken, installationId, false, budget).items();
     }
 
-    private List<GithubInstallationResponse> userInstallations(String userAccessToken,
-                                                               boolean partialAllowed,
-                                                               GithubRequestBudget budget) {
+    private GithubListResult<GithubInstallationResponse> userInstallations(
+            String userAccessToken, boolean partialAllowed, GithubRequestBudget budget) {
         return getAllPagesWrapped("/user/installations?per_page=100", userAccessToken,
                 GithubInstallationsPage.class, GithubInstallationsPage::items, partialAllowed,
                 budget);
     }
 
-    private List<GithubRepositoryResponse> installationRepositories(String userAccessToken,
-                                                                    Long installationId,
-                                                                    boolean partialAllowed,
-                                                                    GithubRequestBudget budget) {
+    private GithubListResult<GithubRepositoryResponse> installationRepositories(
+            String userAccessToken, Long installationId, boolean partialAllowed,
+            GithubRequestBudget budget) {
         return getAllPagesWrapped(
                 "/user/installations/" + installationId + "/repositories?per_page=100",
                 userAccessToken, GithubRepositoriesPage.class, GithubRepositoriesPage::items,
@@ -291,6 +297,7 @@ public class GithubApiClient {
         } catch (GithubApiException | GithubReauthRequiredException e) {
             throw e;
         } catch (RestClientException e) {
+            // 응답 자체를 받지 못했다. 상태 코드가 없으므로 일시 장애로 분류된다.
             log.warn("[GitHub] 호출 실패 uri={} cause={}",
                     TokenMasker.mask(uri), e.getClass().getSimpleName());
             throw new GithubApiException();
@@ -323,7 +330,9 @@ public class GithubApiClient {
         }
 
         log.warn("[GitHub] 호출 실패 status={} uri={}", status.value(), TokenMasker.mask(uri));
-        return new GithubApiException();
+        // 상태 코드를 함께 싣는다. 부분 실패를 화면에 표시하는 쪽이 GitHub 5xx와 권한 거부를
+        // 구분해야 한다.
+        return new GithubApiException(ErrorCode.GITHUB_API_ERROR, status.value());
     }
 
     private static boolean isSuspendedInstallation(String body) {
@@ -351,7 +360,7 @@ public class GithubApiClient {
         } else {
             log.warn("[GitHub] 토큰 폐기 실패 status={}", status.value());
         }
-        return new GithubApiException();
+        return new GithubApiException(ErrorCode.GITHUB_API_ERROR, status.value());
     }
 
     private String basicCredentials() {
