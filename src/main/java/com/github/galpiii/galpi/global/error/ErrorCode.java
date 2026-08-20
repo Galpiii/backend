@@ -80,6 +80,19 @@ public enum ErrorCode {
     PROJECT_NOT_FOUND("PROJECT-001", HttpStatus.NOT_FOUND, "프로젝트를 찾을 수 없습니다."),
     PROJECT_REPOSITORY_NOT_FOUND("PROJECT-002", HttpStatus.NOT_FOUND, "프로젝트에 연결된 저장소가 아닙니다."),
     PROJECT_REPOSITORY_ALREADY_LINKED("PROJECT-003", HttpStatus.CONFLICT, "이미 추가된 저장소입니다."),
+    PROJECT_LIMIT_EXCEEDED("PROJECT-004", HttpStatus.CONFLICT,
+            "만들 수 있는 프로젝트 수를 초과했습니다. 쓰지 않는 프로젝트를 정리해 주세요."),
+    PROJECT_STATUS_TRANSITION_NOT_ALLOWED("PROJECT-005", HttpStatus.BAD_REQUEST,
+            "허용되지 않은 상태 변경입니다."),
+    PROJECT_UPDATE_EMPTY("PROJECT-006", HttpStatus.BAD_REQUEST, "변경할 값이 없습니다."),
+    // 아래 둘은 URL로 저장소를 직접 추가하는 경로에서만 쓴다. 저장소가 없는 경우와 접근 권한이
+    // 없는 경우를 구분하지 않는 것이 PROJECT-008의 요점이다 — 구분하면 URL만 넣어 보는 것으로
+    // 비공개 저장소의 존재 여부를 알아낼 수 있다.
+    PROJECT_REPOSITORY_URL_INVALID("PROJECT-007", HttpStatus.BAD_REQUEST,
+            "GitHub 저장소 URL 형식이 아닙니다."),
+    PROJECT_REPOSITORY_NOT_ACCESSIBLE("PROJECT-008", HttpStatus.NOT_FOUND,
+            "저장소를 찾을 수 없거나 갈피에 접근 권한이 없습니다. "
+                    + "GitHub에서 이 저장소를 갈피 앱에 허용했는지 확인해 주세요."),
 
     // Feature Spec File
     FEATURE_SPEC_FILE_EMPTY("FEATURE-SPEC-FILE-001", HttpStatus.BAD_REQUEST, "업로드된 파일이 비어 있습니다."),
