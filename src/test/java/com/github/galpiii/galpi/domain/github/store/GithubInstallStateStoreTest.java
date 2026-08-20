@@ -16,6 +16,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -56,7 +57,7 @@ class GithubInstallStateStoreTest {
     @Test
     @DisplayName("state 키 하나에만 15분짜리로 적는다")
     void writesStateKeyOnly() {
-        String state = store.issue(USER_ID, "/projects/3/repositories");
+        String state = store.issue(USER_ID, "/projects/3/repositories", List.of());
 
         verify(valueOperations).set(eq("github:install-state:" + state), any(), eq(Duration.ofMinutes(15)));
         verify(valueOperations, times(1)).set(any(), any(), any(Duration.class));
@@ -65,7 +66,7 @@ class GithubInstallStateStoreTest {
     @Test
     @DisplayName("기록에 사용자와 복귀 경로가 함께 들어간다")
     void payloadCarriesUserAndReturnTo() {
-        String state = store.issue(USER_ID, "/projects/3/repositories");
+        String state = store.issue(USER_ID, "/projects/3/repositories", List.of());
 
         InstallIntent intent = objectMapper.readValue(captureStatePayload(state), InstallIntent.class);
         assertThat(intent.userId()).isEqualTo(USER_ID);
@@ -76,14 +77,14 @@ class GithubInstallStateStoreTest {
     @Test
     @DisplayName("발급할 때마다 예측 불가능한 state를 준다")
     void issuesUnpredictableState() {
-        assertThat(Stream.generate(() -> store.issue(USER_ID, "/x")).limit(50).distinct().count())
+        assertThat(Stream.generate(() -> store.issue(USER_ID, "/x", List.of())).limit(50).distinct().count())
                 .isEqualTo(50);
     }
 
     @Test
     @DisplayName("state로 한 번 읽으면 사라진다")
     void consumesStateOnce() {
-        String state = store.issue(USER_ID, "/projects");
+        String state = store.issue(USER_ID, "/projects", List.of());
         String payload = captureStatePayload(state);
 
         given(valueOperations.getAndDelete("github:install-state:" + state)).willReturn(payload);
@@ -96,7 +97,7 @@ class GithubInstallStateStoreTest {
     @Test
     @DisplayName("복귀 경로도 기록에서 함께 돌아온다")
     void consumeCarriesReturnTo() {
-        String state = store.issue(USER_ID, "/projects");
+        String state = store.issue(USER_ID, "/projects", List.of());
         String payload = captureStatePayload(state);
 
         given(valueOperations.getAndDelete("github:install-state:" + state)).willReturn(payload);

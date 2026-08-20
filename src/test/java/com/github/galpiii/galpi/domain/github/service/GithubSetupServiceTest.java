@@ -3,6 +3,7 @@ package com.github.galpiii.galpi.domain.github.service;
 import com.github.galpiii.galpi.domain.auth.support.RedirectUriValidator;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.dto.InstallUrlResponse;
+import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.domain.github.store.GithubInstallStateStore;
@@ -22,10 +23,12 @@ import org.mockito.quality.Strictness;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -67,7 +70,11 @@ class GithubSetupServiceTest {
     }
 
     private static InstallIntent intent(String returnTo) {
-        return new InstallIntent(USER_ID, STATE, returnTo, OffsetDateTime.now());
+        return new InstallIntent(USER_ID, STATE, returnTo, List.of(), OffsetDateTime.now());
+    }
+
+    private static InstallIntent intentWithSelection(String returnTo, List<Long> selected) {
+        return new InstallIntent(USER_ID, STATE, returnTo, selected, OffsetDateTime.now());
     }
 
     @Nested
@@ -77,9 +84,9 @@ class GithubSetupServiceTest {
         @Test
         @DisplayName("select_target이 아니라 installations/new로 보낸다")
         void usesInstallationsNew() {
-            given(installStateStore.issue(USER_ID, RETURN_TO)).willReturn(STATE);
+            given(installStateStore.issue(USER_ID, RETURN_TO, List.of())).willReturn(STATE);
 
-            InstallUrlResponse response = service.buildInstallUrl(USER_ID, RETURN_TO);
+            InstallUrlResponse response = service.buildInstallUrl(USER_ID, RETURN_TO, List.of());
 
             assertThat(response.installUrl())
                     .isEqualTo("https://github.com/apps/galpi-app/installations/new?state=" + STATE)
@@ -89,11 +96,12 @@ class GithubSetupServiceTest {
         @Test
         @DisplayName("허용 목록 밖 returnTo는 URL을 만들기 전에 거부한다")
         void rejectsExternalReturnTo() {
-            assertThatThrownBy(() -> service.buildInstallUrl(USER_ID, "https://evil.example/steal"))
+            assertThatThrownBy(() ->
+                    service.buildInstallUrl(USER_ID, "https://evil.example/steal", List.of()))
                     .isInstanceOf(BadRequestException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.GITHUB_REDIRECT_NOT_ALLOWED);
 
-            verify(installStateStore, never()).issue(anyLong(), anyString());
+            verify(installStateStore, never()).issue(anyLong(), anyString(), any());
         }
     }
 
@@ -224,6 +232,82 @@ class GithubSetupServiceTest {
 
             assertThat(redirect).startsWith("https://galpi.dev/auth/callback?")
                     .doesNotContain("evil.example");
+        }
+    }
+
+    @Nested
+    @DisplayName("setup 콜백 — 선택 상태 복원")
+    class SelectionRestore {
+
+        private final RepositorySnapshot snapshot = new RepositorySnapshot(
+                11L, INSTALLATION_ID, "wb", "notes", "wb/notes", true, "main",
+                "https://github.com/wb/notes");
+
+        @Test
+        @DisplayName("설치 화면에 나가기 전 고른 저장소를 리다이렉트에 실어 돌려준다")
+        void restoresSelection() {
+            given(installStateStore.consumeState(STATE)).willReturn(
+                    Optional.of(intentWithSelection(RETURN_TO, List.of(11L))));
+            given(installationService.ownsInstallation(USER_ID, INSTALLATION_ID)).willReturn(true);
+            given(installationService.accessibleSnapshots(USER_ID, List.of(11L)))
+                    .willReturn(Map.of(11L, snapshot));
+
+            String redirect = service.handleSetupCallback(INSTALLATION_ID, "install", STATE);
+
+            assertThat(redirect).contains("selectedRepositoryIds=11");
+            assertThat(redirect).doesNotContain("unavailableRepositoryIds");
+        }
+
+        @Test
+        @DisplayName("그 사이 접근할 수 없게 된 저장소는 선택에서 빼고 따로 알린다")
+        void dropsRepositoriesThatBecameInaccessible() {
+            given(installStateStore.consumeState(STATE)).willReturn(
+                    Optional.of(intentWithSelection(RETURN_TO, List.of(11L, 22L))));
+            given(installationService.ownsInstallation(USER_ID, INSTALLATION_ID)).willReturn(true);
+            given(installationService.accessibleSnapshots(USER_ID, List.of(11L, 22L)))
+                    .willReturn(Map.of(11L, snapshot));
+
+            String redirect = service.handleSetupCallback(INSTALLATION_ID, "install", STATE);
+
+            assertThat(redirect).contains("selectedRepositoryIds=11");
+            assertThat(redirect).contains("unavailableRepositoryIds=22");
+        }
+
+        @Test
+        @DisplayName("권한 대조가 실패하면 선택을 버리지 않고 그대로 돌려준다")
+        void keepsSelectionWhenVerificationFails() {
+            given(installStateStore.consumeState(STATE)).willReturn(
+                    Optional.of(intentWithSelection(RETURN_TO, List.of(11L))));
+            given(installationService.ownsInstallation(USER_ID, INSTALLATION_ID)).willReturn(true);
+            given(installationService.accessibleSnapshots(USER_ID, List.of(11L)))
+                    .willThrow(new GithubApiException());
+
+            assertThat(service.handleSetupCallback(INSTALLATION_ID, "install", STATE))
+                    .contains("selectedRepositoryIds=11");
+        }
+
+        @Test
+        @DisplayName("설치가 확인되지 않은 경로에서도 선택은 살아 돌아온다")
+        void restoresSelectionOnUnverifiedResult() {
+            given(installStateStore.consumeState(STATE)).willReturn(
+                    Optional.of(intentWithSelection(RETURN_TO, List.of(11L))));
+            given(installationService.accessibleSnapshots(USER_ID, List.of(11L)))
+                    .willReturn(Map.of(11L, snapshot));
+
+            assertThat(service.handleSetupCallback(null, "request", STATE))
+                    .contains("installation=unverified")
+                    .contains("selectedRepositoryIds=11");
+        }
+
+        @Test
+        @DisplayName("고른 것이 없으면 권한을 대조하지도 않는다")
+        void skipsVerificationWithoutSelection() {
+            given(installStateStore.consumeState(STATE)).willReturn(Optional.of(intent(RETURN_TO)));
+            given(installationService.ownsInstallation(USER_ID, INSTALLATION_ID)).willReturn(true);
+
+            assertThat(service.handleSetupCallback(INSTALLATION_ID, "install", STATE))
+                    .doesNotContain("selectedRepositoryIds");
+            verify(installationService, never()).accessibleSnapshots(anyLong(), any());
         }
     }
 }
