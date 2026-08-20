@@ -31,26 +31,20 @@ public class FeatureSpecService {
             Long userId,
             MultipartFile file
     ) {
-        Project project = projectRepository.findById(projectId)
+        // 소유자 확인과 삭제 여부를 조회 조건에 함께 넣는다. 남의 프로젝트, 없는 프로젝트,
+        // 삭제된 프로젝트가 모두 같은 404로 나가야 프로젝트 id의 존재 여부가 새지 않는다.
+        Project project = projectRepository
+                .findByIdAndOwnerIdAndDeletedAtIsNull(projectId, userId)
                 .orElseThrow(() -> {
                     log.warn(
-                            "[기능명세서 업로드] 프로젝트를 찾을 수 없습니다. projectId: {}",
-                            projectId
+                            "[기능명세서 업로드] 프로젝트를 찾을 수 없습니다. projectId: {}, userId: {}",
+                            projectId,
+                            userId
                     );
                     return new NotFoundException(ErrorCode.PROJECT_NOT_FOUND);
                 });
 
-        User projectOwner = project.getUser();
-
-        if (!projectOwner.getId().equals(userId)) {
-            log.warn(
-                    "[기능명세서 업로드] 타인 프로젝트 접근 시도. projectId: {}, userId: {}, ownerId: {}",
-                    projectId,
-                    userId,
-                    projectOwner.getId()
-            );
-            throw new NotFoundException(ErrorCode.PROJECT_NOT_FOUND);
-        }
+        User projectOwner = project.getOwner();
 
         String fileName = featureSpecFileValidator.validate(file);
 
@@ -61,6 +55,11 @@ public class FeatureSpecService {
                         .fileName(fileName)
                         .build()
         );
+
+        // 프로젝트당 활성 문서는 하나다. 이전 문서 행은 지우지 않고 포인터만 옮긴다 —
+        // 추출 결과가 매달려 있고, 다시 올리다 실패해도 과거 문서를 잃으면 안 된다.
+        // 위저드도 이 시점에 ② 저장소 연결 단계로 넘어간다.
+        project.attachSpecDocument(savedSpecDocument.getId());
 
         log.info(
                 "[기능명세서 업로드] 업로드 완료. specDocumentId: {}, projectId: {}, userId: {}",
