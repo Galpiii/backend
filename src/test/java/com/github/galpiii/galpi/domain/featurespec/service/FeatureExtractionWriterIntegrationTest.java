@@ -9,6 +9,7 @@ import com.github.galpiii.galpi.ai.dto.FeatureSpecExtractionResult.SplitSuggesti
 import com.github.galpiii.galpi.ai.dto.FeatureSpecExtractionResult.Source;
 import com.github.galpiii.galpi.ai.dto.FeatureSpecExtractionResult.SuggestedFeature;
 import com.github.galpiii.galpi.domain.featurespec.entity.ExtractionFailureCode;
+import com.github.galpiii.galpi.domain.featurespec.entity.Feature;
 import com.github.galpiii.galpi.domain.featurespec.entity.ExtractionStatus;
 import com.github.galpiii.galpi.domain.featurespec.entity.SpecDocument;
 import com.github.galpiii.galpi.domain.featurespec.repository.DuplicateCandidateRepository;
@@ -34,6 +35,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.Comparator;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -97,6 +99,42 @@ class FeatureExtractionWriterIntegrationTest extends IntegrationTestSupport {
         return specDocumentRepository.findById(specDocumentId).orElseThrow();
     }
 
+    private long requirementCountOf(Feature feature) {
+        return featureRequirementRepository.findAll().stream()
+                .filter(requirement -> requirement.getFeature().getId().equals(feature.getId()))
+                .count();
+    }
+
+    /** 두 기능이 같은 extractionId를 달고 온 결과. 분리 제안까지 붙어 인덱스 참조도 함께 걸린다. */
+    private FeatureSpecExtractionResult duplicatedExtractionIdResult() {
+        FeatureSpecExtractionResult.Feature community = new FeatureSpecExtractionResult.Feature(
+                "f1",
+                "커뮤니티 기능",
+                "커뮤니티",
+                List.of(new Requirement("게시글을 작성한다.", "원문 게시글"),
+                        new Requirement("댓글을 작성한다.", "원문 댓글")),
+                new Source(9, 10),
+                List.of(new Issue("SPLIT_RECOMMENDED", "독립적인 기능이 묶였다.")),
+                List.of(),
+                new SplitSuggestion(List.of(
+                        new SuggestedFeature("게시글 관리", List.of(0), "커뮤니티"),
+                        new SuggestedFeature("댓글 관리", List.of(1), "커뮤니티"))));
+
+        FeatureSpecExtractionResult.Feature board = new FeatureSpecExtractionResult.Feature(
+                "f1",
+                "게시판 관리",
+                null,
+                List.of(new Requirement("게시판을 만든다.", "원문 게시판")),
+                new Source(11, 11),
+                List.of(),
+                List.of(),
+                null);
+
+        return new FeatureSpecExtractionResult(
+                List.of(new Section("커뮤니티", "4. 커뮤니티 및 게시판", 9, 13)),
+                List.of(community, board));
+    }
+
     /**
      * 커뮤니티 기능 하나에 중복 후보와 분리 제안이 모두 붙은 결과.
      * 저장 계층이 다루는 7개 테이블을 한 번에 채운다.
@@ -134,6 +172,26 @@ class FeatureExtractionWriterIntegrationTest extends IntegrationTestSupport {
     @Nested
     @DisplayName("추출 결과 저장")
     class SaveResult {
+
+        /**
+         * extractionId는 LLM이 응답 안에서 붙이는 임시 이름표라 고유성을 강제할 수단이 없다.
+         * 이 값으로 부모를 찾으면 겹치는 순간 앞선 기능의 자식이 뒤에 온 기능에 붙는데, 예외가
+         * 나지 않고 COMPLETED로 끝나 아무도 알아채지 못한다.
+         */
+        @Test
+        @DisplayName("extractionId가 겹쳐도 자식이 자기 기능에 붙는다")
+        void keepsChildrenWithTheirOwnFeatureWhenExtractionIdsCollide() {
+            writer.saveResult(specDocumentId, duplicatedExtractionIdResult());
+
+            List<Feature> features = featureRepository.findAll().stream()
+                    .sorted(Comparator.comparing(Feature::getDisplayOrder))
+                    .toList();
+
+            assertThat(features).hasSize(2);
+            assertThat(requirementCountOf(features.get(0))).isEqualTo(2);
+            assertThat(requirementCountOf(features.get(1))).isEqualTo(1);
+            assertThat(reloadSpecDocument().getExtractionStatus()).isEqualTo(ExtractionStatus.COMPLETED);
+        }
 
         @Test
         @DisplayName("7개 테이블에 결과를 남기고 COMPLETED로 바꾼다")

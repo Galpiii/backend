@@ -79,13 +79,13 @@ class FeatureExtractionWriter {
         SpecDocument specDocument = specDocument(specDocumentId);
 
         Map<String, FeatureSection> sectionsByTitle = saveSections(specDocument, result.sections());
-        Map<String, Feature> featuresByExtractionId = saveFeatures(specDocument, result.features(), sectionsByTitle);
-        Map<String, List<FeatureRequirement>> requirementsByExtractionId =
-                saveRequirements(result.features(), featuresByExtractionId);
+        List<Feature> savedFeatures = saveFeatures(specDocument, result.features(), sectionsByTitle);
+        List<List<FeatureRequirement>> savedRequirements =
+                saveRequirements(result.features(), savedFeatures);
 
-        saveIssues(result.features(), featuresByExtractionId);
-        saveDuplicateCandidates(result.features(), featuresByExtractionId);
-        saveSplitSuggestions(result.features(), featuresByExtractionId, requirementsByExtractionId);
+        saveIssues(result.features(), savedFeatures);
+        saveDuplicateCandidates(result.features(), savedFeatures);
+        saveSplitSuggestions(result.features(), savedFeatures, savedRequirements);
 
         specDocument.markCompleted();
     }
@@ -120,39 +120,39 @@ class FeatureExtractionWriter {
         return byTitle;
     }
 
-    private Map<String, Feature> saveFeatures(
+    private List<Feature> saveFeatures(
             SpecDocument specDocument,
             List<FeatureSpecExtractionResult.Feature> features,
             Map<String, FeatureSection> sectionsByTitle
     ) {
-        Map<String, Feature> byExtractionId = new HashMap<>();
+        List<Feature> saved = new ArrayList<>();
 
         for (int order = 0; order < features.size(); order++) {
             FeatureSpecExtractionResult.Feature feature = features.get(order);
 
-            Feature saved = featureRepository.save(Feature.builder()
+            saved.add(featureRepository.save(Feature.builder()
                     .specDocument(specDocument)
                     .section(sectionsByTitle.get(feature.section()))
                     .name(feature.name())
                     .displayOrder(order)
                     .sourcePageStart(feature.source().pageStart())
                     .sourcePageEnd(feature.source().pageEnd())
-                    .build());
-
-            byExtractionId.put(feature.extractionId(), saved);
+                    .build()));
         }
 
-        return byExtractionId;
+        return saved;
     }
 
-    private Map<String, List<FeatureRequirement>> saveRequirements(
+    /** 기능과 같은 순서로 각 기능의 요구사항 목록을 돌려준다. 분리 제안이 인덱스로 참조한다. */
+    private List<List<FeatureRequirement>> saveRequirements(
             List<FeatureSpecExtractionResult.Feature> features,
-            Map<String, Feature> featuresByExtractionId
+            List<Feature> savedFeatures
     ) {
-        Map<String, List<FeatureRequirement>> byExtractionId = new HashMap<>();
+        List<List<FeatureRequirement>> savedByFeature = new ArrayList<>();
 
-        for (FeatureSpecExtractionResult.Feature feature : features) {
-            Feature savedFeature = featuresByExtractionId.get(feature.extractionId());
+        for (int index = 0; index < features.size(); index++) {
+            FeatureSpecExtractionResult.Feature feature = features.get(index);
+            Feature savedFeature = savedFeatures.get(index);
             List<FeatureRequirement> saved = new ArrayList<>();
 
             for (int order = 0; order < feature.requirements().size(); order++) {
@@ -166,18 +166,19 @@ class FeatureExtractionWriter {
                         .build()));
             }
 
-            byExtractionId.put(feature.extractionId(), saved);
+            savedByFeature.add(saved);
         }
 
-        return byExtractionId;
+        return savedByFeature;
     }
 
     private void saveIssues(
             List<FeatureSpecExtractionResult.Feature> features,
-            Map<String, Feature> featuresByExtractionId
+            List<Feature> savedFeatures
     ) {
-        for (FeatureSpecExtractionResult.Feature feature : features) {
-            Feature savedFeature = featuresByExtractionId.get(feature.extractionId());
+        for (int index = 0; index < features.size(); index++) {
+            FeatureSpecExtractionResult.Feature feature = features.get(index);
+            Feature savedFeature = savedFeatures.get(index);
 
             for (FeatureSpecExtractionResult.Issue issue : feature.issues()) {
                 featureIssueRepository.save(FeatureIssue.builder()
@@ -189,12 +190,25 @@ class FeatureExtractionWriter {
         }
     }
 
+    /**
+     * 중복 후보만 extractionId를 쓴다.
+     *
+     * <p>다른 기능을 가리키는 참조라 이름으로 찾는 수밖에 없다. 정규화 계층이 중복된 id를 향한
+     * 참조는 미리 버리므로, 여기 남은 targetExtractionId는 유일한 기능을 가리킨다.
+     */
     private void saveDuplicateCandidates(
             List<FeatureSpecExtractionResult.Feature> features,
-            Map<String, Feature> featuresByExtractionId
+            List<Feature> savedFeatures
     ) {
-        for (FeatureSpecExtractionResult.Feature feature : features) {
-            Feature savedFeature = featuresByExtractionId.get(feature.extractionId());
+        Map<String, Feature> featuresByExtractionId = new HashMap<>();
+
+        for (int index = 0; index < features.size(); index++) {
+            featuresByExtractionId.put(features.get(index).extractionId(), savedFeatures.get(index));
+        }
+
+        for (int index = 0; index < features.size(); index++) {
+            FeatureSpecExtractionResult.Feature feature = features.get(index);
+            Feature savedFeature = savedFeatures.get(index);
 
             for (FeatureSpecExtractionResult.DuplicateCandidate candidate : feature.duplicateCandidates()) {
                 duplicateCandidateRepository.save(DuplicateCandidate.builder()
@@ -210,16 +224,18 @@ class FeatureExtractionWriter {
 
     private void saveSplitSuggestions(
             List<FeatureSpecExtractionResult.Feature> features,
-            Map<String, Feature> featuresByExtractionId,
-            Map<String, List<FeatureRequirement>> requirementsByExtractionId
+            List<Feature> savedFeatures,
+            List<List<FeatureRequirement>> savedRequirements
     ) {
-        for (FeatureSpecExtractionResult.Feature feature : features) {
+        for (int index = 0; index < features.size(); index++) {
+            FeatureSpecExtractionResult.Feature feature = features.get(index);
+
             if (feature.splitSuggestion() == null) {
                 continue;
             }
 
-            Feature savedFeature = featuresByExtractionId.get(feature.extractionId());
-            List<FeatureRequirement> requirements = requirementsByExtractionId.get(feature.extractionId());
+            Feature savedFeature = savedFeatures.get(index);
+            List<FeatureRequirement> requirements = savedRequirements.get(index);
             List<FeatureSpecExtractionResult.SuggestedFeature> suggestedFeatures =
                     feature.splitSuggestion().suggestedFeatures();
 
