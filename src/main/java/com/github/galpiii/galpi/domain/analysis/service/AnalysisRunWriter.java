@@ -106,4 +106,16 @@ public class AnalysisRunWriter {
     public AnalysisRun requireRun(Long runId) {
         return runRepository.findById(runId).orElseThrow();
     }
+
+    /**
+     * 이 작업을 계속할 이유가 남아 있는지.
+     *
+     * <p>프로젝트가 삭제되면 진행 중이던 작업은 {@code CANCELLED}가 되지만, 이미 선점해 돌고
+     * 있는 워커까지 그 갱신으로 멈추지는 않는다. 저장소 하나가 몇 분씩 걸리므로 저장소 사이
+     * 체크포인트에서 이것을 보고 남은 저장소를 시작하지 않는다.
+     */
+    @Transactional(readOnly = true)
+    public boolean isAbandoned(Long runId) {
+        return runRepository.isAbandoned(runId);
+    }
 }

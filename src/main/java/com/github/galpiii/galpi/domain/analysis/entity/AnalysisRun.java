@@ -97,11 +97,17 @@ public class AnalysisRun extends BaseEntity {
      * 경우에만 {@code FAILED}다.
      */
     public void finish(AnalysisRunStatus terminalStatus) {
+        if (isCancelled()) {
+            return;
+        }
         this.status = terminalStatus;
         this.finishedAt = OffsetDateTime.now();
     }
 
     public void fail(String errorCode, String errorMessage) {
+        if (isCancelled()) {
+            return;
+        }
         this.status = AnalysisRunStatus.FAILED;
         this.errorCode = errorCode;
         this.errorMessage = errorMessage;
@@ -115,9 +121,22 @@ public class AnalysisRun extends BaseEntity {
      * 쓰고, 서버가 이 시각에 스스로 깨어나지 않는다.
      */
     public void markRateLimited(OffsetDateTime resumeAt) {
+        if (isCancelled()) {
+            return;
+        }
         this.status = AnalysisRunStatus.RATE_LIMITED;
         this.rateLimitResumeAt = resumeAt;
         this.finishedAt = OffsetDateTime.now();
+    }
+
+    /**
+     * 취소된 작업은 어떤 결과로도 덮이지 않는다.
+     *
+     * <p>프로젝트를 지운 순간 CANCELLED가 되지만 워커는 저장소 하나를 마저 끝내고 돌아온다.
+     * 그때 COMPLETED로 마무리하면 지운 프로젝트의 분석이 성공한 것으로 남는다.
+     */
+    private boolean isCancelled() {
+        return status == AnalysisRunStatus.CANCELLED;
     }
 
     public boolean isFinished() {

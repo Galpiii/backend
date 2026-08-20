@@ -76,7 +76,7 @@ class AnalysisRunServiceTest {
     void setUp() {
         User user = User.ofGithub(999L, "wb", "wb", null, "https://avatar");
         project = Project.create(user, "갈피");
-        given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID))
+        given(projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(PROJECT_ID, USER_ID))
                 .willReturn(Optional.of(project));
         given(runRepository.existsByProjectIdAndStatusIn(anyLong(), anyList())).willReturn(false);
         given(creator.create(anyLong(), anyLong(), anyList(), any())).willReturn(55L);
@@ -157,7 +157,7 @@ class AnalysisRunServiceTest {
         @Test
         @DisplayName("남의 프로젝트면 GitHub을 부르지 않고 거부한다")
         void rejectsOtherUsersProject() {
-            given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID))
+            given(projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(PROJECT_ID, USER_ID))
                     .willReturn(Optional.empty());
 
             assertThatThrownBy(() -> service.create(USER_ID, PROJECT_ID))

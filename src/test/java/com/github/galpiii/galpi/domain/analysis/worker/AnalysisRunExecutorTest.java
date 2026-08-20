@@ -85,8 +85,11 @@ class AnalysisRunExecutorTest {
         project = Project.create(user, "갈피");
         setId(project, 3L);
 
-        given(writer.requireRun(RUN_ID))
-                .willReturn(AnalysisRun.queue(project, user, Map.of(11L, PERSONAL_INSTALLATION)));
+        AnalysisRun run = AnalysisRun.queue(project, user, Map.of(11L, PERSONAL_INSTALLATION));
+        // 실제 워커가 다루는 작업은 늘 저장된 행이다. id가 없으면 저장소 사이 체크포인트가
+        // 엉뚱한 값으로 조회돼 취소를 확인하지 못한다.
+        setId(run, RUN_ID);
+        given(writer.requireRun(RUN_ID)).willReturn(run);
         given(tokenService.issue(anyLong(), any())).willReturn("ghs_token");
         given(configRepository.findByProjectIdAndRepositoryId(anyLong(), anyLong()))
                 .willReturn(Optional.empty());
@@ -263,7 +266,7 @@ class AnalysisRunExecutorTest {
         setId(repository, repositoryId);
 
         AnalysisRunTarget target = AnalysisRunTarget.pending(
-                AnalysisRun.queue(project, project.getUser(), Map.of()), repository,
+                AnalysisRun.queue(project, project.getOwner(), Map.of()), repository,
                 installationId);
         setId(target, targetId);
         return target;
@@ -272,7 +275,7 @@ class AnalysisRunExecutorTest {
     private static RepositoryCollectionResult result() {
         GithubRepositoryResponse repository = new GithubRepositoryResponse(11L, "app", "wb/app",
                 new GithubRepositoryResponse.Owner(1L, "wb", "User"), true, "main",
-                "https://github.com/wb/app", Map.of());
+                "https://github.com/wb/app", Map.of(), null, null, null);
         return new RepositoryCollectionResult("abc1234", "main", repository, 10, 2048, 3, 5,
                 List.of());
     }
@@ -293,6 +296,51 @@ class AnalysisRunExecutorTest {
             field.set(entity, id);
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException(e);
+        }
+    }
+
+    @Nested
+    @DisplayName("취소·삭제 체크포인트")
+    class Abandonment {
+
+        @Test
+        @DisplayName("이미 취소된 작업은 시작하지 않는다")
+        void doesNotStartCancelledRun() {
+            givenTargets(target(1L, 11L, "wb/personal", PERSONAL_INSTALLATION));
+            given(writer.isAbandoned(RUN_ID)).willReturn(true);
+
+            executor.execute(RUN_ID);
+
+            verify(repositoryCollector, never()).collect(any());
+            verify(writer, never()).finishRun(anyLong(), any());
+        }
+
+        @Test
+        @DisplayName("수집 도중 프로젝트가 지워지면 남은 저장소를 시작하지 않는다")
+        void stopsAtNextCheckpoint() {
+            givenTargets(
+                    target(1L, 11L, "wb/first", PERSONAL_INSTALLATION),
+                    target(2L, 22L, "wb/second", PERSONAL_INSTALLATION));
+            // 시작 시점은 멀쩡했고, 첫 저장소를 끝낸 뒤 체크포인트에서 삭제를 확인한다.
+            given(writer.isAbandoned(RUN_ID)).willReturn(false, false, true);
+
+            executor.execute(RUN_ID);
+
+            verify(repositoryCollector).collect(any());
+            verify(writer).completeTarget(eq(1L), any());
+            verify(writer, never()).startTarget(2L);
+        }
+
+        @Test
+        @DisplayName("중단한 작업의 상태를 결과로 덮지 않는다 — CANCELLED가 남아야 한다")
+        void doesNotOverwriteCancelledStatus() {
+            givenTargets(target(1L, 11L, "wb/personal", PERSONAL_INSTALLATION));
+            given(writer.isAbandoned(RUN_ID)).willReturn(false, true);
+
+            executor.execute(RUN_ID);
+
+            verify(writer, never()).finishRun(anyLong(), any());
+            verify(writer, never()).rateLimitRun(anyLong(), any());
         }
     }
 }

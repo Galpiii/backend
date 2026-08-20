@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 public interface AnalysisRunRepository extends JpaRepository<AnalysisRun, Long> {
@@ -73,6 +74,52 @@ public interface AnalysisRunRepository extends JpaRepository<AnalysisRun, Long> 
     int claim(@Param("id") Long id,
               @Param("workerId") String workerId,
               @Param("leaseExpiredBefore") OffsetDateTime leaseExpiredBefore);
+
+    /**
+     * 프로젝트가 삭제될 때 아직 끝나지 않은 작업을 취소한다.
+     *
+     * <p>지워진 프로젝트의 저장소를 계속 수집하는 것을 막는다. 워커가 이미 선점한 작업은
+     * 이 갱신만으로 멈추지 않으므로, 실행 쪽이 저장소를 하나 끝낼 때마다 취소 여부를
+     * 다시 확인한다({@link #isAbandoned}).
+     */
+    default int cancelInFlight(Long projectId, OffsetDateTime now) {
+        return cancel(projectId, AnalysisRunStatus.CANCELLED,
+                List.of(AnalysisRunStatus.QUEUED, AnalysisRunStatus.RUNNING), now);
+    }
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update AnalysisRun run
+               set run.status = :cancelled,
+                   run.finishedAt = :now,
+                   run.updatedAt = :now
+             where run.project.id = :projectId
+               and run.status in :inFlight
+            """)
+    int cancel(@Param("projectId") Long projectId,
+               @Param("cancelled") AnalysisRunStatus cancelled,
+               @Param("inFlight") Collection<AnalysisRunStatus> inFlight,
+               @Param("now") OffsetDateTime now);
+
+    /**
+     * 이 작업을 계속 진행할 이유가 사라졌는지.
+     *
+     * <p>취소됐거나 프로젝트가 삭제된 경우다. 워커는 저장소 사이의 체크포인트마다 이것을 보고
+     * 남은 저장소를 시작하지 않는다 — 저장소 하나가 몇 분씩 걸리므로, 확인하지 않으면 삭제
+     * 직후에도 프로젝트 전체를 끝까지 수집한다.
+     */
+    default boolean isAbandoned(Long runId) {
+        return isAbandoned(runId, AnalysisRunStatus.CANCELLED);
+    }
+
+    @Query("""
+            select count(run.id) > 0
+              from AnalysisRun run
+             where run.id = :runId
+               and (run.status = :cancelled or run.project.deletedAt is not null)
+            """)
+    boolean isAbandoned(@Param("runId") Long runId,
+                        @Param("cancelled") AnalysisRunStatus cancelled);
 
     /** 살아 있는 워커가 자신의 lease만 연장한다. 소유자가 달라졌다면 갱신하지 않는다. */
     @Modifying(clearAutomatically = true, flushAutomatically = true)

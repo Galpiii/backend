@@ -115,8 +115,9 @@ public class AnalysisRunService {
         AnalysisRun run = runRepository.findById(analysisRunId)
                 .orElseThrow(() -> new NotFoundException(ErrorCode.ANALYSIS_RUN_NOT_FOUND));
 
-        // 남의 작업은 존재 자체를 알려주지 않는다.
-        if (!run.getProject().getUser().getId().equals(userId)) {
+        // 남의 작업과 삭제된 프로젝트의 작업은 존재 자체를 알려주지 않는다. 삭제한 프로젝트의
+        // 하위 리소스가 id만 알면 계속 보이면 삭제가 반쪽이 된다.
+        if (!run.getProject().getOwner().getId().equals(userId) || run.getProject().isDeleted()) {
             throw new NotFoundException(ErrorCode.ANALYSIS_RUN_NOT_FOUND);
         }
         return AnalysisRunStatusResponse.of(run,
@@ -124,7 +125,7 @@ public class AnalysisRunService {
     }
 
     private void requireOwnedProject(Long userId, Long projectId) {
-        projectRepository.findByIdAndUserId(projectId, userId)
+        projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(projectId, userId)
                 .orElseThrow(() -> new NotFoundException(ErrorCode.PROJECT_NOT_FOUND));
     }
 }

@@ -67,6 +67,11 @@ public class AnalysisRunExecutor {
 
     public void execute(Long runId) {
         AnalysisRun run = writer.requireRun(runId);
+        if (writer.isAbandoned(runId)) {
+            // 큐에 들어간 뒤 프로젝트가 지워졌다. 상태는 이미 CANCELLED다.
+            log.info("[분석] 취소된 작업이라 시작하지 않는다 runId={}", runId);
+            return;
+        }
         if (run.getAttempts() > properties.maxAttempts()) {
             log.warn("[분석] 시도 상한({})을 넘어 실패로 끝낸다 runId={}",
                     properties.maxAttempts(), runId);
@@ -89,6 +94,9 @@ public class AnalysisRunExecutor {
         Map<Long, List<AnalysisRunTarget>> byInstallation = groupByInstallation(targets);
 
         for (Map.Entry<Long, List<AnalysisRunTarget>> group : byInstallation.entrySet()) {
+            if (progress.abandoned) {
+                break;
+            }
             if (progress.rateLimited) {
                 markRemainingSkipped(group.getValue(), progress);
                 continue;
@@ -129,6 +137,15 @@ public class AnalysisRunExecutor {
         int index = 0;
         while (index < targets.size()) {
             AnalysisRunTarget target = targets.get(index);
+            // 저장소 사이가 체크포인트다. 프로젝트가 지워졌거나 작업이 취소됐으면 남은
+            // 저장소는 시작하지 않는다. 저장소 하나가 몇 분씩 걸려 여기서 보지 않으면
+            // 삭제 직후에도 프로젝트 전체를 끝까지 수집한다.
+            if (writer.isAbandoned(run.getId())) {
+                log.info("[분석] 취소·삭제를 확인해 남은 저장소를 중단한다 runId={} remaining={}",
+                        run.getId(), targets.size() - index);
+                progress.abandoned = true;
+                return;
+            }
             if (progress.rateLimited) {
                 markSkipped(target, progress);
                 index++;
@@ -265,6 +282,10 @@ public class AnalysisRunExecutor {
      * 전체 실패로 만들지 않는다는 원칙이 여기서 값으로 나타난다.
      */
     private void finish(Long runId, Progress progress) {
+        if (progress.abandoned) {
+            // CANCELLED를 결과 상태로 덮지 않는다. 이미 끝난 저장소의 기록은 그대로 남는다.
+            return;
+        }
         if (progress.rateLimited) {
             writer.rateLimitRun(runId, progress.resumeAt);
             return;
@@ -329,6 +350,8 @@ public class AnalysisRunExecutor {
         private int failed;
         private int skipped;
         private boolean rateLimited;
+        /** 프로젝트 삭제나 취소로 더 진행할 이유가 없어졌다. */
+        private boolean abandoned;
         private OffsetDateTime resumeAt;
 
         private static Progress from(List<AnalysisRunTarget> targets) {

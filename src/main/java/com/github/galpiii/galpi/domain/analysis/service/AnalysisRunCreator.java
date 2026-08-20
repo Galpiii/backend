@@ -47,11 +47,11 @@ public class AnalysisRunCreator {
     @Transactional
     public Long create(Long userId, Long projectId, List<TargetSpec> targets,
                        Map<Long, Long> installationSnapshot) {
-        Project project = projectRepository.findByIdAndUserId(projectId, userId)
+        Project project = projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(projectId, userId)
                 .orElseThrow(() -> new NotFoundException(ErrorCode.PROJECT_NOT_FOUND));
 
         AnalysisRun run = runRepository.save(
-                AnalysisRun.queue(project, project.getUser(), installationSnapshot));
+                AnalysisRun.queue(project, project.getOwner(), installationSnapshot));
 
         Map<Long, GithubRepository> repositories = repositoryRepository.findAllById(
                         targets.stream().map(TargetSpec::repositoryId).toList()).stream()
@@ -72,6 +72,9 @@ public class AnalysisRunCreator {
                 })
                 .toList();
         targetRepository.saveAll(rows);
+
+        // 목록 화면이 프로젝트마다 최근 분석을 다시 조회하지 않도록 여기서 포인터를 옮긴다.
+        project.markLastAnalysisRun(run.getId());
 
         log.info("[분석] 작업을 만들었다 runId={} projectId={} repositories={}",
                 run.getId(), projectId, rows.size());

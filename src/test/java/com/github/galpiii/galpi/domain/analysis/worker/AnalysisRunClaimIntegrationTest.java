@@ -116,7 +116,7 @@ class AnalysisRunClaimIntegrationTest extends IntegrationTestSupport {
     @DisplayName("작업이 둘이면 워커 둘이 서로 다른 작업을 집는다")
     void distributesRunsAcrossWorkers() throws Exception {
         Long first = queueRun();
-        Project secondProject = projectRepository.save(Project.create(project.getUser(), "갈피2"));
+        Project secondProject = projectRepository.save(Project.create(project.getOwner(), "갈피2"));
         Long second = queueRun(secondProject);
 
         List<Optional<Long>> results = runConcurrently(
@@ -184,7 +184,7 @@ class AnalysisRunClaimIntegrationTest extends IntegrationTestSupport {
 
     private Long queueRun(Project targetProject) {
         return runRepository.save(
-                AnalysisRun.queue(targetProject, targetProject.getUser(), Map.of(1L, 100L))).getId();
+                AnalysisRun.queue(targetProject, targetProject.getOwner(), Map.of(1L, 100L))).getId();
     }
 
     /**
