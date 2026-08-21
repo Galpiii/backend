@@ -31,8 +31,7 @@ public class FeatureExtractionAsyncConfig {
         executor.setMaxPoolSize(properties.maxPoolSize());
         executor.setQueueCapacity(properties.queueCapacity());
         executor.setThreadNamePrefix("feature-extraction-");
-
-        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setWaitForTasksToCompleteOnShutdown(false);
         executor.setAwaitTerminationSeconds((int) properties.awaitTermination().toSeconds());
 
         executor.initialize();

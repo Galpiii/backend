@@ -23,14 +23,13 @@ import java.nio.file.Files;
 @RequiredArgsConstructor
 public class FeatureSpecFileValidator {
 
-    private final FeatureSpecTempFileStore tempFileStore;
-
-
     private static final long MAX_FILE_SIZE = 20L * 1024 * 1024;
     private static final int MAX_FILE_NAME_LENGTH = 255;
     private static final int MIN_PAGE_COUNT = 1;
     private static final int MAX_PAGE_COUNT = 100;
     private static final String PDF_EXTENSION = "pdf";
+
+    private final FeatureSpecTempFileStore tempFileStore;
 
     public ValidatedFeatureSpec validate(MultipartFile file) {
         String fileName = validateBasicFile(file);

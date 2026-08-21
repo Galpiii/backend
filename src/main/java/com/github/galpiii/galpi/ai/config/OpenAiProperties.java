@@ -1,5 +1,6 @@
 package com.github.galpiii.galpi.ai.config;
 
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -15,7 +16,7 @@ public record OpenAiProperties(
         @DefaultValue("gpt-5") String model,
         @DefaultValue("128000") @Min(1) long maxOutputTokens,
         @DefaultValue("10m") Duration timeout,
-        @DefaultValue("3") @Min(1) int maxAttempts,
+        @DefaultValue("3") @Min(1) @Max(10) int maxAttempts,
         @DefaultValue("1s") Duration retryBackoff,
         @DefaultValue("15m") Duration analysisBudget
 ) {

@@ -1,6 +1,7 @@
 package com.github.galpiii.galpi.ai;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.galpiii.galpi.ai.config.OpenAiProperties;
 import com.github.galpiii.galpi.ai.dto.FeatureSpecExtractionResult;
@@ -40,7 +41,9 @@ public class FeatureSpecAiService {
     private static final String EXPIRES_ANCHOR = "created_at";
     private static final String INPUT_TEXT = "첨부된 기능명세서 PDF를 분석하세요.";
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    // 스키마에 필드가 늘고 record 반영이 늦어도 비싼 호출을 재시도까지 돌며 실패하지 않도록 둔다.
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
     private final OpenAIClient openAIClient;
     private final OpenAiProperties properties;
@@ -79,8 +82,9 @@ public class FeatureSpecAiService {
                 throw classify(e);
             }
 
-            verifyCompleted(response);
+            // 잘린 응답이 토큰을 가장 많이 쓰므로 완결 여부를 따지기 전에 남긴다.
             logUsage(response);
+            verifyCompleted(response);
 
             return parse(outputText(response));
         });

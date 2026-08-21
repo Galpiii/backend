@@ -5,6 +5,7 @@ import com.github.galpiii.galpi.domain.featurespec.entity.ExtractionStatus;
 import com.github.galpiii.galpi.domain.featurespec.entity.SpecDocument;
 import com.github.galpiii.galpi.domain.featurespec.repository.SpecDocumentRepository;
 import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileValidator;
+import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecTempFileStore;
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.domain.user.entity.User;
@@ -36,6 +37,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.Mockito.verify;
@@ -53,6 +55,8 @@ class FeatureSpecUploadIntegrationTest extends IntegrationTestSupport {
     private ProjectRepository projectRepository;
     @Autowired
     private UserRepository userRepository;
+    @Autowired
+    private FeatureSpecTempFileStore tempFileStore;
 
     @MockitoSpyBean
     private FeatureSpecFileValidator featureSpecFileValidator;
@@ -60,6 +64,8 @@ class FeatureSpecUploadIntegrationTest extends IntegrationTestSupport {
     /**
      * 분석은 업로드가 끝난 뒤 별도 스레드에서 돈다. 이 클래스가 검증하는 것은 업로드까지이고,
      * 그 스레드를 살려 두면 다음 테스트가 DB를 비우는 사이에 상태를 써서 서로를 간섭한다.
+     *
+     * <p>대신 임시 PDF를 지울 주체가 사라지므로, 실제 분석이 하듯 파일을 지우도록 세워 둔다.
      */
     @MockitoBean
     private FeatureExtractionService featureExtractionService;
@@ -69,6 +75,11 @@ class FeatureSpecUploadIntegrationTest extends IntegrationTestSupport {
 
     @BeforeEach
     void setUp() {
+        willAnswer(invocation -> {
+            tempFileStore.delete(invocation.getArgument(1, File.class));
+            return null;
+        }).given(featureExtractionService).extract(anyLong(), any(File.class));
+
         User user = userRepository.save(
                 User.ofGithub(System.nanoTime(), "galpi-tester", "테스터", null, null));
         Project project = projectRepository.save(

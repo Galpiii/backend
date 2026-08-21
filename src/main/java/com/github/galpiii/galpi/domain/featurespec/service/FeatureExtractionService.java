@@ -8,6 +8,7 @@ import com.github.galpiii.galpi.domain.featurespec.support.FeatureExtractionResu
 import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecTempFileStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,7 @@ public class FeatureExtractionService {
     private final FeatureExtractionResultNormalizer normalizer;
     private final FeatureExtractionWriter featureExtractionWriter;
     private final FeatureSpecTempFileStore tempFileStore;
+    @Qualifier(FeatureExtractionAsyncConfig.EXECUTOR)
     private final ThreadPoolTaskExecutor featureExtractionExecutor;
 
     @Async(FeatureExtractionAsyncConfig.EXECUTOR)
