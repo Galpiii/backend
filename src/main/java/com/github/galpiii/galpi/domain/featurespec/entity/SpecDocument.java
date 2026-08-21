@@ -52,6 +52,7 @@ public class SpecDocument extends BaseEntity {
 
     public void markProcessing() {
         this.extractionStatus = ExtractionStatus.PROCESSING;
+        this.failureCode = null;
     }
 
     public void markCompleted() {

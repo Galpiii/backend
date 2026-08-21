@@ -17,6 +17,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -91,8 +92,11 @@ public class FeatureExtractionResultNormalizer {
     }
 
     private Set<String> referableExtractionIds(Long specDocumentId, List<Feature> features) {
+        // groupingBy는 null 키를 허용하지 않아 extractionId가 비어 있으면 정규화 전체가 죽는다.
         Map<String, Long> countById = features.stream()
-                .collect(Collectors.groupingBy(Feature::extractionId, Collectors.counting()));
+                .map(Feature::extractionId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.groupingBy(id -> id, Collectors.counting()));
 
         countById.forEach((id, count) -> {
             if (count > 1) {
@@ -127,8 +131,9 @@ public class FeatureExtractionResultNormalizer {
         Set<String> issueTypes = normalizeIssueTypes(specDocumentId, feature);
 
         boolean hasDuplicateIssue = issueTypes.contains(FeatureIssueType.DUPLICATE_SUSPECTED.name());
+        boolean hasDuplicateCandidates = !duplicateCandidates.isEmpty();
 
-        if (hasDuplicateIssue != !duplicateCandidates.isEmpty()) {
+        if (hasDuplicateIssue != hasDuplicateCandidates) {
             logMismatch(specDocumentId, feature, FeatureIssueType.DUPLICATE_SUSPECTED);
             duplicateCandidates = List.of();
             issueTypes.remove(FeatureIssueType.DUPLICATE_SUSPECTED.name());
@@ -153,7 +158,7 @@ public class FeatureExtractionResultNormalizer {
                 name,
                 section,
                 requirements,
-                feature.source(),
+                nullToSource(feature.source()),
                 issues,
                 duplicateCandidates,
                 splitSuggestion
@@ -310,6 +315,16 @@ public class FeatureExtractionResultNormalizer {
                 feature.extractionId(),
                 issueType
         );
+    }
+
+    /**
+     * 페이지 정보가 통째로 비어 있어도 저장 계층이 역참조할 수 있게 빈 값으로 채운다.
+     *
+     * <p>스키마상 필수라 오기 어렵지만, 여기를 통과한 결과는 그대로 믿고 쓴다는 것이 이 계층의
+     * 약속이다. 뚫리면 저장 트랜잭션 전체가 롤백되어 분석 한 건이 통째로 날아간다.
+     */
+    private FeatureSpecExtractionResult.Source nullToSource(FeatureSpecExtractionResult.Source source) {
+        return source == null ? new FeatureSpecExtractionResult.Source(null, null) : source;
     }
 
     private String truncate(Long specDocumentId, String fieldName, String value) {

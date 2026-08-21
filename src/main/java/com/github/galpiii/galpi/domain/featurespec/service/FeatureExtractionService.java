@@ -31,7 +31,8 @@ public class FeatureExtractionService {
         try {
             featureExtractionWriter.markProcessing(specDocumentId);
 
-            FeatureSpecExtractionResult extracted = featureSpecAiService.analyze(pdf);
+            FeatureSpecExtractionResult extracted =
+                    normalizer.normalize(specDocumentId, featureSpecAiService.analyze(pdf));
 
             if (extracted.features().isEmpty()) {
                 log.warn(
@@ -42,10 +43,7 @@ public class FeatureExtractionService {
                 return;
             }
 
-            featureExtractionWriter.saveResult(
-                    specDocumentId,
-                    normalizer.normalize(specDocumentId, extracted)
-            );
+            featureExtractionWriter.saveResult(specDocumentId, extracted);
 
             log.info(
                     "[기능명세서 분석] 분석 완료. specDocumentId: {}, 기능 수: {}",
