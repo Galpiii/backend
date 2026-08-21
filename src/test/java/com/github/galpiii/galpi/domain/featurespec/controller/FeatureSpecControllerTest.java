@@ -18,6 +18,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -174,7 +175,7 @@ class FeatureSpecControllerTest extends WebMvcTestSupport {
             mockMvc.perform(get(STATUS_PATH, PROJECT_ID, SPEC_DOCUMENT_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer()))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data.failureCode").doesNotExist());
+                    .andExpect(jsonPath("$.data.failureCode").value(nullValue()));
         }
 
         @Test

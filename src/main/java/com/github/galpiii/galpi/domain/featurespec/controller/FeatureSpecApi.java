@@ -180,7 +180,7 @@ public interface FeatureSpecApi {
                     - COMPLETED: 분석 및 결과 저장 완료
                     - FAILED: 자동 재시도까지 포함해 최종 실패
 
-                    failureCode는 FAILED일 때만 내려갑니다.
+                    failureCode는 항상 내려가며, FAILED가 아닐 때는 null입니다.
                     - NO_FEATURE_EXTRACTED: 문서에서 기능을 하나도 추출하지 못함. 다른 PDF로 다시 업로드해야 합니다.
                     - ANALYSIS_FAILED: 그 외 실패. 같은 PDF로 다시 업로드할 수 있습니다.
 
