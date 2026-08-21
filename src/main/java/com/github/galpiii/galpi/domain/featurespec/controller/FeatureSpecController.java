@@ -1,6 +1,7 @@
 package com.github.galpiii.galpi.domain.featurespec.controller;
 
 import com.github.galpiii.galpi.domain.auth.jwt.AuthPrincipal;
+import com.github.galpiii.galpi.domain.featurespec.dto.response.FeatureSpecStatusResponse;
 import com.github.galpiii.galpi.domain.featurespec.dto.response.FeatureSpecUploadResponse;
 import com.github.galpiii.galpi.domain.featurespec.service.FeatureSpecService;
 import com.github.galpiii.galpi.global.response.ApiResponse;
@@ -9,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,5 +41,21 @@ public class FeatureSpecController implements FeatureSpecApi {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response));
+    }
+
+    @Override
+    @GetMapping("/{specDocumentId}/status")
+    public ResponseEntity<ApiResponse<FeatureSpecStatusResponse>> getExtractionStatus(
+            @PathVariable Long projectId,
+            @PathVariable Long specDocumentId,
+            @AuthenticationPrincipal AuthPrincipal principal
+    ) {
+        FeatureSpecStatusResponse response = featureSpecService.getStatus(
+                projectId,
+                specDocumentId,
+                principal.userId()
+        );
+
+        return ResponseEntity.ok(ApiResponse.success(response));
     }
 }

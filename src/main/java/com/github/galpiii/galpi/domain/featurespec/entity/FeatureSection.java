@@ -25,7 +25,7 @@ public class FeatureSection extends BaseEntity {
     @Column(nullable = false, length = 255)
     private String title;
 
-    @Column(length = 255)
+    @Column(columnDefinition = "text")
     private String sourceTitle;
 
     @Column(nullable = false)

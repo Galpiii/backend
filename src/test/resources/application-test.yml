@@ -33,6 +33,23 @@ spring:
       timeout: 3s
 
 galpi:
+  # 클라이언트 Bean 생성에 필요한 값만 채운다. 실제 호출은 IntegrationTestSupport가
+  # OpenAIClient를 대체해 막는다 — 이 값들이 진짜 요청에 쓰이는 일은 없다.
+  openai:
+    api-key: test-api-key
+    model: gpt-5
+    max-output-tokens: 128000
+    timeout: 10m
+    max-attempts: 3
+    retry-backoff: 1ms
+    analysis-budget: 15m
+
+  feature-extraction:
+    core-pool-size: 1
+    max-pool-size: 1
+    queue-capacity: 5
+    await-termination: 1s
+
   crypto:
     token:
       current-version: 1

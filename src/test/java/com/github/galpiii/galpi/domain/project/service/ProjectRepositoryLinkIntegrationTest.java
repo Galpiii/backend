@@ -63,9 +63,6 @@ class ProjectRepositoryLinkIntegrationTest extends IntegrationTestSupport {
 
     @BeforeEach
     void setUp() {
-        repositoryRepository.deleteAll();
-        projectRepository.deleteAll();
-
         User user = userRepository.save(
                 User.ofGithub(System.nanoTime(), "wb", "wb", null, "https://avatar"));
         Project project = projectRepository.save(Project.create(user, "갈피"));
