@@ -63,7 +63,9 @@ public class RepositoryFileSelector {
 
     public FileSelectionResult select(ExtractedRepository repository, List<String> includePaths,
                                       List<String> excludePaths) {
-        Scan scan = walk(repository, includePaths, excludePaths);
+        // 사용자 설정 glob은 여기서 한 번만 컴파일한다. 파일마다 컴파일하면 파일 수 × 패턴 수가
+        // 되는데, 저장소 하나가 파일 20,000개까지 갈 수 있다.
+        Scan scan = walk(repository, ConfiguredPathFilters.of(includePaths, excludePaths));
 
         // 상한에 걸릴 때 무엇을 남길지가 여기서 정해진다. 같은 우선순위면 경로 순서라 결과가
         // 재현 가능하다 — 같은 커밋을 두 번 분석했는데 다른 파일이 빠지면 원인을 못 찾는다.
@@ -106,8 +108,7 @@ public class RepositoryFileSelector {
                 List.copyOf(scan.fileTree), List.copyOf(incompleteReasons), usedBytes);
     }
 
-    private Scan walk(ExtractedRepository repository, List<String> includePaths,
-                      List<String> excludePaths) {
+    private Scan walk(ExtractedRepository repository, ConfiguredPathFilters filters) {
         Scan scan = new Scan();
         Path root = repository.root();
 
@@ -141,7 +142,7 @@ public class RepositoryFileSelector {
                     if (!attributes.isRegularFile()) {
                         return FileVisitResult.CONTINUE;
                     }
-                    classify(root, file, attributes.size(), includePaths, excludePaths, scan);
+                    classify(root, file, attributes.size(), filters, scan);
                     return FileVisitResult.CONTINUE;
                 }
 
@@ -159,13 +160,13 @@ public class RepositoryFileSelector {
         return scan;
     }
 
-    private void classify(Path root, Path file, long sizeBytes, List<String> includePaths,
-                          List<String> excludePaths, Scan scan) {
+    private void classify(Path root, Path file, long sizeBytes, ConfiguredPathFilters filters,
+                          Scan scan) {
         String relativePath = relativize(root, file);
         scan.fileTree.add(relativePath);
 
         Optional<ExclusionReason> reason = exclusionReason(file, relativePath, sizeBytes,
-                includePaths, excludePaths, scan);
+                filters, scan);
         if (reason.isPresent()) {
             scan.excluded.add(new ExcludedFile(relativePath, reason.get()));
             return;
@@ -175,15 +176,15 @@ public class RepositoryFileSelector {
     }
 
     private Optional<ExclusionReason> exclusionReason(Path file, String relativePath,
-                                                      long sizeBytes, List<String> includePaths,
-                                                      List<String> excludePaths, Scan scan) {
+                                                      long sizeBytes,
+                                                      ConfiguredPathFilters filters, Scan scan) {
         if (secretPathRules.isSecretPath(relativePath)) {
             return Optional.of(ExclusionReason.SECRET_SUSPECTED);
         }
-        if (!exclusionRules.matchesConfiguredInclude(relativePath, includePaths)) {
+        if (!filters.matchesInclude(relativePath)) {
             return Optional.of(ExclusionReason.CONFIGURED_INCLUDE);
         }
-        if (exclusionRules.matchesConfiguredExclude(relativePath, excludePaths)) {
+        if (filters.matchesExclude(relativePath)) {
             return Optional.of(ExclusionReason.CONFIGURED_EXCLUDE);
         }
         if (exclusionRules.isDependencyArtifact(relativePath)) {

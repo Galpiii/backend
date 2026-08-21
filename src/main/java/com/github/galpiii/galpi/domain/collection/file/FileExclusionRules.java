@@ -17,6 +17,9 @@ import java.util.Set;
  *
  * <p>디렉터리 규칙은 순회 자체를 자르는 데 쓴다. {@code node_modules} 안을 열거한 다음 하나씩
  * 거르면 파일 수만 명 단위로 늘어나고, 그 목록은 어디에도 쓸모가 없다.
+ *
+ * <p>여기 있는 규칙은 전부 상수라 glob을 필드에서 한 번만 컴파일한다. 저장소마다 달라지는
+ * 사용자 설정 glob은 {@link ConfiguredPathFilters}가 같은 방식으로 다룬다.
  */
 @Component
 public class FileExclusionRules {
@@ -71,45 +74,6 @@ public class FileExclusionRules {
 
     public boolean hasBinaryExtension(String relativePath) {
         return BINARY_EXTENSIONS.contains(extensionOf(relativePath));
-    }
-
-    /**
-     * {@code analysis_configs.exclude_paths}에 걸리는지.
-     *
-     * <p>설정값은 사용자가 넣은 glob이다. 잘못된 패턴 하나로 수집 전체가 죽지 않도록,
-     * 해석할 수 없는 패턴은 무시하고 넘어간다.
-     */
-    public boolean matchesConfiguredExclude(String relativePath, List<String> excludePaths) {
-        return matchesAny(relativePath, excludePaths);
-    }
-
-    /** include 목록이 없으면 전부 포함하고, 있으면 하나 이상의 glob에 맞아야 한다. */
-    public boolean matchesConfiguredInclude(String relativePath, List<String> includePaths) {
-        return includePaths == null || includePaths.isEmpty()
-                || matchesAny(relativePath, includePaths);
-    }
-
-    private static boolean matchesAny(String relativePath, List<String> patterns) {
-        if (patterns == null || patterns.isEmpty()) {
-            return false;
-        }
-        Path candidate = Path.of(relativePath);
-        for (String pattern : patterns) {
-            if (pattern == null || pattern.isBlank()) {
-                continue;
-            }
-            try {
-                if (FileSystems.getDefault().getPathMatcher("glob:" + pattern)
-                        .matches(candidate)) {
-                    return true;
-                }
-            } catch (IllegalArgumentException e) {
-                // 사용자가 넣은 값이라 깨질 수 있다(PatternSyntaxException도 여기로 온다).
-                // 그 패턴만 버리고 나머지는 계속 본다.
-                continue;
-            }
-        }
-        return false;
     }
 
     static String fileNameOf(String relativePath) {
