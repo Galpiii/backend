@@ -7,6 +7,13 @@ spring:
       max-file-size: 20MB
       max-request-size: 21MB
 
+  # 분석 워커의 poll()이 수집 전체를 동기로 실행해 스레드를 수십 분씩 잡는다. 기본값 1이면
+  # 그동안 토큰 폐기 배치가 한 번도 돌지 못한다. @Scheduled를 더 붙이면 이 값도 함께 올린다.
+  task:
+    scheduling:
+      pool:
+        size: ${TASK_SCHEDULING_POOL_SIZE:2}
+
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
