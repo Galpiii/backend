@@ -39,9 +39,10 @@ import java.util.Optional;
 /**
  * 선점한 작업 하나를 끝까지 처리한다.
  *
- * <p>사용자 세션이 없는 자리다. {@code installation_snapshot}에 고정된 매핑만 보고 동작하며,
- * user access token을 요구하지 않는다. 이 구조 덕분에 "user token은 세션 동안만"이라는 원칙과
- * 몇 분씩 걸리는 분석이 양립한다.
+ * <p>사용자 세션이 없는 자리다. 작업 생성 시점에 고정된
+ * {@code analysis_run_repositories.installation_id}만 보고 동작하며, user access token을
+ * 요구하지 않는다. 이 구조 덕분에 "user token은 세션 동안만"이라는 원칙과 몇 분씩 걸리는
+ * 분석이 양립한다.
  *
  * <p>{@code installation_id}별로 묶어 토큰을 한 번씩만 발급한다. 저장소마다 발급하면 같은
  * 설치에 대해 같은 토큰을 여러 번 만들게 되고, 캐시 키도 저장소마다 갈라져 캐시가 무의미해진다.

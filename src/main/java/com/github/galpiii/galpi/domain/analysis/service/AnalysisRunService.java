@@ -34,8 +34,9 @@ import java.util.Map;
  * 모든 저장소에 대해 현재 사용자의 접근 권한을 GitHub에 다시 물어 확인한다. 이 검증이
  * 조직을 떠난 사용자가 과거에 연결해 둔 저장소를 계속 분석하는 것을 막는다.
  *
- * <p>검증 결과로 만든 {@code githubRepositoryId -> installationId} 매핑을
- * {@code installation_snapshot}에 고정하면, 워커는 user access token 없이 동작할 수 있다.
+ * <p>검증 결과로 확정한 installation을 저장소별 행({@code analysis_run_repositories})에
+ * 고정하고, 같은 매핑을 {@code installation_snapshot}에도 작업 단위로 남긴다. 워커가 읽는
+ * 것은 앞쪽이며, 어느 쪽이든 user access token을 다시 요구하지 않는다.
  *
  * <p>메서드 전체에 트랜잭션을 걸지 않는다. 권한 재검증이 installation 수만큼 GitHub을
  * 호출하므로, 감싸면 외부 응답을 기다리는 내내 DB 커넥션이 묶인다.

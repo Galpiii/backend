@@ -42,7 +42,8 @@ public class AnalysisRunCreator {
 
     /**
      * @param targets              이번 작업이 처리할 저장소와 그 installation
-     * @param installationSnapshot {@code githubRepositoryId -> installationId}. 워커가 이것만 본다
+     * @param installationSnapshot {@code githubRepositoryId -> installationId}. 생성 시점
+     *                             기록이다. 워커는 저장소별 행의 {@code installationId}를 본다
      */
     @Transactional
     public Long create(Long userId, Long projectId, List<TargetSpec> targets,

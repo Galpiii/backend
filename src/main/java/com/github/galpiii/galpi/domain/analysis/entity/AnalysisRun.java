@@ -25,11 +25,14 @@ import java.util.Map;
 /**
  * 분석 작업 하나.
  *
- * <p>{@code installationSnapshot}이 이 엔티티의 핵심이다. 작업을 만드는 시점에는 사용자
- * 세션이 있어 "이 사용자가 지금 접근할 수 있는 저장소"를 GitHub에 물어 확인할 수 있다.
- * 그때 만든 {@code githubRepositoryId -> installationId} 매핑을 여기 고정해 두면, 워커는
- * user access token 없이 installation token만으로 동작할 수 있다. 이 구조 덕분에
- * "user token은 세션 동안만 쓴다"는 원칙과 몇 분씩 걸리는 분석이 양립한다.
+ * <p>작업을 만드는 시점에는 사용자 세션이 있어 "이 사용자가 지금 접근할 수 있는 저장소"를
+ * GitHub에 물어 확인할 수 있다. 그때 확정한 installation을 작업에 고정해 두기 때문에, 워커는
+ * user access token 없이 installation token만으로 동작한다. 이 구조 덕분에 "user token은
+ * 세션 동안만 쓴다"는 원칙과 몇 분씩 걸리는 분석이 양립한다.
+ *
+ * <p>고정한 값은 두 군데에 남는다. 워커가 실제로 읽는 것은 저장소별 행
+ * ({@link AnalysisRunTarget#getInstallationId()})이고, {@code installationSnapshot}은
+ * 그 매핑을 작업 단위로 함께 남긴 생성 시점 기록이다. 실행 경로에서는 읽지 않는다.
  *
  * <p>재개 스케줄러·checkpoint·재진입은 Phase 1의 범위가 아니다. rate limit에 걸리면 멈추고
  * 사용자가 다시 누른다.
@@ -52,6 +55,13 @@ public class AnalysisRun extends BaseEntity {
     @Column(nullable = false, length = 30)
     private AnalysisRunStatus status;
 
+    /**
+     * 생성 시점에 확정한 {@code githubRepositoryId -> installationId} 매핑.
+     *
+     * <p>실행 경로는 이 값을 읽지 않는다. 워커는 저장소별로 펼쳐 둔
+     * {@code analysis_run_repositories.installation_id}를 보고 토큰을 묶는다. 여기 남기는
+     * 것은 "그때 무엇을 근거로 이 작업을 만들었는지"를 작업 단위로 함께 보기 위해서다.
+     */
     @JdbcTypeCode(SqlTypes.JSON)
     @Convert(converter = InstallationSnapshotConverter.class)
     @Column(nullable = false, columnDefinition = "jsonb")
