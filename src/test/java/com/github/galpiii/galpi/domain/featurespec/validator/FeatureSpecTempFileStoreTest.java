@@ -6,7 +6,6 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.io.File;
-import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 
@@ -17,11 +16,15 @@ class FeatureSpecTempFileStoreTest {
 
     private final FeatureSpecTempFileStore store = new FeatureSpecTempFileStore();
 
+    private MockMultipartFile pdfFile() {
+        return new MockMultipartFile(
+                "file", "기능명세서.pdf", MediaType.APPLICATION_PDF_VALUE, "pdf-bytes".getBytes());
+    }
+
     @Test
     @DisplayName("업로드 내용을 담은 임시 파일을 만든다")
-    void createsTempFileWithUploadedContent() throws IOException {
-        File tempFile = store.create(new MockMultipartFile(
-                "file", "기능명세서.pdf", MediaType.APPLICATION_PDF_VALUE, "pdf-bytes".getBytes()));
+    void createsTempFileWithUploadedContent() {
+        File tempFile = store.create(pdfFile());
 
         try {
             assertThat(tempFile).exists().hasContent("pdf-bytes");
@@ -36,9 +39,9 @@ class FeatureSpecTempFileStoreTest {
      */
     @Test
     @DisplayName("주인이 사라진 오래된 임시 파일만 지운다")
-    void deletesOnlyStaleTempFiles() throws IOException {
-        File stale = File.createTempFile("feature-spec-", ".pdf");
-        File fresh = File.createTempFile("feature-spec-", ".pdf");
+    void deletesOnlyStaleTempFiles() {
+        File stale = store.create(pdfFile());
+        File fresh = store.create(pdfFile());
         assertThat(stale.setLastModified(Instant.now().minus(Duration.ofHours(5)).toEpochMilli()))
                 .isTrue();
 

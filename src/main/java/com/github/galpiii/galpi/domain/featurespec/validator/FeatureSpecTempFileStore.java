@@ -29,11 +29,18 @@ public class FeatureSpecTempFileStore {
     private static final String TEMP_FILE_PREFIX = "feature-spec-";
     private static final String TEMP_FILE_SUFFIX = ".pdf";
 
+    /**
+     * 임시 PDF만 모아 두는 자리. 시스템 임시 디렉터리를 통째로 훑으면 정리 배치가 다른 프로그램의
+     * 파일까지 후보로 삼는다. 인스턴스별로 나누지는 않는다 — 죽은 인스턴스가 남긴 파일을 아무도
+     * 치우지 못하게 되고, 살아 있는 인스턴스의 파일은 나이 조건이 이미 지켜 준다.
+     */
+    private static final String TEMP_DIRECTORY_NAME = "galpi-feature-spec";
+
     public File create(MultipartFile file) {
         File tempFile = null;
 
         try {
-            tempFile = File.createTempFile(TEMP_FILE_PREFIX, TEMP_FILE_SUFFIX);
+            tempFile = File.createTempFile(TEMP_FILE_PREFIX, TEMP_FILE_SUFFIX, tempDirectory().toFile());
 
             try (InputStream source = file.getInputStream()) {
                 Files.copy(source, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
@@ -58,11 +65,10 @@ public class FeatureSpecTempFileStore {
 
      // 주인이 사라진 임시 파일 삭제
     public int deleteOlderThan(Instant threshold) {
-        Path tempDirectory = Path.of(System.getProperty("java.io.tmpdir"));
         int deleted = 0;
 
         try (DirectoryStream<Path> files =
-                     Files.newDirectoryStream(tempDirectory, TEMP_FILE_PREFIX + "*" + TEMP_FILE_SUFFIX)) {
+                     Files.newDirectoryStream(tempDirectory(), TEMP_FILE_PREFIX + "*" + TEMP_FILE_SUFFIX)) {
             for (Path file : files) {
                 if (Files.getLastModifiedTime(file).toInstant().isAfter(threshold)) {
                     continue;
@@ -77,5 +83,16 @@ public class FeatureSpecTempFileStore {
         }
 
         return deleted;
+    }
+
+    private Path tempDirectory() {
+        Path directory = Path.of(System.getProperty("java.io.tmpdir"), TEMP_DIRECTORY_NAME);
+
+        try {
+            return Files.createDirectories(directory);
+        } catch (IOException e) {
+            log.error("[기능명세서 업로드] 임시 디렉터리를 만들지 못했습니다. path: {}", directory, e);
+            throw new GlobalException(ErrorCode.INTERNAL_SERVER_ERROR);
+        }
     }
 }

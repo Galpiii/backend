@@ -58,7 +58,6 @@ galpi:
     max-pool-size: ${FEATURE_EXTRACTION_MAX_POOL_SIZE}
     queue-capacity: ${FEATURE_EXTRACTION_QUEUE_CAPACITY}
     await-termination: ${FEATURE_EXTRACTION_AWAIT_TERMINATION}
-    stale-after: ${FEATURE_EXTRACTION_STALE_AFTER}
 
   crypto:
     token:
