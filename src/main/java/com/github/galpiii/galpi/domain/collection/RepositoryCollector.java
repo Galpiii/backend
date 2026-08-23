@@ -22,7 +22,6 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.function.BooleanSupplier;
 
 /**
  * 저장소 하나를 수집해 분석 파이프라인에 넘긴다.
@@ -34,9 +33,9 @@ import java.util.function.BooleanSupplier;
  * <p>임시 파일 정리는 try-with-resources가 보장한다. 파이프라인 인계 중에 예외가 나도 코드
  * 원문은 디스크에 남지 않는다.
  *
- * <p>인계 직전에 {@link CollectionRequest#abandoned()}를 한 번 더 묻는다. 저장소 하나가 몇 분씩
- * 걸리므로 그 사이에 연결이 끊기거나 작업이 취소될 수 있고, 여기가 코드가 밖으로 나가기 전
- * 마지막 지점이다.
+ * <p>인계 직전에 {@link CollectionRequest#handoffGuard()}를 통과해야 한다. 저장소 하나가 몇
+ * 분씩 걸리므로 그 사이에 작업이 취소되거나 동의가 사라질 수 있고, 여기가 코드가 밖으로 나가기
+ * 전 마지막 지점이다. 무엇이 관문을 막았는지는 이 클래스가 알지 못한다.
  */
 @Slf4j
 @Component
@@ -84,13 +83,9 @@ public class RepositoryCollector {
                     distinct.isEmpty() ? DataCompleteness.COMPLETE : DataCompleteness.PARTIAL,
                     distinct);
 
-            // 수집을 시작한 뒤 취소됐을 수 있다. 이미 받아 둔 것을 버리는 편이, 근거가 사라진
-            // 데이터를 외부로 내보내는 것보다 낫다.
-            if (request.abandoned().getAsBoolean()) {
-                log.info("[수집] 취소를 확인해 인계하지 않고 접는다 repo={}",
-                        LogSafe.text(repository.fullName()));
-                throw new CollectionAbandonedException();
-            }
+            // 수집을 시작할 때의 근거가 아직 유효한지 마지막으로 묻는다. 이미 받아 둔 것을
+            // 버리는 편이, 근거가 사라진 데이터를 외부로 내보내는 것보다 낫다.
+            request.handoffGuard().check();
 
             // 인계는 이 블록 안에서만 유효하다. 파이프라인이 스냅샷을 들고 나가면 참조가 가리키는
             // 임시 파일은 이미 지워진 뒤다.
@@ -121,9 +116,9 @@ public class RepositoryCollector {
      * @param excludePaths {@code analysis_configs.exclude_paths}. 없으면 빈 목록
      */
     /**
-     * @param abandoned 인계 직전에 묻는 취소 여부. 판단은 호출자에 남긴다 — 수집은 작업이라는
-     *                  개념을 몰라야 하고, 여기서 {@code analysisRunId}를 받으면 그 상태를
-     *                  조회할 방법까지 알아야 한다
+     * @param handoffGuard 파이프라인 인계 직전에 통과해야 할 관문. 판단은 호출자에 남긴다 —
+     *                     수집은 작업이나 동의라는 개념을 몰라야 하고, 여기서
+     *                     {@code analysisRunId}를 받으면 그 상태를 조회할 방법까지 알아야 한다
      */
     public record CollectionRequest(String installationToken,
                                     String owner,
@@ -134,7 +129,7 @@ public class RepositoryCollector {
                                     OffsetDateTime prSince,
                                     List<String> includePaths,
                                     List<String> excludePaths,
-                                    BooleanSupplier abandoned) {
+                                    HandoffGuard handoffGuard) {
     }
 
     /** 워커가 {@code analysis_run_repositories}에 기록할 값. */

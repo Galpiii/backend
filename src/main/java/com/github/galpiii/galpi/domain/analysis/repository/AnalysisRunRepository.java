@@ -129,6 +129,10 @@ public interface AnalysisRunRepository extends JpaRepository<AnalysisRun, Long> 
                       @Param("inFlight") Collection<AnalysisRunStatus> inFlight,
                       @Param("now") OffsetDateTime now);
 
+    /** 작업을 요청한 사용자. 워커에는 세션이 없어 동의 여부를 물으려면 이 값이 필요하다. */
+    @Query("select run.requestedBy.id from AnalysisRun run where run.id = :runId")
+    Optional<Long> findRequesterId(@Param("runId") Long runId);
+
     /**
      * 이 작업을 계속 진행할 이유가 사라졌는지.
      *

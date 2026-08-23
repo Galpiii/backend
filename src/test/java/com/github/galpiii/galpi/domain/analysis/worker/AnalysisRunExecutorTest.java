@@ -11,6 +11,8 @@ import com.github.galpiii.galpi.domain.collection.CollectionAbandonedException;
 import com.github.galpiii.galpi.domain.collection.RepositoryCollector;
 import com.github.galpiii.galpi.domain.collection.RepositoryCollector.RepositoryCollectionResult;
 import com.github.galpiii.galpi.domain.collection.entity.IncompleteReason;
+import com.github.galpiii.galpi.domain.consent.exception.AiDataConsentRequiredException;
+import com.github.galpiii.galpi.domain.consent.service.AiDataConsentService;
 import com.github.galpiii.galpi.domain.github.client.RateLimitRecorder;
 import com.github.galpiii.galpi.domain.github.client.RateLimitSnapshot;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubRepositoryResponse;
@@ -20,6 +22,7 @@ import com.github.galpiii.galpi.domain.github.exception.GithubInstallationUnavai
 import com.github.galpiii.galpi.domain.github.exception.GithubRateLimitedException;
 import com.github.galpiii.galpi.domain.github.exception.GithubRepositoryUnavailableException;
 import com.github.galpiii.galpi.domain.github.service.GithubInstallationTokenService;
+import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.user.entity.User;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +44,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -56,6 +61,7 @@ import static org.mockito.Mockito.verify;
 class AnalysisRunExecutorTest {
 
     private static final long RUN_ID = 55L;
+    private static final long OWNER_ID = 7L;
     private static final long PERSONAL_INSTALLATION = 100L;
     private static final long ORG_INSTALLATION = 200L;
 
@@ -68,6 +74,8 @@ class AnalysisRunExecutorTest {
     @Mock
     private RepositoryCollector repositoryCollector;
     @Mock
+    private AiDataConsentService consentService;
+    @Mock
     private AnalysisRunWriter writer;
     @Mock
     private RateLimitRecorder rateLimitRecorder;
@@ -78,7 +86,7 @@ class AnalysisRunExecutorTest {
     @BeforeEach
     void setUp() {
         executor = new AnalysisRunExecutor(targetRepository, configRepository, tokenService,
-                repositoryCollector, writer, rateLimitRecorder,
+                repositoryCollector, consentService, writer, rateLimitRecorder,
                 new AnalysisWorkerProperties(true, Duration.ofSeconds(5), Duration.ofMinutes(30),
                         3, 100));
 
@@ -91,6 +99,7 @@ class AnalysisRunExecutorTest {
         // 엉뚱한 값으로 조회돼 취소를 확인하지 못한다.
         setId(run, RUN_ID);
         given(writer.requireRun(RUN_ID)).willReturn(run);
+        given(writer.requesterIdOf(RUN_ID)).willReturn(OWNER_ID);
         given(tokenService.issue(anyLong(), any())).willReturn("ghs_token");
         given(configRepository.findByProjectIdAndRepositoryId(anyLong(), anyLong()))
                 .willReturn(Optional.empty());
@@ -343,10 +352,12 @@ class AnalysisRunExecutorTest {
             ArgumentCaptor<RepositoryCollector.CollectionRequest> request =
                     ArgumentCaptor.forClass(RepositoryCollector.CollectionRequest.class);
             verify(repositoryCollector).collect(request.capture());
-            // 콜백은 시작 시점의 스냅샷이 아니라 그때그때의 상태를 본다.
-            assertThat(request.getValue().abandoned().getAsBoolean()).isFalse();
+            // 관문은 시작 시점의 스냅샷이 아니라 그때그때의 상태를 본다.
+            assertThatCode(() -> request.getValue().handoffGuard().check())
+                    .doesNotThrowAnyException();
             given(writer.isAbandoned(RUN_ID)).willReturn(true);
-            assertThat(request.getValue().abandoned().getAsBoolean()).isTrue();
+            assertThatThrownBy(() -> request.getValue().handoffGuard().check())
+                    .isInstanceOf(CollectionAbandonedException.class);
         }
 
         @Test
@@ -365,6 +376,41 @@ class AnalysisRunExecutorTest {
             // 남은 저장소도 시작하지 않고, 상태는 CANCELLED로 남긴다.
             verify(writer, never()).startTarget(2L);
             verify(writer, never()).finishRun(anyLong(), any());
+        }
+
+        @Test
+        @DisplayName("관문이 동의 없음으로 막으면 작업을 FAILED로 끝낸다 — RUNNING으로 남으면 되살아난다")
+        void failsRunWhenConsentIsGone() {
+            givenTargets(
+                    target(1L, 11L, "wb/first", PERSONAL_INSTALLATION),
+                    target(2L, 22L, "wb/second", PERSONAL_INSTALLATION));
+            given(writer.isAbandoned(RUN_ID)).willReturn(false);
+            willThrow(new AiDataConsentRequiredException())
+                    .given(repositoryCollector).collect(any());
+
+            executor.execute(RUN_ID);
+
+            verify(writer).failRun(RUN_ID, ErrorCode.AI_DATA_CONSENT_REQUIRED.getCode(),
+                    ErrorCode.AI_DATA_CONSENT_REQUIRED.getMessage());
+            // 왜 멈췄는지 저장소별 행에도 남아야 화면이 재동의를 안내할 수 있다.
+            verify(writer).failTarget(1L, ErrorCode.AI_DATA_CONSENT_REQUIRED.getCode(),
+                    ErrorCode.AI_DATA_CONSENT_REQUIRED.getMessage());
+            verify(writer, never()).startTarget(2L);
+        }
+
+        @Test
+        @DisplayName("동의가 살아 있으면 관문을 통과한다")
+        void guardPassesWhileConsentHolds() {
+            givenTargets(target(1L, 11L, "wb/personal", PERSONAL_INSTALLATION));
+            given(writer.isAbandoned(RUN_ID)).willReturn(false);
+
+            executor.execute(RUN_ID);
+
+            ArgumentCaptor<RepositoryCollector.CollectionRequest> request =
+                    ArgumentCaptor.forClass(RepositoryCollector.CollectionRequest.class);
+            verify(repositoryCollector).collect(request.capture());
+            request.getValue().handoffGuard().check();
+            verify(consentService).requireAgreed(OWNER_ID);
         }
 
         @Test

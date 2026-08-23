@@ -10,9 +10,12 @@ import com.github.galpiii.galpi.domain.analysis.repository.AnalysisConfigReposit
 import com.github.galpiii.galpi.domain.analysis.repository.AnalysisRunTargetRepository;
 import com.github.galpiii.galpi.domain.analysis.service.AnalysisRunWriter;
 import com.github.galpiii.galpi.domain.collection.CollectionAbandonedException;
+import com.github.galpiii.galpi.domain.collection.HandoffGuard;
 import com.github.galpiii.galpi.domain.collection.RepositoryCollector;
 import com.github.galpiii.galpi.domain.collection.RepositoryCollector.RepositoryCollectionResult;
 import com.github.galpiii.galpi.domain.collection.entity.IncompleteReason;
+import com.github.galpiii.galpi.domain.consent.exception.AiDataConsentRequiredException;
+import com.github.galpiii.galpi.domain.consent.service.AiDataConsentService;
 import com.github.galpiii.galpi.domain.github.client.RateLimitRecorder;
 import com.github.galpiii.galpi.domain.github.client.RateLimitSnapshot;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubRepositoryResponse;
@@ -50,6 +53,9 @@ import java.util.Optional;
  *
  * <p>rate limit에 걸리면 <b>기다리지 않고</b> 중단한다. 남은 저장소는 SKIPPED로 두고 재개
  * 시각을 표시한 뒤 사용자가 다시 누르게 한다.
+ *
+ * <p>코드가 외부로 나가기 직전의 관문도 여기서 만든다. 작업이 큐에 들어간 뒤 취소되거나 동의
+ * 정책이 바뀔 수 있는데, 생성 시점의 확인만으로는 그 사이를 덮지 못한다.
  */
 @Slf4j
 @Component
@@ -63,6 +69,7 @@ public class AnalysisRunExecutor {
     private final AnalysisConfigRepository configRepository;
     private final GithubInstallationTokenService tokenService;
     private final RepositoryCollector repositoryCollector;
+    private final AiDataConsentService consentService;
     private final AnalysisRunWriter writer;
     private final RateLimitRecorder rateLimitRecorder;
     private final AnalysisWorkerProperties properties;
@@ -89,6 +96,9 @@ public class AnalysisRunExecutor {
             return;
         }
 
+        // 관문은 실행 한 번에 하나. 저장소마다 인계 직전에 다시 묻는다.
+        HandoffGuard handoffGuard = handoffGuard(runId, writer.requesterIdOf(runId));
+
         Progress progress = Progress.from(allTargets);
         List<AnalysisRunTarget> targets = allTargets.stream()
                 .filter(AnalysisRunExecutor::isProcessable)
@@ -96,21 +106,37 @@ public class AnalysisRunExecutor {
         Map<Long, List<AnalysisRunTarget>> byInstallation = groupByInstallation(targets);
 
         for (Map.Entry<Long, List<AnalysisRunTarget>> group : byInstallation.entrySet()) {
-            if (progress.abandoned) {
+            if (progress.stopped()) {
                 break;
             }
             if (progress.rateLimited) {
                 markRemainingSkipped(group.getValue(), progress);
                 continue;
             }
-            processGroup(run, group.getKey(), group.getValue(), progress);
+            processGroup(run, group.getKey(), group.getValue(), progress, handoffGuard);
         }
 
         finish(runId, progress);
     }
 
+    /**
+     * 인계 직전에 확인할 것들.
+     *
+     * <p>취소와 동의 상실을 하나로 뭉뚱그리지 않는다. 앞은 이미 결론이 난 작업이라 조용히
+     * 접으면 되고, 뒤는 작업을 실패로 끝내 사용자가 재동의 후 다시 시작하게 해야 한다.
+     */
+    private HandoffGuard handoffGuard(Long runId, Long requesterId) {
+        return () -> {
+            if (writer.isAbandoned(runId)) {
+                throw new CollectionAbandonedException();
+            }
+            consentService.requireAgreed(requesterId);
+        };
+    }
+
     private void processGroup(AnalysisRun run, Long installationId,
-                              List<AnalysisRunTarget> targets, Progress progress) {
+                              List<AnalysisRunTarget> targets, Progress progress,
+                              HandoffGuard handoffGuard) {
         List<Long> githubRepositoryIds = targets.stream()
                 .map(target -> target.getRepository().getGithubRepositoryId())
                 .toList();
@@ -142,7 +168,12 @@ public class AnalysisRunExecutor {
             // 저장소 사이가 체크포인트다. 프로젝트가 지워졌거나 작업이 취소됐으면 남은
             // 저장소는 시작하지 않는다. 저장소 하나가 몇 분씩 걸려 여기서 보지 않으면
             // 삭제 직후에도 프로젝트 전체를 끝까지 수집한다.
-            if (progress.abandoned || writer.isAbandoned(run.getId())) {
+            // 멈출 이유가 이미 정해졌으면 그대로 나간다. 여기서 abandoned로 덮으면 동의 상실로
+            // 멈춘 작업까지 "취소된 작업"이 되어 상태 없이 끝나고, RUNNING인 채 되살아난다.
+            if (progress.stopped()) {
+                return;
+            }
+            if (writer.isAbandoned(run.getId())) {
                 log.info("[분석] 취소·삭제를 확인해 남은 저장소를 중단한다 runId={} remaining={}",
                         run.getId(), targets.size() - index);
                 progress.abandoned = true;
@@ -165,7 +196,7 @@ public class AnalysisRunExecutor {
                 continue;
             }
             try {
-                collectOne(run, target, token, installationId, progress);
+                collectOne(run, target, token, installationId, progress, handoffGuard);
                 index++;
             } catch (GithubInstallationUnavailableException e) {
                 if (tokenRefreshed) {
@@ -214,7 +245,7 @@ public class AnalysisRunExecutor {
     }
 
     private void collectOne(AnalysisRun run, AnalysisRunTarget target, String token,
-                            Long installationId, Progress progress) {
+                            Long installationId, Progress progress, HandoffGuard handoffGuard) {
         GithubRepository repository = target.getRepository();
         writer.startTarget(target.getId());
 
@@ -231,8 +262,7 @@ public class AnalysisRunExecutor {
                             config == null ? null : config.getPrSince(),
                             config == null ? List.of() : config.getIncludePaths(),
                             config == null ? List.of() : config.getExcludePaths(),
-                            // 수집이 몇 분씩 걸리는 동안 취소됐는지 인계 직전에 다시 묻는다.
-                            () -> writer.isAbandoned(run.getId())));
+                            handoffGuard));
 
             writer.refreshRepositorySnapshot(repository.getId(),
                     toSnapshot(result.repository(), installationId));
@@ -244,6 +274,14 @@ public class AnalysisRunExecutor {
             log.info("[분석] 인계 직전에 취소를 확인해 저장소 수집을 접는다 runId={} repositoryId={}",
                     run.getId(), repository.getId());
             progress.abandoned = true;
+        } catch (AiDataConsentRequiredException e) {
+            // 이쪽은 실패다. 취소와 달리 작업이 끝난 상태가 아니어서, 여기서 종결하지 않으면
+            // RUNNING인 채 남아 lease 만료마다 되살아난다. 이유를 남겨야 화면이 재동의를
+            // 안내할 수 있다.
+            log.warn("[분석] 외부 전송 동의가 없어 인계를 멈추고 작업을 실패로 끝낸다 "
+                    + "runId={} repositoryId={}", run.getId(), repository.getId());
+            failTarget(target, e, progress);
+            progress.consentRequired = true;
         } catch (GithubRateLimitedException e) {
             // 여기서 자지 않는다. 작업을 멈추고 사용자가 재시도한다.
             log.warn("[분석] rate limit으로 수집을 중단한다 runId={} repositoryId={} retryAfter={}s",
@@ -294,6 +332,11 @@ public class AnalysisRunExecutor {
     private void finish(Long runId, Progress progress) {
         if (progress.abandoned) {
             // CANCELLED를 결과 상태로 덮지 않는다. 이미 끝난 저장소의 기록은 그대로 남는다.
+            return;
+        }
+        if (progress.consentRequired) {
+            writer.failRun(runId, ErrorCode.AI_DATA_CONSENT_REQUIRED.getCode(),
+                    ErrorCode.AI_DATA_CONSENT_REQUIRED.getMessage());
             return;
         }
         if (progress.rateLimited) {
@@ -362,7 +405,14 @@ public class AnalysisRunExecutor {
         private boolean rateLimited;
         /** 프로젝트 삭제나 취소로 더 진행할 이유가 없어졌다. */
         private boolean abandoned;
+        /** 외부 전송 동의가 사라졌다. 취소와 달리 작업을 실패로 종결해야 한다. */
+        private boolean consentRequired;
         private OffsetDateTime resumeAt;
+
+        /** 남은 저장소를 시작하지 말아야 하는 상태인지. */
+        private boolean stopped() {
+            return abandoned || consentRequired;
+        }
 
         private static Progress from(List<AnalysisRunTarget> targets) {
             Progress progress = new Progress();

@@ -22,7 +22,6 @@ import org.mockito.quality.Strictness;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -83,24 +82,36 @@ class RepositoryCollectorTest {
     }
 
     @Test
-    @DisplayName("취소를 확인하면 파이프라인으로 넘기지 않는다")
-    void doesNotHandOffWhenAbandoned() {
-        assertThatThrownBy(() -> collector.collect(request(() -> true)))
-                .isInstanceOf(CollectionAbandonedException.class);
+    @DisplayName("관문이 막으면 파이프라인으로 넘기지 않는다")
+    void doesNotHandOffWhenGuardBlocks() {
+        assertThatThrownBy(() -> collector.collect(request(() -> {
+            throw new CollectionAbandonedException();
+        }))).isInstanceOf(CollectionAbandonedException.class);
 
         verify(pipeline, never()).accept(any());
     }
 
     @Test
-    @DisplayName("취소가 아니면 그대로 넘긴다")
-    void handsOffWhenStillAlive() {
-        collector.collect(request(() -> false));
+    @DisplayName("관문이 막은 이유를 수집이 해석하지 않는다 — 예외를 그대로 흘려보낸다")
+    void propagatesTheGuardsOwnReason() {
+        assertThatThrownBy(() -> collector.collect(request(() -> {
+            throw new IllegalStateException("동의가 없다");
+        }))).isInstanceOf(IllegalStateException.class).hasMessage("동의가 없다");
+
+        verify(pipeline, never()).accept(any());
+    }
+
+    @Test
+    @DisplayName("관문을 통과하면 그대로 넘긴다")
+    void handsOffWhenGuardPasses() {
+        collector.collect(request(() -> {
+        }));
 
         verify(pipeline).accept(any());
     }
 
     @Test
-    @DisplayName("취소 여부는 수집이 끝난 뒤에 묻는다 — 시작 시점의 판단으로는 몇 분의 공백을 덮지 못한다")
+    @DisplayName("관문은 수집이 끝난 뒤에 묻는다 — 시작 시점의 판단으로는 몇 분의 공백을 덮지 못한다")
     void asksAfterCollectionFinishes() {
         boolean[] downloaded = {false};
         given(downloader.download(anyString(), anyString(), anyString(), anyString()))
@@ -112,17 +123,17 @@ class RepositoryCollectorTest {
         assertThatThrownBy(() -> collector.collect(request(() -> {
             // 다운로드가 끝난 뒤에 물어야 이 값이 true다.
             if (!downloaded[0]) {
-                throw new AssertionError("수집을 시작하기도 전에 취소를 물었다");
+                throw new AssertionError("수집을 시작하기도 전에 관문을 물었다");
             }
-            return true;
+            throw new CollectionAbandonedException();
         }))).isInstanceOf(CollectionAbandonedException.class);
 
         verify(pipeline, never()).accept(any());
     }
 
-    private static RepositoryCollector.CollectionRequest request(BooleanSupplier abandoned) {
+    private static RepositoryCollector.CollectionRequest request(HandoffGuard handoffGuard) {
         return new RepositoryCollector.CollectionRequest(TOKEN, "galpiii", "backend",
-                1L, 555L, 10, null, List.of(), List.of(), abandoned);
+                1L, 555L, 10, null, List.of(), List.of(), handoffGuard);
     }
 
     private static GithubRepositoryResponse repository() {
