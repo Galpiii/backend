@@ -181,17 +181,6 @@ class GithubUserTokenServiceTest {
         }
 
         @Test
-        @DisplayName("새 토큰을 받으면 밀려 있던 grant 폐기를 함께 버린다 — 방금 승인한 authorization이 죽는다")
-        void discardsPendingGrantRevocationOnReconnect() {
-            given(tokenRepository.findByUserIdAndProvider(USER_ID, OAuthProvider.GITHUB))
-                    .willReturn(Optional.empty());
-
-            service.save(user(), TOKEN, Duration.ofHours(8));
-
-            verify(tokenRevoker).discardPendingGrants(USER_ID);
-        }
-
-        @Test
         @DisplayName("첫 로그인이면 폐기할 이전 토큰이 없다")
         void skipsEnqueueOnFirstLogin() {
             given(tokenRepository.findByUserIdAndProvider(USER_ID, OAuthProvider.GITHUB))

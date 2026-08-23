@@ -11,7 +11,6 @@ import com.github.galpiii.galpi.domain.github.dto.GithubDisconnectResponse;
 import com.github.galpiii.galpi.domain.github.dto.RepositoryAccessResyncResponse;
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.entity.GithubRepository;
-import com.github.galpiii.galpi.domain.github.entity.GithubRevocationType;
 import com.github.galpiii.galpi.domain.github.entity.GithubTokenRevocation;
 import com.github.galpiii.galpi.domain.github.entity.RepositoryAccessStatus;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
@@ -50,6 +49,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -65,6 +65,7 @@ class GithubDisconnectIntegrationTest extends IntegrationTestSupport {
     private static final long INSTALLATION_ID = 100L;
     private static final long GITHUB_REPOSITORY_ID = 555L;
     private static final String TOKEN = "ghu_abcdefghijklmnopqrstuvwxyz012345";
+    private static final String NEW_TOKEN = "ghu_zyxwvutsrqponmlkjihgfedcba543210";
 
     @Autowired
     private GithubConnectionService connectionService;
@@ -109,7 +110,7 @@ class GithubDisconnectIntegrationTest extends IntegrationTestSupport {
     @BeforeEach
     void setUp() {
         user = userRepository.save(
-                User.ofGithub(System.nanoTime(), "wb", "wb", null, "https://avatar"));
+                connectedUser());
         Project project = projectRepository.save(Project.create(user, "갈피"));
         projectId = project.getId();
         repositoryId = repositoryRepository.save(
@@ -200,32 +201,40 @@ class GithubDisconnectIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("재연결하면 밀려 있던 grant 폐기를 버린다 — 방금 승인한 authorization이 죽으면 안 된다")
-    void discardsPendingGrantOnReconnect() {
+    @DisplayName("authorization 폐기가 실패하면 큐에는 토큰 폐기만 남는다 — 재시도가 grant를 다시 부르지 않는다")
+    void queuesTokenRevocationWhenGrantRevokeFails() {
         storeToken(Duration.ofHours(8));
         willThrow(new GithubApiException()).given(apiClient).revokeUserGrant(TOKEN);
+
         connectionService.disconnect(user.getId());
         assertThat(revocationRepository.findAll()).hasSize(1);
 
-        // 사용자가 다시 승인해 새 토큰을 받았다.
+        // 사용자가 다시 승인해 새 토큰을 받은 뒤 배치가 밀린 항목을 가져간다.
         userTokenService.save(userRepository.findById(user.getId()).orElseThrow(),
-                "ghu_newtokennewtokennewtokennewtoken", Duration.ofHours(8));
+                NEW_TOKEN, Duration.ofHours(8));
+        dueNow();
+        tokenRevoker.retryPending();
 
+        // 옛 토큰 하나만 폐기된다. grant 호출은 해제 시점의 한 번이 전부다.
+        verify(apiClient).revokeUserToken(TOKEN);
+        verify(apiClient, times(1)).revokeUserGrant(TOKEN);
         assertThat(revocationRepository.findAll()).isEmpty();
+        // 방금 승인한 authorization은 살아 있어야 한다.
+        assertThat(userTokenService.find(user.getId())).contains(NEW_TOKEN);
     }
 
     @Test
-    @DisplayName("적재와 재연결이 겹쳐 항목이 남아도, 다시 연결된 사용자면 재시도가 실행하지 않는다")
-    void retryDoesNotRevokeGrantOfReconnectedUser() {
-        // 적재 직후 재연결이 끼어들어 큐를 비우지 못한 상태를 만든다.
-        GithubTokenRevocation stale = GithubTokenRevocation.pending(
+    @DisplayName("밀린 폐기는 언제 실행돼도 토큰 하나만 죽인다")
+    void retryOnlyRevokesTheSingleToken() {
+        GithubTokenRevocation pending = GithubTokenRevocation.pending(
                 user.getId(), tokenCipher.encrypt(TOKEN), tokenCipher.currentVersion(),
-                GithubRevocationType.GRANT, "GithubApiException");
-        ReflectionTestUtils.setField(stale, "nextAttemptAt", OffsetDateTime.now().minusMinutes(1));
-        revocationRepository.saveAndFlush(stale);
+                "GithubApiException");
+        ReflectionTestUtils.setField(pending, "nextAttemptAt", OffsetDateTime.now().minusMinutes(1));
+        revocationRepository.saveAndFlush(pending);
 
         tokenRevoker.retryPending();
 
+        verify(apiClient).revokeUserToken(TOKEN);
         verify(apiClient, never()).revokeUserGrant(any());
         assertThat(revocationRepository.findAll()).isEmpty();
     }
@@ -302,6 +311,14 @@ class GithubDisconnectIntegrationTest extends IntegrationTestSupport {
                 tokenCipher.currentVersion()));
     }
 
+    /** 적재 직후의 항목은 1분 뒤에나 대상이 된다. 배치를 기다리지 않고 그 시각을 당긴다. */
+    private void dueNow() {
+        revocationRepository.findAll().forEach(row -> {
+            ReflectionTestUtils.setField(row, "nextAttemptAt", OffsetDateTime.now().minusMinutes(1));
+            revocationRepository.saveAndFlush(row);
+        });
+    }
+
     private Long queueRun() {
         Project project = projectRepository.findById(projectId).orElseThrow();
         return runRepository.save(AnalysisRun.queue(project, project.getOwner(),
@@ -320,4 +337,12 @@ class GithubDisconnectIntegrationTest extends IntegrationTestSupport {
         return new RepositorySnapshot(GITHUB_REPOSITORY_ID, INSTALLATION_ID, "galpiii", "backend",
                 "galpiii/backend", true, "main", "https://github.com/galpiii/backend");
     }
+
+    /** 연결은 토큰 저장과 함께 확정된다. 픽스처는 그 결과 상태를 직접 만든다. */
+    private static User connectedUser() {
+        User user = User.ofGithub(System.nanoTime(), "wb", "wb", null, "https://avatar");
+        user.connectGithub();
+        return user;
+    }
+
 }

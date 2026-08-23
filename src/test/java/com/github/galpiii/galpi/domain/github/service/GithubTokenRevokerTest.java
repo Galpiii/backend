@@ -1,7 +1,6 @@
 package com.github.galpiii.galpi.domain.github.service;
 
 import com.github.galpiii.galpi.domain.github.client.GithubApiClient;
-import com.github.galpiii.galpi.domain.github.entity.GithubRevocationType;
 import com.github.galpiii.galpi.domain.github.entity.GithubTokenRevocation;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.domain.github.repository.GithubTokenRevocationRepository;
@@ -13,6 +12,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.CannotAcquireLockException;
@@ -23,19 +23,22 @@ import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("GithubTokenRevoker — 폐기 실패는 잊지 않는다")
+@DisplayName("GithubTokenRevoker — 폐기 실패는 잊지 않되, 큐에는 토큰 폐기만 남는다")
 class GithubTokenRevokerTest {
 
     private static final long USER_ID = 7L;
@@ -49,6 +52,8 @@ class GithubTokenRevokerTest {
     private GithubTokenRevocationWriter writer;
 
     private GithubTokenRevoker revoker;
+    private TokenCipher tokenCipher;
+    private TokenCipher otherCipher;
 
     private static String randomKey() {
         byte[] key = new byte[32];
@@ -58,7 +63,9 @@ class GithubTokenRevokerTest {
 
     @BeforeEach
     void setUp() {
-        TokenCipher tokenCipher = new TokenCipher(new TokenEncryptionProperties(1, Map.of(1, randomKey())));
+        tokenCipher = new TokenCipher(new TokenEncryptionProperties(1, Map.of(1, randomKey())));
+        // 키 버전이 같아도 키가 다르면 복호화가 실패한다. 키 설정 누락과 같은 상황이다.
+        otherCipher = new TokenCipher(new TokenEncryptionProperties(1, Map.of(1, randomKey())));
         revoker = new GithubTokenRevoker(apiClient, revocationRepository, writer, tokenCipher);
     }
 
@@ -67,23 +74,23 @@ class GithubTokenRevokerTest {
     class OnDisconnect {
 
         @Test
-        @DisplayName("폐기에 성공하면 큐에 남기지 않는다")
+        @DisplayName("authorization 폐기에 성공하면 큐에 남기지 않는다")
         void doesNotEnqueueOnSuccess() {
-            revoker.revokeOrEnqueue(USER_ID, TOKEN, GithubRevocationType.GRANT);
+            assertThat(revoker.revokeGrantOrEnqueueToken(USER_ID, TOKEN)).isTrue();
 
             verify(apiClient).revokeUserGrant(TOKEN);
-            verify(writer, never()).enqueueFailed(anyLong(), any(), anyInt(), any(), any());
+            verify(writer, never()).enqueueFailedToken(anyLong(), any(), anyInt(), any());
         }
 
         @Test
-        @DisplayName("폐기에 실패하면 재시도 큐에 남긴다 — 외부 토큰을 잊어버리면 안 된다")
-        void enqueuesOnFailure() {
+        @DisplayName("실패하면 grant가 아니라 토큰 폐기를 큐에 남긴다 — 미룬 grant 폐기는 재연결한 권한을 죽인다")
+        void enqueuesTokenRevocationOnFailure() {
             willThrow(new GithubApiException()).given(apiClient).revokeUserGrant(TOKEN);
 
-            revoker.revokeOrEnqueue(USER_ID, TOKEN, GithubRevocationType.GRANT);
+            assertThat(revoker.revokeGrantOrEnqueueToken(USER_ID, TOKEN)).isFalse();
 
-            verify(writer).enqueueFailed(eq(USER_ID), any(), anyInt(),
-                    eq(GithubRevocationType.GRANT), eq("GithubApiException"));
+            verify(writer).enqueueFailedToken(eq(USER_ID), any(), anyInt(),
+                    eq("GithubApiException"));
         }
 
         @Test
@@ -91,11 +98,11 @@ class GithubTokenRevokerTest {
         void keepsHttpCallOutsideTransaction() {
             willThrow(new GithubApiException()).given(apiClient).revokeUserGrant(TOKEN);
 
-            revoker.revokeOrEnqueue(USER_ID, TOKEN, GithubRevocationType.GRANT);
+            revoker.revokeGrantOrEnqueueToken(USER_ID, TOKEN);
 
             // 성공 경로에는 DB 쓰기가 없고, 실패 경로만 짧은 쓰기 트랜잭션으로 넘어간다.
             verify(revocationRepository, never()).save(any());
-            verify(writer).enqueueFailed(anyLong(), any(), anyInt(), any(), any());
+            verify(writer).enqueueFailedToken(anyLong(), any(), anyInt(), any());
         }
 
         @Test
@@ -103,39 +110,13 @@ class GithubTokenRevokerTest {
         void enqueuesCiphertextOnly() {
             willThrow(new GithubApiException()).given(apiClient).revokeUserGrant(TOKEN);
 
-            revoker.revokeOrEnqueue(USER_ID, TOKEN, GithubRevocationType.GRANT);
+            revoker.revokeGrantOrEnqueueToken(USER_ID, TOKEN);
 
             ArgumentCaptor<String> ciphertext = ArgumentCaptor.forClass(String.class);
-            verify(writer).enqueueFailed(eq(USER_ID), ciphertext.capture(), anyInt(), any(), any());
+            verify(writer).enqueueFailedToken(eq(USER_ID), ciphertext.capture(), anyInt(), any());
             assertThat(ciphertext.getValue())
                     .doesNotContain(TOKEN)
                     .doesNotContain("ghu_");
-        }
-    }
-
-    @Nested
-    @DisplayName("재연결 시점")
-    class OnReconnect {
-
-        @Test
-        @DisplayName("밀려 있던 grant 폐기를 버린다 — 다시 승인한 authorization을 폐기할 수는 없다")
-        void discardsPendingGrants() {
-            given(revocationRepository.deleteByUserIdAndRevocationType(
-                    USER_ID, GithubRevocationType.GRANT)).willReturn(1);
-
-            revoker.discardPendingGrants(USER_ID);
-
-            verify(revocationRepository)
-                    .deleteByUserIdAndRevocationType(USER_ID, GithubRevocationType.GRANT);
-        }
-
-        @Test
-        @DisplayName("밀려난 토큰 폐기는 남긴다 — 이전 토큰은 재연결과 무관하게 회수해야 한다")
-        void keepsSupersededTokenRows() {
-            revoker.discardPendingGrants(USER_ID);
-
-            verify(revocationRepository, never())
-                    .deleteByUserIdAndRevocationType(USER_ID, GithubRevocationType.TOKEN);
         }
     }
 
@@ -174,13 +155,26 @@ class GithubTokenRevokerTest {
     @DisplayName("재시도 배치")
     class Retry {
 
+        private static final long ROW_ID = 11L;
+
+        private void due(Long... ids) {
+            given(writer.findDueIds(any(Limit.class))).willReturn(List.of(ids));
+        }
+
+        private void loads(Long id, String ciphertext, int version) {
+            given(writer.load(id)).willReturn(Optional.of(
+                    new GithubTokenRevocationWriter.PendingRevocation(id, USER_ID, ciphertext,
+                            version, 1)));
+        }
+
         @Test
         @DisplayName("밀린 건마다 한 번씩 처리하고 성공 건수를 센다")
         void processesEveryDueRow() {
-            given(writer.findDueIds(any(Limit.class))).willReturn(List.of(1L, 2L, 3L));
-            given(writer.revokeOne(1L)).willReturn(true);
-            given(writer.revokeOne(2L)).willReturn(false);
-            given(writer.revokeOne(3L)).willReturn(true);
+            due(1L, 2L, 3L);
+            loads(1L, tokenCipher.encrypt(TOKEN), tokenCipher.currentVersion());
+            loads(3L, tokenCipher.encrypt(TOKEN), tokenCipher.currentVersion());
+            // 2번은 이미 다른 인스턴스가 끝냈다.
+            given(writer.load(2L)).willReturn(Optional.empty());
 
             assertThat(revoker.retryPending()).isEqualTo(2);
         }
@@ -188,14 +182,14 @@ class GithubTokenRevokerTest {
         @Test
         @DisplayName("한 건이 터져도 나머지는 계속 처리한다 — 배치가 통째로 멈추면 안 된다")
         void oneBrokenRowDoesNotStopTheBatch() {
-            given(writer.findDueIds(any(Limit.class))).willReturn(List.of(1L, 2L, 3L));
-            given(writer.revokeOne(1L)).willThrow(new CannotAcquireLockException("commit failed"));
-            given(writer.revokeOne(2L)).willReturn(true);
-            given(writer.revokeOne(3L)).willReturn(true);
+            due(1L, 2L, 3L);
+            given(writer.load(1L)).willThrow(new CannotAcquireLockException("read failed"));
+            loads(2L, tokenCipher.encrypt(TOKEN), tokenCipher.currentVersion());
+            loads(3L, tokenCipher.encrypt(TOKEN), tokenCipher.currentVersion());
 
             assertThat(revoker.retryPending()).isEqualTo(2);
 
-            verify(writer).revokeOne(3L);
+            verify(writer).load(3L);
         }
 
         @Test
@@ -205,7 +199,47 @@ class GithubTokenRevokerTest {
 
             assertThat(revoker.retryPending()).isZero();
 
-            verify(writer, never()).revokeOne(anyLong());
+            verify(writer, never()).load(anyLong());
+        }
+
+        @Test
+        @DisplayName("GitHub 호출은 트랜잭션 밖이다 — 읽기와 결과 기록만 짧게 잡는다")
+        void callsGithubBetweenTwoShortTransactions() {
+            due(ROW_ID);
+            loads(ROW_ID, tokenCipher.encrypt(TOKEN), tokenCipher.currentVersion());
+
+            revoker.retryPending();
+
+            InOrder order = inOrder(writer, apiClient);
+            order.verify(writer).load(ROW_ID);
+            order.verify(apiClient).revokeUserToken(TOKEN);
+            order.verify(writer).recordSuccess(ROW_ID);
+        }
+
+        @Test
+        @DisplayName("호출이 실패하면 실패만 기록하고 다음 회차로 미룬다")
+        void recordsFailureWithoutRemoving() {
+            due(ROW_ID);
+            loads(ROW_ID, tokenCipher.encrypt(TOKEN), tokenCipher.currentVersion());
+            willThrow(new GithubApiException()).given(apiClient).revokeUserToken(TOKEN);
+
+            assertThat(revoker.retryPending()).isZero();
+
+            verify(writer).recordFailure(ROW_ID, "GithubApiException");
+            verify(writer, never()).recordSuccess(ROW_ID);
+        }
+
+        @Test
+        @DisplayName("복호화가 안 되면 GitHub을 부르지 않고 재시도만 멈춘다")
+        void marksDeadWithoutCallingGithub() {
+            due(ROW_ID);
+            // 다른 키로 암호화된 암호문이라 지금 설정으로는 풀 수 없다.
+            loads(ROW_ID, otherCipher.encrypt(TOKEN), otherCipher.currentVersion());
+
+            assertThat(revoker.retryPending()).isZero();
+
+            verify(apiClient, never()).revokeUserToken(anyString());
+            verify(writer).markDead(ROW_ID, "DECRYPT_FAILED");
         }
     }
 }

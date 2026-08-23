@@ -20,13 +20,16 @@ import java.time.OffsetDateTime;
  * 살아 있는 토큰을 다시는 회수할 수 없다. 그래서 폐기에 실패한 토큰은 암호문 상태로 여기에
  * 남겨 두고 배치가 재시도한다.
  *
- * <p>들어오는 경로는 둘이다. 폐기를 시도했다가 실패한 토큰({@link #pending})과, 재로그인으로
+ * <p>들어오는 경로는 둘이다. 연결 해제에서 authorization 폐기가 실패해 남은 토큰과, 재로그인으로
  * 밀려나 아직 폐기를 시도해 보지도 않은 토큰({@link #superseded})이다. {@code attempts}가 0이면
  * 후자다 — 실패한 적이 없으므로 폐기율 같은 지표에서 실패로 세면 안 된다.
  *
- * <p>{@code revocationType}은 이 항목을 어떤 API로 폐기할지 정한다. 연결 해제는 authorization
- * 전체를, 밀려난 토큰은 그 토큰 하나만 폐기한다 — 재시도에서 이 구분이 사라지면 로그인 직후
- * 새 토큰이 함께 폐기되는 사고가 난다.
+ * <p><b>이 큐가 하는 폐기는 언제나 토큰 하나짜리다</b>({@code DELETE /applications/{id}/token}).
+ * authorization 전체 폐기({@code .../grant})는 이 사용자의 <b>모든</b> 토큰을 죽이므로, 큐에
+ * 남았다가 나중에 실행되면 그사이 다시 연결한 authorization까지 함께 폐기한다. 확인 시점과
+ * 호출 시점이 벌어지는 한 그 경합은 검사로 막을 수 없어서, 아예 표현할 수 없게 했다 — grant
+ * 폐기는 해제 요청을 처리하는 그 순간 한 번만 시도하고, 실패하면 사용자에게 GitHub 설정에서
+ * 직접 해제하도록 안내한다.
  *
  * <p>재시도를 포기하더라도 행은 지우지 않는다. 재시도 중단과 회수 포기는 다른 결정이고,
  * 암호문을 잃으면 후자가 강제된다. 키 설정 누락처럼 나중에 복구되는 원인도 있으므로
@@ -53,13 +56,6 @@ public class GithubTokenRevocation extends BaseEntity {
     @Column(nullable = false)
     private int tokenVersion;
 
-    /**
-     * 이 항목이 기다리는 폐기의 종류. 재시도할 때 어떤 API를 부를지가 여기서 갈린다.
-     */
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private GithubRevocationType revocationType;
-
     @Column(nullable = false)
     private int attempts;
 
@@ -74,12 +70,10 @@ public class GithubTokenRevocation extends BaseEntity {
     private String lastError;
 
     private GithubTokenRevocation(Long userId, String encryptedAccessToken, int tokenVersion,
-                                  GithubRevocationType revocationType, int attempts,
-                                  OffsetDateTime nextAttemptAt, String lastError) {
+                                  int attempts, OffsetDateTime nextAttemptAt, String lastError) {
         this.userId = userId;
         this.encryptedAccessToken = encryptedAccessToken;
         this.tokenVersion = tokenVersion;
-        this.revocationType = revocationType;
         this.attempts = attempts;
         this.status = GithubTokenRevocationStatus.PENDING;
         this.lastError = lastError;
@@ -91,11 +85,9 @@ public class GithubTokenRevocation extends BaseEntity {
      * 조금 미룬다.
      */
     public static GithubTokenRevocation pending(Long userId, String encryptedAccessToken,
-                                                int tokenVersion,
-                                                GithubRevocationType revocationType,
-                                                String lastError) {
+                                                int tokenVersion, String lastError) {
         return new GithubTokenRevocation(userId, encryptedAccessToken, tokenVersion,
-                revocationType, 1, OffsetDateTime.now().plus(FIRST_BACKOFF), lastError);
+                1, OffsetDateTime.now().plus(FIRST_BACKOFF), lastError);
     }
 
     /**
@@ -108,7 +100,7 @@ public class GithubTokenRevocation extends BaseEntity {
     public static GithubTokenRevocation superseded(Long userId, String encryptedAccessToken,
                                                    int tokenVersion) {
         return new GithubTokenRevocation(userId, encryptedAccessToken, tokenVersion,
-                GithubRevocationType.TOKEN, 0, OffsetDateTime.now(), null);
+                0, OffsetDateTime.now(), null);
     }
 
     /**

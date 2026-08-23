@@ -2,7 +2,6 @@ package com.github.galpiii.galpi.domain.github.service;
 
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.dto.GithubDisconnectResponse;
-import com.github.galpiii.galpi.domain.github.entity.GithubRevocationType;
 import com.github.galpiii.galpi.domain.user.repository.UserRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.UnauthorizedException;
@@ -37,9 +36,18 @@ public class GithubConnectionService {
     /**
      * 연결을 끊는다.
      *
-     * <p>유효한 토큰이 있으면 App authorization 전체를 폐기한다. 토큰이 없거나 만료됐으면
-     * 폐기 API를 부를 수단이 없는데, <b>해제만을 위해 재인증을 요구하지는 않는다</b> —
-     * 갈피 쪽 정리를 끝내고 GitHub 설정에서 직접 해제할 링크를 함께 돌려준다.
+     * <p>유효한 토큰이 있으면 App authorization 전체를 폐기한다. 이 시도는 <b>여기서 한 번</b>이
+     * 전부다. 실패하면 그 토큰 하나를 폐기하도록 큐에 남기고 authorization은 사용자가 직접
+     * 해제하게 안내한다 — 미룬 grant 폐기는 그사이 재연결한 권한까지 죽인다.
+     *
+     * <p>토큰이 없거나 만료됐으면 폐기 API를 부를 수단이 없는데, <b>해제만을 위해 재인증을
+     * 요구하지는 않는다</b> — 갈피 쪽 정리를 끝내고 GitHub 설정에서 직접 해제할 링크를 함께
+     * 돌려준다.
+     *
+     * <p>보장 범위를 넘겨 말하지 않는다. 갈피가 회수할 수 있는 것은 <b>보관하던 access
+     * token</b>뿐이다. 만료형 토큰을 쓰는 앱이면 refresh token이 함께 발급되는데 갈피는 그것을
+     * 저장하지 않으므로 폐기할 수단도 없다. authorization 전체를 확실히 지우는 방법은 GitHub
+     * 설정에서 직접 해제하는 것뿐이고, 그래서 그 링크가 응답의 곁다리가 아니다.
      *
      * <p>App 설치는 건드리지 않는다. 조직 설치는 다른 갈피 사용자·프로젝트가 공유할 수 있어
      * 한 사람의 해제로 지우면 남의 분석이 함께 멈춘다.
@@ -52,8 +60,7 @@ public class GithubConnectionService {
         // 로컬 원본을 지우기 전에 폐기를 넘긴다. 순서가 뒤집히면 복호화할 원본이 사라져
         // 외부에 살아 있는 authorization을 회수할 수단이 없어진다.
         boolean revoked = userTokenService.find(userId)
-                .map(accessToken -> tokenRevoker.revokeOrEnqueue(
-                        userId, accessToken, GithubRevocationType.GRANT))
+                .map(accessToken -> tokenRevoker.revokeGrantOrEnqueueToken(userId, accessToken))
                 .orElse(false);
 
         disconnectWriter.disconnect(userId);

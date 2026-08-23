@@ -2,7 +2,6 @@ package com.github.galpiii.galpi.domain.github.service;
 
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.dto.GithubDisconnectResponse;
-import com.github.galpiii.galpi.domain.github.entity.GithubRevocationType;
 import com.github.galpiii.galpi.domain.user.repository.UserRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.GlobalException;
@@ -64,23 +63,21 @@ class GithubConnectionServiceTest {
         service.disconnect(USER_ID);
 
         InOrder order = inOrder(tokenRevoker, disconnectWriter);
-        order.verify(tokenRevoker)
-                .revokeOrEnqueue(USER_ID, TOKEN, GithubRevocationType.GRANT);
+        order.verify(tokenRevoker).revokeGrantOrEnqueueToken(USER_ID, TOKEN);
         order.verify(disconnectWriter).disconnect(USER_ID);
     }
 
     @Test
-    @DisplayName("토큰 하나가 아니라 authorization 전체를 폐기한다")
+    @DisplayName("토큰 하나가 아니라 authorization 전체를 폐기한다 — 단 이 자리에서 한 번만 시도한다")
     void revokesWholeAuthorization() {
         given(userRepository.existsById(USER_ID)).willReturn(true);
         given(userTokenService.find(USER_ID)).willReturn(Optional.of(TOKEN));
-        given(tokenRevoker.revokeOrEnqueue(USER_ID, TOKEN, GithubRevocationType.GRANT))
-                .willReturn(true);
+        given(tokenRevoker.revokeGrantOrEnqueueToken(USER_ID, TOKEN)).willReturn(true);
 
         GithubDisconnectResponse response = service.disconnect(USER_ID);
 
         assertThat(response.authorizationRevoked()).isTrue();
-        verify(tokenRevoker).revokeOrEnqueue(USER_ID, TOKEN, GithubRevocationType.GRANT);
+        verify(tokenRevoker).revokeGrantOrEnqueueToken(USER_ID, TOKEN);
     }
 
     @Test
@@ -102,7 +99,7 @@ class GithubConnectionServiceTest {
         given(userRepository.existsById(USER_ID)).willReturn(true);
         given(userTokenService.find(USER_ID)).willReturn(Optional.of(TOKEN));
         willThrow(new DataAccessResourceFailureException("db down"))
-                .given(tokenRevoker).revokeOrEnqueue(anyLong(), anyString(), any());
+                .given(tokenRevoker).revokeGrantOrEnqueueToken(anyLong(), anyString());
 
         assertThatThrownBy(() -> service.disconnect(USER_ID))
                 .isInstanceOf(DataAccessResourceFailureException.class);
@@ -118,7 +115,7 @@ class GithubConnectionServiceTest {
 
         GithubDisconnectResponse response = service.disconnect(USER_ID);
 
-        verify(tokenRevoker, never()).revokeOrEnqueue(anyLong(), anyString(), any());
+        verify(tokenRevoker, never()).revokeGrantOrEnqueueToken(anyLong(), anyString());
         verify(disconnectWriter).disconnect(USER_ID);
         assertThat(response.authorizationRevoked()).isFalse();
         assertThat(response.authorizationsUrl())
@@ -133,8 +130,7 @@ class GithubConnectionServiceTest {
     void doesNotClaimRevokedWhenQueued() {
         given(userRepository.existsById(USER_ID)).willReturn(true);
         given(userTokenService.find(USER_ID)).willReturn(Optional.of(TOKEN));
-        given(tokenRevoker.revokeOrEnqueue(USER_ID, TOKEN, GithubRevocationType.GRANT))
-                .willReturn(false);
+        given(tokenRevoker.revokeGrantOrEnqueueToken(USER_ID, TOKEN)).willReturn(false);
 
         assertThat(service.disconnect(USER_ID).authorizationRevoked()).isFalse();
     }
@@ -149,7 +145,7 @@ class GithubConnectionServiceTest {
                 .extracting(e -> ((GlobalException) e).getErrorCode())
                 .isEqualTo(ErrorCode.UNAUTHORIZED);
 
-        verify(tokenRevoker, never()).revokeOrEnqueue(anyLong(), anyString(), any());
+        verify(tokenRevoker, never()).revokeGrantOrEnqueueToken(anyLong(), anyString());
         verify(disconnectWriter, never()).disconnect(any());
     }
 

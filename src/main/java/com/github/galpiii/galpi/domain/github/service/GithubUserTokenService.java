@@ -40,16 +40,9 @@ public class GithubUserTokenService {
      * 이전 토큰을 무효화하지 않아서 GitHub에는 최대 만료 시각까지 그대로 살아 있고, 암호문을
      * 덮어쓰고 나면 복호화할 원본이 없어 회수할 수단 자체가 사라진다. 폐기 호출을 큐에 넘기는
      * 것은 로그인을 GitHub 응답만큼 느리게 만들지 않기 위해서다.
-     *
-     * <p>반대로 밀려 있던 <b>grant</b> 폐기는 여기서 버린다. 새 토큰을 받았다는 것은 사용자가
-     * authorization을 다시 승인했다는 뜻이라, 예전 해제 시도의 잔여 항목이 그대로 실행되면
-     * 방금 승인한 authorization이 폐기된다. 같은 트랜잭션에서 지워야 새 토큰만 커밋되는 일이
-     * 없다.
      */
     @Transactional
     public void save(User user, String accessToken, Duration expiresIn) {
-        tokenRevoker.discardPendingGrants(user.getId());
-
         OffsetDateTime expiresAt = expiresIn == null ? null : OffsetDateTime.now().plus(expiresIn);
         String encrypted = tokenCipher.encrypt(accessToken);
         int version = tokenCipher.currentVersion();

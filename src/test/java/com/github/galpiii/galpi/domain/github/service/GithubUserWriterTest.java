@@ -22,7 +22,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("GithubUserWriter — 프로필 스냅샷 갱신")
+@DisplayName("GithubUserWriter — 회원 행 확보")
 class GithubUserWriterTest {
 
     private static final long GITHUB_ID = 999L;
@@ -40,59 +40,60 @@ class GithubUserWriterTest {
     }
 
     @Test
-    @DisplayName("login이 바뀌어도 github_id로 찾아 기존 회원을 갱신한다 (로그인 실패 없음)")
-    void updatesLoginOnRename() {
+    @DisplayName("login이 바뀌어도 github_id로 찾아 같은 회원을 돌려준다 (로그인 실패 없음)")
+    void findsByGithubIdOnRename() {
         User existing = existingUser();
         given(userRepository.findByGithubId(GITHUB_ID)).willReturn(Optional.of(existing));
 
-        User result = writer.updateExistingOrCreate(new GithubUserResponse(
+        User result = writer.findOrCreate(new GithubUserResponse(
                 GITHUB_ID, "new-login", "https://avatars/new", "new@galpi.dev", "New Name"));
 
         assertThat(result).isSameAs(existing);
-        assertThat(result.getLogin()).isEqualTo("new-login");
-        assertThat(result.getName()).isEqualTo("New Name");
-        assertThat(result.getAvatarUrl()).isEqualTo("https://avatars/new");
         verify(userRepository, never()).saveAndFlush(any());
     }
 
     @Test
-    @DisplayName("이메일이 비공개로 바뀌어 null로 와도 기존 값을 지우지 않는다")
-    void keepsEmailWhenGithubHidesIt() {
+    @DisplayName("행 확보는 프로필을 건드리지 않는다 — 갱신은 연결 트랜잭션의 몫이다")
+    void doesNotTouchProfile() {
         User existing = existingUser();
         given(userRepository.findByGithubId(GITHUB_ID)).willReturn(Optional.of(existing));
 
-        User result = writer.updateExistingOrCreate(new GithubUserResponse(
-                GITHUB_ID, "octocat", "https://avatars/999", null, "Octo"));
+        User result = writer.findOrCreate(new GithubUserResponse(
+                GITHUB_ID, "new-login", "https://avatars/new", "new@galpi.dev", "New Name"));
 
-        assertThat(result.getEmail()).isEqualTo("old@galpi.dev");
+        assertThat(result.getLogin()).isEqualTo("old-login");
+        assertThat(result.getAvatarUrl()).isEqualTo("https://avatars/old");
     }
 
     @Test
-    @DisplayName("연결이 해제된 회원이 재로그인하면 CONNECTED로 되돌린다")
-    void reconnectsDisconnectedUser() {
+    @DisplayName("행 확보만으로는 연결이 되지 않는다 — 토큰이 저장되기 전에는 DISCONNECTED다")
+    void doesNotConnect() {
         User existing = existingUser();
         existing.disconnectGithub();
         given(userRepository.findByGithubId(GITHUB_ID)).willReturn(Optional.of(existing));
 
-        User result = writer.updateExistingOrCreate(new GithubUserResponse(
+        User result = writer.findOrCreate(new GithubUserResponse(
                 GITHUB_ID, "octocat", "https://avatars/999", null, "Octo"));
 
-        assertThat(result.getGithubConnectionStatus()).isEqualTo(GithubConnectionStatus.CONNECTED);
+        assertThat(result.getGithubConnectionStatus())
+                .isEqualTo(GithubConnectionStatus.DISCONNECTED);
     }
 
     @Test
-    @DisplayName("처음 보는 github_id면 새 회원을 만든다")
+    @DisplayName("처음 보는 github_id면 새 회원을 만들되 연결로 확정하지는 않는다")
     void createsWhenAbsent() {
         given(userRepository.findByGithubId(GITHUB_ID)).willReturn(Optional.empty());
         given(userRepository.saveAndFlush(any(User.class))).willAnswer(call -> call.getArgument(0));
 
-        writer.updateExistingOrCreate(new GithubUserResponse(
+        writer.findOrCreate(new GithubUserResponse(
                 GITHUB_ID, "octocat", "https://avatars/999", "dev@galpi.dev", "Octo"));
 
         ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
         verify(userRepository).saveAndFlush(saved.capture());
         assertThat(saved.getValue().getGithubId()).isEqualTo(GITHUB_ID);
+        // 토큰 저장이 끝나야 연결이다. 여기서 CONNECTED로 만들면 저장 실패 시 그대로 남는다.
         assertThat(saved.getValue().getGithubConnectionStatus())
-                .isEqualTo(GithubConnectionStatus.CONNECTED);
+                .isEqualTo(GithubConnectionStatus.DISCONNECTED);
+        assertThat(saved.getValue().getConnectedAt()).isNull();
     }
 }

@@ -68,6 +68,7 @@ class AuthServiceTest {
 
     private static User userWithId(long id) {
         User user = User.ofGithub(999L, "octocat", "Octo", "dev@galpi.dev", "https://avatars/1");
+        user.connectGithub();
         ReflectionTestUtils.setField(user, "id", id);
         return user;
     }

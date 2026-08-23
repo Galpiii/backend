@@ -73,7 +73,7 @@ class AiDataConsentIntegrationTest extends IntegrationTestSupport {
     @BeforeEach
     void setUp() {
         user = userRepository.save(
-                User.ofGithub(System.nanoTime(), "wb", "wb", null, "https://avatar"));
+                connectedUser());
         Project project = projectRepository.save(Project.create(user, "갈피"));
         projectId = project.getId();
         repositoryRepository.save(GithubRepository.link(project, snapshot()));
@@ -141,4 +141,12 @@ class AiDataConsentIntegrationTest extends IntegrationTestSupport {
         return new RepositorySnapshot(GITHUB_REPOSITORY_ID, INSTALLATION_ID, "galpiii", "backend",
                 "galpiii/backend", true, "main", "https://github.com/galpiii/backend");
     }
+
+    /** 연결은 토큰 저장과 함께 확정된다. 픽스처는 그 결과 상태를 직접 만든다. */
+    private static User connectedUser() {
+        User user = User.ofGithub(System.nanoTime(), "wb", "wb", null, "https://avatar");
+        user.connectGithub();
+        return user;
+    }
+
 }

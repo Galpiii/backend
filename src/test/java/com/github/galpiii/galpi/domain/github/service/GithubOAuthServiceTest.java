@@ -56,7 +56,7 @@ class GithubOAuthServiceTest {
     @Mock
     private GithubUserService githubUserService;
     @Mock
-    private GithubUserTokenService userTokenService;
+    private GithubConnectWriter connectWriter;
     @Mock
     private OAuthStateStore stateStore;
     @Mock
@@ -102,7 +102,7 @@ class GithubOAuthServiceTest {
         GithubAppProperties githubProperties = githubProperties();
         expiryMonitor = new GithubTokenExpiryMonitor();
         service = new GithubOAuthService(
-                oAuthClient, apiClient, githubUserService, userTokenService, expiryMonitor,
+                oAuthClient, apiClient, githubUserService, connectWriter, expiryMonitor,
                 stateStore, codeGuard, loginCodeStore,
                 new RedirectUriValidator(githubProperties), jwtProperties());
     }
@@ -117,7 +117,7 @@ class GithubOAuthServiceTest {
         given(oAuthClient.exchangeCodeForToken(CODE)).willReturn(tokenResponse(28800L));
         given(apiClient.getAuthenticatedUser(USER_TOKEN))
                 .willReturn(new GithubUserResponse(1L, "octocat", "https://avatars/1", null, "Octo"));
-        given(githubUserService.upsert(any())).willReturn(userWithId(7L));
+        given(githubUserService.findOrCreate(any())).willReturn(userWithId(7L));
         given(loginCodeStore.issue(eq(7L), any())).willReturn("one-time-login-code");
     }
 
@@ -156,7 +156,8 @@ class GithubOAuthServiceTest {
             callback(CODE, STATE, null, null);
 
             ArgumentCaptor<Duration> expiresIn = ArgumentCaptor.forClass(Duration.class);
-            verify(userTokenService).save(any(User.class), eq(USER_TOKEN), expiresIn.capture());
+            verify(connectWriter).connect(eq(7L), any(GithubUserResponse.class), eq(USER_TOKEN),
+                    expiresIn.capture());
             assertThat(expiresIn.getValue()).isEqualTo(Duration.ofSeconds(28800));
         }
 
@@ -167,8 +168,10 @@ class GithubOAuthServiceTest {
 
             callback(CODE, STATE, null, null);
 
-            verify(userTokenService).save(any(User.class), eq(USER_TOKEN), any());
-            verify(userTokenService, never()).save(any(), eq("ghr_refreshtokenvalue"), any());
+            verify(connectWriter).connect(anyLong(), any(GithubUserResponse.class),
+                    eq(USER_TOKEN), any());
+            verify(connectWriter, never()).connect(anyLong(), any(GithubUserResponse.class),
+                    eq("ghr_refreshtokenvalue"), any());
         }
 
         @Test
@@ -205,7 +208,7 @@ class GithubOAuthServiceTest {
             given(oAuthClient.exchangeCodeForToken(CODE)).willReturn(tokenResponse(28800L));
             given(apiClient.getAuthenticatedUser(USER_TOKEN))
                     .willReturn(new GithubUserResponse(1L, "octocat", "https://avatars/1", null, "Octo"));
-            given(githubUserService.upsert(any())).willReturn(userWithId(7L));
+            given(githubUserService.findOrCreate(any())).willReturn(userWithId(7L));
             given(loginCodeStore.issue(anyLong(), any())).willReturn("code");
 
             callback(CODE, STATE, null, null);
@@ -380,7 +383,8 @@ class GithubOAuthServiceTest {
 
             callback(CODE, STATE, null, null);
 
-            verify(userTokenService).save(any(User.class), eq(USER_TOKEN), eq((Duration) null));
+            verify(connectWriter).connect(anyLong(), any(GithubUserResponse.class),
+                    eq(USER_TOKEN), eq((Duration) null));
         }
 
         @Test

@@ -45,19 +45,19 @@ class GithubUserServiceTest {
     @DisplayName("첫 로그인이면 새 회원을 만든다")
     void createsUserOnFirstLogin() {
         User created = userWithId(1L);
-        given(writer.updateExistingOrCreate(GITHUB_USER)).willReturn(created);
+        given(writer.findOrCreate(GITHUB_USER)).willReturn(created);
 
-        assertThat(service.upsert(GITHUB_USER)).isSameAs(created);
+        assertThat(service.findOrCreate(GITHUB_USER)).isSameAs(created);
     }
 
     @Test
     @DisplayName("같은 GitHub 계정으로 재로그인하면 기존 회원에 매핑된다")
     void mapsToExistingUserOnRelogin() {
         User existing = userWithId(1L);
-        given(writer.updateExistingOrCreate(GITHUB_USER)).willReturn(existing);
+        given(writer.findOrCreate(GITHUB_USER)).willReturn(existing);
 
-        User first = service.upsert(GITHUB_USER);
-        User second = service.upsert(GITHUB_USER);
+        User first = service.findOrCreate(GITHUB_USER);
+        User second = service.findOrCreate(GITHUB_USER);
 
         assertThat(second.getId()).isEqualTo(first.getId());
     }
@@ -67,23 +67,23 @@ class GithubUserServiceTest {
     void recoversFromUniqueViolation() {
         User winner = userWithId(1L);
         willThrow(new DataIntegrityViolationException("uk_users_github_id"))
-                .given(writer).updateExistingOrCreate(GITHUB_USER);
-        given(writer.updateExisting(GITHUB_USER)).willReturn(Optional.of(winner));
+                .given(writer).findOrCreate(GITHUB_USER);
+        given(writer.find(GITHUB_USER)).willReturn(Optional.of(winner));
 
-        User result = service.upsert(GITHUB_USER);
+        User result = service.findOrCreate(GITHUB_USER);
 
         assertThat(result).isSameAs(winner);
-        verify(writer).updateExisting(GITHUB_USER);
+        verify(writer).find(GITHUB_USER);
     }
 
     @Test
     @DisplayName("충돌 후에도 회원을 찾지 못하면 로그인 실패로 처리한다")
     void failsWhenRecoveryFindsNothing() {
         willThrow(new DataIntegrityViolationException("conflict"))
-                .given(writer).updateExistingOrCreate(GITHUB_USER);
-        given(writer.updateExisting(GITHUB_USER)).willReturn(Optional.empty());
+                .given(writer).findOrCreate(GITHUB_USER);
+        given(writer.find(GITHUB_USER)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.upsert(GITHUB_USER))
+        assertThatThrownBy(() -> service.findOrCreate(GITHUB_USER))
                 .isInstanceOf(UnauthorizedException.class)
                 .extracting(e -> ((GlobalException) e).getErrorCode())
                 .isEqualTo(ErrorCode.LOGIN_FAILED);
