@@ -22,6 +22,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -167,18 +168,64 @@ class ProjectRepositoryServiceTest {
         }
 
         @Test
-        @DisplayName("이미 추가된 저장소가 섞여 있으면 409로 안내한다")
-        void rejectsAlreadyLinked() {
+        @DisplayName("이미 추가된 저장소가 섞여 있어도 나머지를 붙인다 — 화면의 선택 상태를 통째로 보내도 된다")
+        @SuppressWarnings("unchecked")
+        void skipsAlreadyLinkedAndAddsTheRest() {
+            given(installationService.accessibleSnapshots(eq(USER_ID), any())).willReturn(accessible(
+                    snapshot(1L, PERSONAL_INSTALLATION, "wb/notes"),
+                    snapshot(2L, ORG_INSTALLATION, "galpiii/backend")));
+            given(repositoryRepository.findAllByProjectIdAndGithubRepositoryIdIn(any(), any()))
+                    .willReturn(List.of(GithubRepository.link(
+                            project, snapshot(1L, PERSONAL_INSTALLATION, "wb/notes"))));
+
+            List<LinkedRepositoryResponse> linked =
+                    service.link(USER_ID, PROJECT_ID, List.of(1L, 2L));
+
+            // 응답은 요청한 순서 그대로, 이미 있던 것과 새로 붙인 것을 함께 담는다.
+            assertThat(linked).extracting(LinkedRepositoryResponse::githubRepositoryId)
+                    .containsExactly(1L, 2L);
+
+            // 이미 있던 저장소를 다시 저장하지 않는다.
+            ArgumentCaptor<List<GithubRepository>> saved = ArgumentCaptor.forClass(List.class);
+            verify(repositoryRepository).saveAllAndFlush(saved.capture());
+            assertThat(saved.getValue())
+                    .extracting(GithubRepository::getGithubRepositoryId)
+                    .containsExactly(2L);
+        }
+
+        @Test
+        @DisplayName("이미 연결된 저장소만 다시 보내도 성공한다 — 같은 요청을 두 번 보내도 결과가 같다")
+        void isIdempotentOnReplay() {
             given(installationService.accessibleSnapshots(eq(USER_ID), any()))
                     .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
             given(repositoryRepository.findAllByProjectIdAndGithubRepositoryIdIn(any(), any()))
                     .willReturn(List.of(GithubRepository.link(
                             project, snapshot(1L, PERSONAL_INSTALLATION, "wb/notes"))));
 
-            assertThatThrownBy(() -> service.link(USER_ID, PROJECT_ID, List.of(1L)))
-                    .isInstanceOf(ConflictException.class)
-                    .hasFieldOrPropertyWithValue("errorCode",
-                            ErrorCode.PROJECT_REPOSITORY_ALREADY_LINKED);
+            List<LinkedRepositoryResponse> linked = service.link(USER_ID, PROJECT_ID, List.of(1L));
+
+            assertThat(linked).extracting(LinkedRepositoryResponse::githubRepositoryId)
+                    .containsExactly(1L);
+        }
+
+        @Test
+        @DisplayName("이미 연결된 저장소도 최신 스냅샷으로 갱신한다 — 이름 변경과 접근 권한 회복이 반영된다")
+        void refreshesAlreadyLinkedRepository() {
+            GithubRepository stale = GithubRepository.link(
+                    project, snapshot(1L, PERSONAL_INSTALLATION, "wb/old-name"));
+            stale.markInaccessible();
+
+            given(installationService.accessibleSnapshots(eq(USER_ID), any()))
+                    .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/renamed")));
+            given(repositoryRepository.findAllByProjectIdAndGithubRepositoryIdIn(any(), any()))
+                    .willReturn(List.of(stale));
+
+            LinkedRepositoryResponse linked =
+                    service.link(USER_ID, PROJECT_ID, List.of(1L)).getFirst();
+
+            assertThat(linked.fullName()).isEqualTo("wb/renamed");
+            assertThat(linked.name()).isEqualTo("renamed");
+            assertThat(linked.accessStatus()).isEqualTo(RepositoryAccessStatus.ACCESSIBLE.name());
         }
 
         @Test
