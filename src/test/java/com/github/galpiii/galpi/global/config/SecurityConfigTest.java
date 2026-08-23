@@ -139,7 +139,7 @@ class SecurityConfigTest extends WebMvcTestSupport {
     class ProtectedEndpoints {
 
         @ParameterizedTest(name = "GET {0} 은 401이다")
-        @ValueSource(strings = {"/auth/me", "/unknown/path"})
+        @ValueSource(strings = {"/auth/me", "/consents/ai-data", "/unknown/path"})
         @DisplayName("화이트리스트 밖의 GET은 인증을 요구한다")
         void requiresAuthenticationForGet(String path) throws Exception {
             mockMvc.perform(get(path))

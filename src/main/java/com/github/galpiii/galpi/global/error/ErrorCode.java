@@ -66,6 +66,12 @@ public enum ErrorCode {
     ANALYSIS_ALREADY_RUNNING("ANALYSIS-004", HttpStatus.CONFLICT,
             "이미 진행 중인 분석이 있습니다. 완료된 뒤 다시 시도해 주세요."),
 
+    // Consent
+    AI_DATA_CONSENT_REQUIRED("CONSENT-001", HttpStatus.FORBIDDEN,
+            "코드와 PR 내용을 외부 AI 서비스로 전송하는 것에 대한 동의가 필요합니다."),
+    AI_DATA_CONSENT_VERSION_MISMATCH("CONSENT-002", HttpStatus.CONFLICT,
+            "고지 내용이 변경되었습니다. 최신 고지를 확인한 뒤 다시 동의해 주세요."),
+
     // Collection
     COLLECTION_ARCHIVE_TOO_LARGE("COLLECTION-001", HttpStatus.UNPROCESSABLE_CONTENT,
             "저장소 아카이브가 허용 크기를 초과했습니다."),

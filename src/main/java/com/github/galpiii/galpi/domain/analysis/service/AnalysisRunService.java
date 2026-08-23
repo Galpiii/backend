@@ -6,6 +6,7 @@ import com.github.galpiii.galpi.domain.analysis.entity.AnalysisRun;
 import com.github.galpiii.galpi.domain.analysis.entity.AnalysisRunStatus;
 import com.github.galpiii.galpi.domain.analysis.repository.AnalysisRunRepository;
 import com.github.galpiii.galpi.domain.analysis.repository.AnalysisRunTargetRepository;
+import com.github.galpiii.galpi.domain.consent.service.AiDataConsentService;
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.entity.GithubRepository;
 import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
@@ -30,7 +31,8 @@ import java.util.Map;
 /**
  * 분석 작업 생성과 조회.
  *
- * <p>작업을 만드는 이 순간이 <b>사용자 세션이 있는 유일한 시점</b>이다. 여기서 프로젝트의
+ * <p>작업을 만드는 이 순간이 <b>사용자 세션이 있는 유일한 시점</b>이다. 외부 LLM 전송 동의도
+ * 여기서 확인한다 — 동의가 없으면 {@code analysis_runs}를 만들지 않는다. 여기서 프로젝트의
  * 모든 저장소에 대해 현재 사용자의 접근 권한을 GitHub에 다시 물어 확인한다. 이 검증이
  * 조직을 떠난 사용자가 과거에 연결해 둔 저장소를 계속 분석하는 것을 막는다.
  *
@@ -56,10 +58,15 @@ public class AnalysisRunService {
     private final AnalysisRunRepository runRepository;
     private final AnalysisRunTargetRepository targetRepository;
     private final AnalysisRunCreator creator;
+    private final AiDataConsentService consentService;
 
     public AnalysisRunCreatedResponse create(Long userId, Long projectId) {
         // GitHub을 부르기 전에 소유권부터 본다. 남의 프로젝트면 외부 호출 없이 끝난다.
         requireOwnedProject(userId, projectId);
+
+        // 작업을 만들고 나면 워커는 사용자 세션 없이 돈다. 코드가 외부 AI로 나가기 전에
+        // 동의를 확인할 수 있는 마지막 지점이 여기다.
+        consentService.requireAgreed(userId);
 
         if (runRepository.existsByProjectIdAndStatusIn(projectId, IN_FLIGHT)) {
             throw new ConflictException(ErrorCode.ANALYSIS_ALREADY_RUNNING);

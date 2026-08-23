@@ -75,6 +75,11 @@ galpi:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
 
+  # 외부 AI 전송 고지의 현재 버전. 제공자나 보관 정책이 바뀌면 이 값을 올린다. 올리는 순간
+  # 이전 버전에만 동의한 사용자는 분석 실행 전에 재동의를 요구받는다.
+  consent:
+    ai-data-version: ${AI_DATA_CONSENT_VERSION:2026-08-23}
+
   jwt:
     secret: ${JWT_SECRET}
     issuer: ${JWT_ISSUER}
