@@ -3,13 +3,11 @@ package com.github.galpiii.galpi.domain.github.service;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.dto.GithubDisconnectResponse;
 import com.github.galpiii.galpi.domain.github.entity.GithubRevocationType;
-import com.github.galpiii.galpi.domain.github.event.GithubDisconnectedEvent;
 import com.github.galpiii.galpi.domain.user.repository.UserRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.UnauthorizedException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 /**
@@ -21,6 +19,9 @@ import org.springframework.stereotype.Service;
  *
  * <p>진행 중인 분석만은 예외다. 워커는 작업 생성 시점에 고정된 installation token으로 돌아
  * user token을 지워도 멈추지 않으므로, 권한 근거가 사라진 작업을 명시적으로 취소한다.
+ *
+ * <p>순서가 이 클래스의 전부다. ① 외부 폐기를 트랜잭션 밖에서 시도하고, ② 실패하면 짧은
+ * 트랜잭션으로 재시도 큐에 남기고, ③ 로컬 정리는 하나의 트랜잭션에서 끝낸다.
  */
 @Slf4j
 @Service
@@ -28,11 +29,10 @@ import org.springframework.stereotype.Service;
 public class GithubConnectionService {
 
     private final GithubUserTokenService userTokenService;
-    private final GithubUserWriter userWriter;
     private final GithubTokenRevoker tokenRevoker;
+    private final GithubDisconnectWriter disconnectWriter;
     private final UserRepository userRepository;
     private final GithubAppProperties properties;
-    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * 연결을 끊는다.
@@ -56,10 +56,7 @@ public class GithubConnectionService {
                         userId, accessToken, GithubRevocationType.GRANT))
                 .orElse(false);
 
-        userTokenService.delete(userId);
-        userWriter.disconnectGithub(userId);
-        // 권한 근거가 사라졌으므로 진행 중인 분석을 취소한다. 구독자는 동기로 돈다.
-        eventPublisher.publishEvent(new GithubDisconnectedEvent(userId));
+        disconnectWriter.disconnect(userId);
 
         log.info("[GitHub] 사용자 요청으로 연결을 해제 userId={} authorizationRevoked={}",
                 userId, revoked);

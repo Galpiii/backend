@@ -5,6 +5,8 @@ import com.github.galpiii.galpi.domain.github.entity.GithubRevocationType;
 import com.github.galpiii.galpi.domain.github.entity.GithubTokenRevocation;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.domain.github.repository.GithubTokenRevocationRepository;
+import com.github.galpiii.galpi.domain.user.entity.User;
+import com.github.galpiii.galpi.domain.user.repository.UserRepository;
 import com.github.galpiii.galpi.global.crypto.TokenCipher;
 import com.github.galpiii.galpi.global.crypto.TokenEncryptionProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +47,8 @@ class GithubTokenRevocationWriterTest {
     private GithubApiClient apiClient;
     @Mock
     private GithubTokenRevocationRepository revocationRepository;
+    @Mock
+    private UserRepository userRepository;
 
     private TokenCipher tokenCipher;
     private GithubTokenRevocationWriter writer;
@@ -60,7 +64,8 @@ class GithubTokenRevocationWriterTest {
     }
 
     private GithubTokenRevocationWriter writerWith(TokenCipher cipher) {
-        return new GithubTokenRevocationWriter(apiClient, revocationRepository, cipher);
+        return new GithubTokenRevocationWriter(apiClient, revocationRepository, userRepository,
+                cipher);
     }
 
     private GithubTokenRevocation rowHolding(String token, TokenCipher cipher) {
@@ -69,6 +74,22 @@ class GithubTokenRevocationWriterTest {
                 GithubRevocationType.TOKEN, "GithubApiException");
         given(revocationRepository.findById(ROW_ID)).willReturn(Optional.of(row));
         return row;
+    }
+
+    private GithubTokenRevocation grantRowHolding(String token, TokenCipher cipher) {
+        GithubTokenRevocation row = GithubTokenRevocation.pending(
+                USER_ID, cipher.encrypt(token), cipher.currentVersion(),
+                GithubRevocationType.GRANT, "GithubApiException");
+        given(revocationRepository.findById(ROW_ID)).willReturn(Optional.of(row));
+        return row;
+    }
+
+    private void userIsConnected(boolean connected) {
+        User user = User.ofGithub(999L, "wb", "wb", null, "https://avatar");
+        if (!connected) {
+            user.disconnectGithub();
+        }
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
     }
 
     @BeforeEach
@@ -151,6 +172,41 @@ class GithubTokenRevocationWriterTest {
         writerWith(cipher(1, Map.of(1, KEY_V1))).revokeOne(ROW_ID);
 
         verify(apiClient, never()).revokeUserToken(anyString());
+    }
+
+    @Test
+    @DisplayName("다시 연결된 사용자의 밀린 grant 폐기는 실행하지 않고 버린다 — 새 authorization이 함께 죽는다")
+    void discardsStaleGrantForReconnectedUser() {
+        GithubTokenRevocation row = grantRowHolding(TOKEN, tokenCipher);
+        userIsConnected(true);
+
+        assertThat(writer.revokeOne(ROW_ID)).isFalse();
+
+        verify(apiClient, never()).revokeUserGrant(anyString());
+        verify(revocationRepository).delete(row);
+    }
+
+    @Test
+    @DisplayName("아직 끊긴 사용자면 밀린 grant 폐기를 그대로 실행한다")
+    void stillRevokesGrantWhileDisconnected() {
+        GithubTokenRevocation row = grantRowHolding(TOKEN, tokenCipher);
+        userIsConnected(false);
+
+        assertThat(writer.revokeOne(ROW_ID)).isTrue();
+
+        verify(apiClient).revokeUserGrant(TOKEN);
+        verify(revocationRepository).delete(row);
+    }
+
+    @Test
+    @DisplayName("밀려난 토큰 폐기는 연결 여부와 무관하게 실행한다 — 연결된 채로 이전 토큰을 지우는 것이 정상이다")
+    void revokesSupersededTokenEvenWhileConnected() {
+        rowHolding(TOKEN, tokenCipher);
+        userIsConnected(true);
+
+        assertThat(writer.revokeOne(ROW_ID)).isTrue();
+
+        verify(apiClient).revokeUserToken(TOKEN);
     }
 
     @Test

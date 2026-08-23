@@ -9,7 +9,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -35,13 +34,15 @@ public class GithubTokenRevoker {
     /**
      * 폐기를 시도하고, 실패하면 재시도 큐에 넣는다.
      *
+     * <p>GitHub 호출은 트랜잭션 밖에서 한다. 큐 적재는 실패 경로에서만 필요하므로, 성공하는
+     * 대다수 호출까지 트랜잭션 경계 안에 둘 이유가 없다.
+     *
      * <p>큐 적재까지 실패하면 예외가 그대로 올라간다. 회수할 수 없게 된 토큰을 두고
      * 연결 해제를 성공으로 보고할 수는 없다.
      *
      * @return GitHub이 폐기를 받아들였으면 true. false면 큐에 밀려 있는 상태이므로 호출자는
      *         사용자에게 GitHub 설정에서 직접 해제하는 방법을 함께 안내해야 한다
      */
-    @Transactional
     public boolean revokeOrEnqueue(Long userId, String accessToken, GithubRevocationType type) {
         try {
             call(type, accessToken);
@@ -50,9 +51,8 @@ public class GithubTokenRevoker {
         } catch (RuntimeException e) {
             String cause = e.getClass().getSimpleName();
             log.warn("[GitHub] {} 폐기 실패. 재시도 큐에 넣는다 userId={} cause={}", type, userId, cause);
-            revocationRepository.save(GithubTokenRevocation.pending(
-                    userId, tokenCipher.encrypt(accessToken), tokenCipher.currentVersion(),
-                    type, cause));
+            writer.enqueueFailed(userId, tokenCipher.encrypt(accessToken),
+                    tokenCipher.currentVersion(), type, cause);
             return false;
         }
     }
@@ -79,6 +79,26 @@ public class GithubTokenRevoker {
         revocationRepository.save(
                 GithubTokenRevocation.superseded(userId, encryptedAccessToken, tokenVersion));
         log.info("[GitHub] 재로그인으로 밀려난 이전 토큰을 폐기 큐에 넣는다 userId={}", userId);
+    }
+
+    /**
+     * 밀려 있던 grant 폐기 의도를 버린다. 새 authorization을 받는 경로가 부른다.
+     *
+     * <p>grant 폐기는 이 사용자의 App authorization <b>전체</b>를 지운다. 해제 때 폐기가
+     * 실패해 큐에 남은 항목을 그대로 두면, 사용자가 다시 연결한 뒤 배치가 옛 토큰으로 그
+     * 항목을 처리하면서 방금 승인한 authorization까지 함께 폐기한다. 재승인을 받은 순간
+     * 그 의도는 소멸했으므로 여기서 지운다.
+     *
+     * <p>호출자의 트랜잭션에 참여해 새 토큰 저장과 함께 커밋된다. 새 토큰만 커밋되고 이
+     * 삭제가 빠지면 막으려던 상황이 그대로 남는다.
+     */
+    public void discardPendingGrants(Long userId) {
+        int discarded = revocationRepository.deleteByUserIdAndRevocationType(
+                userId, GithubRevocationType.GRANT);
+        if (discarded > 0) {
+            log.info("[GitHub] 재연결로 의미를 잃은 grant 폐기 대기를 버린다 userId={} count={}",
+                    userId, discarded);
+        }
     }
 
     /**

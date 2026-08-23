@@ -40,9 +40,16 @@ public class GithubUserTokenService {
      * 이전 토큰을 무효화하지 않아서 GitHub에는 최대 만료 시각까지 그대로 살아 있고, 암호문을
      * 덮어쓰고 나면 복호화할 원본이 없어 회수할 수단 자체가 사라진다. 폐기 호출을 큐에 넘기는
      * 것은 로그인을 GitHub 응답만큼 느리게 만들지 않기 위해서다.
+     *
+     * <p>반대로 밀려 있던 <b>grant</b> 폐기는 여기서 버린다. 새 토큰을 받았다는 것은 사용자가
+     * authorization을 다시 승인했다는 뜻이라, 예전 해제 시도의 잔여 항목이 그대로 실행되면
+     * 방금 승인한 authorization이 폐기된다. 같은 트랜잭션에서 지워야 새 토큰만 커밋되는 일이
+     * 없다.
      */
     @Transactional
     public void save(User user, String accessToken, Duration expiresIn) {
+        tokenRevoker.discardPendingGrants(user.getId());
+
         OffsetDateTime expiresAt = expiresIn == null ? null : OffsetDateTime.now().plus(expiresIn);
         String encrypted = tokenCipher.encrypt(accessToken);
         int version = tokenCipher.currentVersion();
@@ -70,6 +77,21 @@ public class GithubUserTokenService {
         }
         tokenRevoker.enqueueSuperseded(
                 userId, existing.getEncryptedAccessToken(), existing.getTokenVersion());
+    }
+
+    private void evictAfterCommit(Long userId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            cache.evict(userId);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                // 커밋이든 롤백이든 비운다. 롤백이면 원본이 그대로 남아 다음 조회가 다시
+                // 채우므로 손해가 없고, 커밋이면 반드시 비어 있어야 한다.
+                cache.evict(userId);
+            }
+        });
     }
 
     private void cacheAfterCommit(Long userId, String accessToken, Duration ttl) {
@@ -124,10 +146,16 @@ public class GithubUserTokenService {
         return find(userId).isPresent();
     }
 
+    /**
+     * 원본을 지운다. 캐시는 트랜잭션이 끝난 뒤에 비운다.
+     *
+     * <p>먼저 비우면 커밋 전에 다른 요청이 아직 살아 있는 원본을 읽어 캐시를 다시 채울 수
+     * 있다. 그러면 행이 지워진 뒤에도 캐시에 유효한 토큰이 남아 연결 해제가 반쪽이 된다.
+     */
     @Transactional
     public void delete(Long userId) {
-        cache.evict(userId);
         tokenRepository.deleteByUserIdAndProvider(userId, PROVIDER);
+        evictAfterCommit(userId);
     }
 
     private Duration cacheTtl(Duration expiresIn) {

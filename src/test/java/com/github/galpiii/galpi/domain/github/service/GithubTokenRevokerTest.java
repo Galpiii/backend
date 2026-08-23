@@ -26,7 +26,9 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
@@ -70,7 +72,7 @@ class GithubTokenRevokerTest {
             revoker.revokeOrEnqueue(USER_ID, TOKEN, GithubRevocationType.GRANT);
 
             verify(apiClient).revokeUserGrant(TOKEN);
-            verify(revocationRepository, never()).save(any());
+            verify(writer, never()).enqueueFailed(anyLong(), any(), anyInt(), any(), any());
         }
 
         @Test
@@ -80,12 +82,20 @@ class GithubTokenRevokerTest {
 
             revoker.revokeOrEnqueue(USER_ID, TOKEN, GithubRevocationType.GRANT);
 
-            ArgumentCaptor<GithubTokenRevocation> saved =
-                    ArgumentCaptor.forClass(GithubTokenRevocation.class);
-            verify(revocationRepository).save(saved.capture());
-            assertThat(saved.getValue().getUserId()).isEqualTo(USER_ID);
-            assertThat(saved.getValue().getAttempts()).isEqualTo(1);
-            assertThat(saved.getValue().isDead()).isFalse();
+            verify(writer).enqueueFailed(eq(USER_ID), any(), anyInt(),
+                    eq(GithubRevocationType.GRANT), eq("GithubApiException"));
+        }
+
+        @Test
+        @DisplayName("큐 적재는 GitHub 호출과 분리된 트랜잭션에 맡긴다 — 외부 응답을 트랜잭션 안에서 기다리지 않는다")
+        void keepsHttpCallOutsideTransaction() {
+            willThrow(new GithubApiException()).given(apiClient).revokeUserGrant(TOKEN);
+
+            revoker.revokeOrEnqueue(USER_ID, TOKEN, GithubRevocationType.GRANT);
+
+            // 성공 경로에는 DB 쓰기가 없고, 실패 경로만 짧은 쓰기 트랜잭션으로 넘어간다.
+            verify(revocationRepository, never()).save(any());
+            verify(writer).enqueueFailed(anyLong(), any(), anyInt(), any(), any());
         }
 
         @Test
@@ -95,12 +105,37 @@ class GithubTokenRevokerTest {
 
             revoker.revokeOrEnqueue(USER_ID, TOKEN, GithubRevocationType.GRANT);
 
-            ArgumentCaptor<GithubTokenRevocation> saved =
-                    ArgumentCaptor.forClass(GithubTokenRevocation.class);
-            verify(revocationRepository).save(saved.capture());
-            assertThat(saved.getValue().getEncryptedAccessToken())
+            ArgumentCaptor<String> ciphertext = ArgumentCaptor.forClass(String.class);
+            verify(writer).enqueueFailed(eq(USER_ID), ciphertext.capture(), anyInt(), any(), any());
+            assertThat(ciphertext.getValue())
                     .doesNotContain(TOKEN)
                     .doesNotContain("ghu_");
+        }
+    }
+
+    @Nested
+    @DisplayName("재연결 시점")
+    class OnReconnect {
+
+        @Test
+        @DisplayName("밀려 있던 grant 폐기를 버린다 — 다시 승인한 authorization을 폐기할 수는 없다")
+        void discardsPendingGrants() {
+            given(revocationRepository.deleteByUserIdAndRevocationType(
+                    USER_ID, GithubRevocationType.GRANT)).willReturn(1);
+
+            revoker.discardPendingGrants(USER_ID);
+
+            verify(revocationRepository)
+                    .deleteByUserIdAndRevocationType(USER_ID, GithubRevocationType.GRANT);
+        }
+
+        @Test
+        @DisplayName("밀려난 토큰 폐기는 남긴다 — 이전 토큰은 재연결과 무관하게 회수해야 한다")
+        void keepsSupersededTokenRows() {
+            revoker.discardPendingGrants(USER_ID);
+
+            verify(revocationRepository, never())
+                    .deleteByUserIdAndRevocationType(USER_ID, GithubRevocationType.TOKEN);
         }
     }
 

@@ -4,12 +4,15 @@ import com.github.galpiii.galpi.domain.analysis.dto.AnalysisRunStatusResponse;
 import com.github.galpiii.galpi.domain.analysis.entity.AnalysisRun;
 import com.github.galpiii.galpi.domain.analysis.entity.AnalysisRunStatus;
 import com.github.galpiii.galpi.domain.analysis.repository.AnalysisRunRepository;
+import com.github.galpiii.galpi.domain.analysis.service.AnalysisRunDisconnectCanceller;
 import com.github.galpiii.galpi.domain.analysis.service.AnalysisRunService;
 import com.github.galpiii.galpi.domain.github.client.GithubApiClient;
 import com.github.galpiii.galpi.domain.github.dto.GithubDisconnectResponse;
 import com.github.galpiii.galpi.domain.github.dto.RepositoryAccessResyncResponse;
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.entity.GithubRepository;
+import com.github.galpiii.galpi.domain.github.entity.GithubRevocationType;
+import com.github.galpiii.galpi.domain.github.entity.GithubTokenRevocation;
 import com.github.galpiii.galpi.domain.github.entity.RepositoryAccessStatus;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
@@ -30,7 +33,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.util.AopTestUtils;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -82,12 +89,18 @@ class GithubDisconnectIntegrationTest extends IntegrationTestSupport {
     @Autowired
     private GithubTokenRevocationRepository revocationRepository;
     @Autowired
+    private GithubTokenRevoker tokenRevoker;
+    @Autowired
     private TokenCipher tokenCipher;
 
     @MockitoBean
     private GithubApiClient apiClient;
     @MockitoBean
     private GithubInstallationService installationService;
+
+    /** 취소가 실패했을 때 앞선 변경까지 되돌아가는지 보려면 취소만 골라서 터뜨릴 수 있어야 한다. */
+    @MockitoSpyBean
+    private AnalysisRunDisconnectCanceller disconnectCanceller;
 
     private User user;
     private Long projectId;
@@ -160,6 +173,61 @@ class GithubDisconnectIntegrationTest extends IntegrationTestSupport {
                 .isEqualTo(AnalysisRunStatus.CANCELLED);
         // 워커도 이 판단을 따라야 한다. 이미 선점한 작업은 저장소마다 이 값을 다시 본다.
         assertThat(runRepository.isAbandoned(runId)).isTrue();
+    }
+
+    @Test
+    @DisplayName("취소가 실패하면 연결 해제 전체가 되돌아간다 — 끊긴 채 분석만 도는 반쪽 상태를 남기지 않는다")
+    void rollsBackEverythingWhenCancellationFails() {
+        storeToken(Duration.ofHours(8));
+        Long runId = queueRun();
+        // 스텁은 트랜잭션 프록시가 아니라 그 안의 대상에 건다. 프록시에 걸면 스텁을 만드는
+        // 호출 자체가 MANDATORY 검사에 걸린다.
+        willThrow(new DataIntegrityViolationException("cancel failed"))
+                .given(AopTestUtils.<AnalysisRunDisconnectCanceller>getUltimateTargetObject(
+                        disconnectCanceller))
+                .onDisconnected(any());
+
+        assertThatThrownBy(() -> connectionService.disconnect(user.getId()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        // 셋 다 그대로여야 한다. 하나라도 커밋됐으면 사용자는 반쪽 상태에 갇힌다.
+        assertThat(tokenRepository.findByUserIdAndProvider(user.getId(), OAuthProvider.GITHUB))
+                .isPresent();
+        assertThat(userRepository.findById(user.getId()).orElseThrow()
+                .getGithubConnectionStatus()).isEqualTo(GithubConnectionStatus.CONNECTED);
+        assertThat(runRepository.findById(runId).orElseThrow().getStatus())
+                .isEqualTo(AnalysisRunStatus.QUEUED);
+    }
+
+    @Test
+    @DisplayName("재연결하면 밀려 있던 grant 폐기를 버린다 — 방금 승인한 authorization이 죽으면 안 된다")
+    void discardsPendingGrantOnReconnect() {
+        storeToken(Duration.ofHours(8));
+        willThrow(new GithubApiException()).given(apiClient).revokeUserGrant(TOKEN);
+        connectionService.disconnect(user.getId());
+        assertThat(revocationRepository.findAll()).hasSize(1);
+
+        // 사용자가 다시 승인해 새 토큰을 받았다.
+        userTokenService.save(userRepository.findById(user.getId()).orElseThrow(),
+                "ghu_newtokennewtokennewtokennewtoken", Duration.ofHours(8));
+
+        assertThat(revocationRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("적재와 재연결이 겹쳐 항목이 남아도, 다시 연결된 사용자면 재시도가 실행하지 않는다")
+    void retryDoesNotRevokeGrantOfReconnectedUser() {
+        // 적재 직후 재연결이 끼어들어 큐를 비우지 못한 상태를 만든다.
+        GithubTokenRevocation stale = GithubTokenRevocation.pending(
+                user.getId(), tokenCipher.encrypt(TOKEN), tokenCipher.currentVersion(),
+                GithubRevocationType.GRANT, "GithubApiException");
+        ReflectionTestUtils.setField(stale, "nextAttemptAt", OffsetDateTime.now().minusMinutes(1));
+        revocationRepository.saveAndFlush(stale);
+
+        tokenRevoker.retryPending();
+
+        verify(apiClient, never()).revokeUserGrant(any());
+        assertThat(revocationRepository.findAll()).isEmpty();
     }
 
     @Test

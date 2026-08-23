@@ -3,7 +3,6 @@ package com.github.galpiii.galpi.domain.github.service;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.dto.GithubDisconnectResponse;
 import com.github.galpiii.galpi.domain.github.entity.GithubRevocationType;
-import com.github.galpiii.galpi.domain.github.event.GithubDisconnectedEvent;
 import com.github.galpiii.galpi.domain.user.repository.UserRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.GlobalException;
@@ -12,11 +11,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataAccessResourceFailureException;
 
 import java.time.Duration;
@@ -44,20 +41,18 @@ class GithubConnectionServiceTest {
     @Mock
     private GithubUserTokenService userTokenService;
     @Mock
-    private GithubUserWriter userWriter;
-    @Mock
     private GithubTokenRevoker tokenRevoker;
     @Mock
-    private UserRepository userRepository;
+    private GithubDisconnectWriter disconnectWriter;
     @Mock
-    private ApplicationEventPublisher eventPublisher;
+    private UserRepository userRepository;
 
     private GithubConnectionService service;
 
     @BeforeEach
     void setUp() {
-        service = new GithubConnectionService(userTokenService, userWriter, tokenRevoker,
-                userRepository, properties(), eventPublisher);
+        service = new GithubConnectionService(userTokenService, tokenRevoker, disconnectWriter,
+                userRepository, properties());
     }
 
     @Test
@@ -68,11 +63,10 @@ class GithubConnectionServiceTest {
 
         service.disconnect(USER_ID);
 
-        InOrder order = inOrder(tokenRevoker, userTokenService, userWriter);
+        InOrder order = inOrder(tokenRevoker, disconnectWriter);
         order.verify(tokenRevoker)
                 .revokeOrEnqueue(USER_ID, TOKEN, GithubRevocationType.GRANT);
-        order.verify(userTokenService).delete(USER_ID);
-        order.verify(userWriter).disconnectGithub(USER_ID);
+        order.verify(disconnectWriter).disconnect(USER_ID);
     }
 
     @Test
@@ -90,17 +84,16 @@ class GithubConnectionServiceTest {
     }
 
     @Test
-    @DisplayName("진행 중인 분석을 멈추도록 연결 해제를 알린다")
-    void announcesDisconnect() {
+    @DisplayName("로컬 정리는 한 트랜잭션에 맡긴다 — 토큰 삭제·상태 변경·분석 취소는 함께 커밋돼야 한다")
+    void delegatesLocalCleanupToOneTransaction() {
         given(userRepository.existsById(USER_ID)).willReturn(true);
         given(userTokenService.find(USER_ID)).willReturn(Optional.of(TOKEN));
 
         service.disconnect(USER_ID);
 
-        ArgumentCaptor<GithubDisconnectedEvent> published =
-                ArgumentCaptor.forClass(GithubDisconnectedEvent.class);
-        verify(eventPublisher).publishEvent(published.capture());
-        assertThat(published.getValue().userId()).isEqualTo(USER_ID);
+        verify(disconnectWriter).disconnect(USER_ID);
+        // 외부 폐기와 달리 이쪽은 여기서 쪼개지 않는다.
+        verify(userTokenService, never()).delete(any());
     }
 
     @Test
@@ -114,8 +107,7 @@ class GithubConnectionServiceTest {
         assertThatThrownBy(() -> service.disconnect(USER_ID))
                 .isInstanceOf(DataAccessResourceFailureException.class);
 
-        verify(userTokenService, never()).delete(any());
-        verify(userWriter, never()).disconnectGithub(any());
+        verify(disconnectWriter, never()).disconnect(any());
     }
 
     @Test
@@ -127,7 +119,7 @@ class GithubConnectionServiceTest {
         GithubDisconnectResponse response = service.disconnect(USER_ID);
 
         verify(tokenRevoker, never()).revokeOrEnqueue(anyLong(), anyString(), any());
-        verify(userWriter).disconnectGithub(USER_ID);
+        verify(disconnectWriter).disconnect(USER_ID);
         assertThat(response.authorizationRevoked()).isFalse();
         assertThat(response.authorizationsUrl())
                 .isEqualTo("https://github.com/settings/apps/authorizations");
@@ -158,9 +150,7 @@ class GithubConnectionServiceTest {
                 .isEqualTo(ErrorCode.UNAUTHORIZED);
 
         verify(tokenRevoker, never()).revokeOrEnqueue(anyLong(), anyString(), any());
-        verify(userTokenService, never()).delete(any());
-        verify(userWriter, never()).disconnectGithub(any());
-        verify(eventPublisher, never()).publishEvent(any(GithubDisconnectedEvent.class));
+        verify(disconnectWriter, never()).disconnect(any());
     }
 
     private static GithubAppProperties properties() {
