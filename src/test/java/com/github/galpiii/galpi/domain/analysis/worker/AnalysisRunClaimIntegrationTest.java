@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 띄웠을 때 같은 작업이 두 번 도는지 알 방법이 없고, 그건 GitHub 호출을 두 배로 쓰면서
  * 서로의 결과를 덮는 상황이다.
  *
- * <p>덤으로 V5 마이그레이션과 엔티티 매핑이 맞는지도 여기서 걸린다 —
+ * <p>덤으로 V6 마이그레이션과 엔티티 매핑이 맞는지도 여기서 걸린다 —
  * {@code IntegrationTestSupport}가 Flyway를 켜고 {@code ddl-auto=validate}로 띄운다.
  */
 @DisplayName("분석 작업 선점 — 실제 Postgres")

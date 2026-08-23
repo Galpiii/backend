@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>mock으로는 확인할 수 없는 것이 세 가지 있다. 목록 쿼리는 저장소 개수 집계와
  * {@code last_analysis_run_id} 조인을 한 문장에 담고 있어 실제로 실행해 봐야 하고,
- * 삭제 시 진행 중 작업 취소는 벌크 갱신이라 트랜잭션 경계가 필요하며, V7 마이그레이션과
+ * 삭제 시 진행 중 작업 취소는 벌크 갱신이라 트랜잭션 경계가 필요하며, V8 마이그레이션과
  * 엔티티 매핑의 대조는 {@code ddl-auto=validate}가 붙어야 일어난다.
  */
 @DisplayName("프로젝트 생명주기 — 실제 Postgres")
