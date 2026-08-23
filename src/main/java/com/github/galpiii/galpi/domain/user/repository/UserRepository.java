@@ -1,5 +1,6 @@
 package com.github.galpiii.galpi.domain.user.repository;
 
+import com.github.galpiii.galpi.domain.user.entity.GithubConnectionStatus;
 import com.github.galpiii.galpi.domain.user.entity.User;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,6 +12,8 @@ import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByGithubId(Long githubId);
+
+    boolean existsByIdAndGithubConnectionStatus(Long id, GithubConnectionStatus status);
 
     /**
      * 연결 상태를 바꾸거나 그 상태에 기대어 무언가를 만드는 트랜잭션이 잡는 행 잠금.

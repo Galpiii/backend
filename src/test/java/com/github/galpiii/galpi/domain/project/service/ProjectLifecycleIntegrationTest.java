@@ -83,8 +83,11 @@ class ProjectLifecycleIntegrationTest extends IntegrationTestSupport {
                 User.ofGithub(System.nanoTime(), "wb", "wb", null, "https://avatar"));
         userId = user.getId();
         // 저장소 구성을 바꾸는 경로는 GitHub 연결이 살아 있어야 한다. 연결이 끊긴 동안에는
-        // 조회만 허용되므로, 생명주기를 보려면 토큰이 있는 상태에서 시작해야 한다.
+        // 조회만 허용되므로, 생명주기를 보려면 연결된 상태에서 시작해야 한다. 토큰과 연결
+        // 상태는 실제 연결 확정과 마찬가지로 함께 세운다.
         userTokenService.save(user, "ghu_lifecycle_test_token_0123456789", Duration.ofHours(8));
+        user.connectGithub();
+        userRepository.saveAndFlush(user);
     }
 
     private Long createProject(String name) {

@@ -3,10 +3,12 @@ package com.github.galpiii.galpi.domain.github.service;
 import com.github.galpiii.galpi.domain.auth.config.JwtProperties;
 import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.domain.github.store.GithubUserTokenCache;
+import com.github.galpiii.galpi.domain.user.entity.GithubConnectionStatus;
 import com.github.galpiii.galpi.domain.user.entity.OAuthProvider;
 import com.github.galpiii.galpi.domain.user.entity.User;
 import com.github.galpiii.galpi.domain.user.entity.UserOAuthToken;
 import com.github.galpiii.galpi.domain.user.repository.UserOAuthTokenRepository;
+import com.github.galpiii.galpi.domain.user.repository.UserRepository;
 import com.github.galpiii.galpi.global.crypto.TokenCipher;
 import com.github.galpiii.galpi.global.crypto.TokenEncryptionProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -38,7 +41,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -52,6 +57,8 @@ class GithubUserTokenServiceTest {
 
     @Mock
     private UserOAuthTokenRepository tokenRepository;
+    @Mock
+    private UserRepository userRepository;
     @Mock
     private GithubUserTokenCache cache;
     @Mock
@@ -87,8 +94,11 @@ class GithubUserTokenServiceTest {
     @BeforeEach
     void setUp() {
         tokenCipher = new TokenCipher(new TokenEncryptionProperties(1, Map.of(1, randomKey())));
-        service = new GithubUserTokenService(
-                tokenRepository, cache, tokenCipher, jwtProperties(), tokenRevoker);
+        service = new GithubUserTokenService(tokenRepository, userRepository, cache, tokenCipher,
+                jwtProperties(), tokenRevoker);
+        // 별도로 끊지 않는 한 연결된 사용자다.
+        given(userRepository.existsByIdAndGithubConnectionStatus(
+                USER_ID, GithubConnectionStatus.CONNECTED)).willReturn(true);
     }
 
     @Nested
@@ -295,6 +305,24 @@ class GithubUserTokenServiceTest {
             assertThatThrownBy(() -> service.require(USER_ID))
                     .isInstanceOf(GithubReauthRequiredException.class);
         }
+
+        @Test
+        @DisplayName("연결이 끊긴 사용자에게는 캐시에 토큰이 남아 있어도 주지 않는다")
+        void refusesDisconnectedUserEvenWithCachedToken() {
+            disconnected();
+            given(cache.find(USER_ID)).willReturn(Optional.of(TOKEN));
+
+            assertThat(service.find(USER_ID)).isEmpty();
+            assertThatThrownBy(() -> service.require(USER_ID))
+                    .isInstanceOf(GithubReauthRequiredException.class);
+            // 상태만으로 거절한다. 스테일할 수 있는 캐시는 보지도 않는다.
+            verify(cache, never()).find(USER_ID);
+        }
+
+        private void disconnected() {
+            given(userRepository.existsByIdAndGithubConnectionStatus(
+                    USER_ID, GithubConnectionStatus.CONNECTED)).willReturn(false);
+        }
     }
 
     @Nested
@@ -308,6 +336,60 @@ class GithubUserTokenServiceTest {
 
             verify(cache).evict(USER_ID);
             verify(tokenRepository).deleteByUserIdAndProvider(USER_ID, OAuthProvider.GITHUB);
+        }
+
+        @Test
+        @DisplayName("캐시를 못 비우면 커밋 직전에 터진다 — afterCompletion에 두면 실패가 삼켜진다")
+        void failsBeforeCommitWhenCacheCannotBeEvicted() {
+            willThrow(new RedisConnectionFailureException("redis down"))
+                    .given(cache).evict(USER_ID);
+            TransactionSynchronizationManager.initSynchronization();
+            try {
+                service.delete(USER_ID);
+
+                // 트랜잭션 매니저가 커밋 직전에 부르는 콜백이다. 여기서 던지면 롤백된다.
+                assertThatThrownBy(() -> TransactionSynchronizationManager.getSynchronizations()
+                        .forEach(sync -> sync.beforeCommit(false)))
+                        .isInstanceOf(RedisConnectionFailureException.class);
+            } finally {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
+        }
+
+        @Test
+        @DisplayName("트랜잭션이 끝난 뒤에 한 번 더 비운다 — 커밋 직전 사이에 다시 채워졌을 수 있다")
+        void evictsAgainAfterCompletion() {
+            TransactionSynchronizationManager.initSynchronization();
+            try {
+                service.delete(USER_ID);
+                TransactionSynchronizationManager.getSynchronizations().forEach(sync -> {
+                    sync.beforeCommit(false);
+                    sync.afterCompletion(TransactionSynchronization.STATUS_COMMITTED);
+                });
+
+                verify(cache, times(2)).evict(USER_ID);
+            } finally {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
+        }
+
+        @Test
+        @DisplayName("뒤쪽 무효화가 실패해도 예외를 올리지 않는다 — 트랜잭션 매니저가 어차피 삼킨다")
+        void swallowsFailureAfterCompletion() {
+            TransactionSynchronizationManager.initSynchronization();
+            try {
+                service.delete(USER_ID);
+                TransactionSynchronizationManager.getSynchronizations()
+                        .forEach(sync -> sync.beforeCommit(false));
+                willThrow(new RedisConnectionFailureException("redis down"))
+                        .given(cache).evict(USER_ID);
+
+                TransactionSynchronizationManager.getSynchronizations()
+                        .forEach(sync -> sync.afterCompletion(
+                                TransactionSynchronization.STATUS_COMMITTED));
+            } finally {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
         }
     }
 }
