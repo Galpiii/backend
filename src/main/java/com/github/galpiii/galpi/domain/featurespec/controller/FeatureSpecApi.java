@@ -1,6 +1,7 @@
 package com.github.galpiii.galpi.domain.featurespec.controller;
 
 import com.github.galpiii.galpi.domain.auth.jwt.AuthPrincipal;
+import com.github.galpiii.galpi.domain.featurespec.dto.response.FeatureSpecStatusResponse;
 import com.github.galpiii.galpi.domain.featurespec.dto.response.FeatureSpecUploadResponse;
 import com.github.galpiii.galpi.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -16,7 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Tag(
         name = "기능명세서",
-        description = "기능명세서 PDF 업로드 API"
+        description = "기능명세서 PDF 업로드 및 분석 상태 조회 API"
 )
 public interface FeatureSpecApi {
 
@@ -83,7 +84,7 @@ public interface FeatureSpecApi {
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
                             description = """
-                                    PROJECT-001: 프로젝트를 찾을 수 없음
+                                    PROJECT-002: 프로젝트를 찾을 수 없거나 접근할 수 없음
 
                                     프로젝트가 존재하지 않는 경우와 다른 사용자의 프로젝트인 경우를
                                     구분하지 않고 동일하게 응답합니다.
@@ -91,11 +92,53 @@ public interface FeatureSpecApi {
                             content = @Content(
                                     mediaType = MediaType.APPLICATION_JSON_VALUE,
                                     examples = @ExampleObject(
-                                            name = "프로젝트 조회 실패",
+                                            name = "프로젝트 접근 실패",
                                             value = """
                                                     {
-                                                      "code": "PROJECT-001",
-                                                      "message": "프로젝트를 찾을 수 없습니다."
+                                                      "code": "PROJECT-002",
+                                                      "message": "프로젝트를 찾을 수 없거나 접근할 수 없습니다."
+                                                    }
+                                                    """
+                                    )
+                            )
+                    ),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "409",
+                            description = """
+                                    FEATURE-SPEC-EXISTS-001: 이미 등록된 기능명세서가 있음
+
+                                    업로드는 등록만 담당합니다. 이미 등록된 기능명세서를 바꾸려면
+                                    교체 API를 사용해야 합니다.
+                                    """,
+                            content = @Content(
+                                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                    examples = @ExampleObject(
+                                            name = "기능명세서 중복 등록",
+                                            value = """
+                                                    {
+                                                      "code": "FEATURE-SPEC-EXISTS-001",
+                                                      "message": "이미 등록된 기능명세서가 있습니다."
+                                                    }
+                                                    """
+                                    )
+                            )
+                    ),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "503",
+                            description = """
+                                    FEATURE-SPEC-EXTRACTION-001: 분석 요청이 몰려 접수할 수 없음
+
+                                    분석 대기열이 가득 차 업로드를 접수하지 못했습니다.
+                                    아무것도 저장되지 않으므로 잠시 후 같은 파일로 다시 업로드하면 됩니다.
+                                    """,
+                            content = @Content(
+                                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                    examples = @ExampleObject(
+                                            name = "분석 대기열 포화",
+                                            value = """
+                                                    {
+                                                      "code": "FEATURE-SPEC-EXTRACTION-001",
+                                                      "message": "분석 요청이 많아 지금은 처리할 수 없습니다. 잠시 후 다시 시도해 주세요."
                                                     }
                                                     """
                                     )
@@ -123,5 +166,103 @@ public interface FeatureSpecApi {
                     schema = @Schema(type = "string", format = "binary")
             )
             MultipartFile file
+    );
+
+    @Operation(
+            summary = "기능명세서 분석 상태 조회",
+            description = """
+                    기능명세서의 AI 분석 진행 상태를 조회합니다.
+                    업로드 응답으로 받은 specDocumentId로 주기적으로 polling합니다.
+
+                    상태:
+                    - PENDING: 업로드 완료, 분석 대기
+                    - PROCESSING: 분석 진행 중
+                    - COMPLETED: 분석 및 결과 저장 완료
+                    - FAILED: 자동 재시도까지 포함해 최종 실패
+
+                    failureCode는 항상 내려가며, FAILED가 아닐 때는 null입니다.
+                    - NO_FEATURE_EXTRACTED: 문서에서 기능을 하나도 추출하지 못함. 다른 PDF로 다시 업로드해야 합니다.
+                    - ANALYSIS_FAILED: 그 외 실패. 같은 PDF로 다시 업로드할 수 있습니다.
+
+                    분석 재시도 API는 제공하지 않습니다. 최종 실패한 경우 PDF를 다시 업로드합니다.
+                    """,
+            responses = {
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "200",
+                            description = "분석 상태 조회 성공",
+                            content = @Content(
+                                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                    examples = {
+                                            @ExampleObject(
+                                                    name = "분석 진행 중",
+                                                    value = """
+                                                            {
+                                                              "data": {
+                                                                "specDocumentId": 1,
+                                                                "extractionStatus": "PROCESSING"
+                                                              }
+                                                            }
+                                                            """
+                                            ),
+                                            @ExampleObject(
+                                                    name = "분석 실패",
+                                                    value = """
+                                                            {
+                                                              "data": {
+                                                                "specDocumentId": 1,
+                                                                "extractionStatus": "FAILED",
+                                                                "failureCode": "NO_FEATURE_EXTRACTED"
+                                                              }
+                                                            }
+                                                            """
+                                            )
+                                    }
+                            )
+                    ),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "404",
+                            description = """
+                                    - PROJECT-002: 프로젝트를 찾을 수 없거나 접근할 수 없음
+                                    - FEATURE-SPEC-ACCESS-001: 기능명세서를 찾을 수 없거나 접근할 수 없음
+
+                                    존재하지 않는 경우와 접근 권한이 없는 경우를 구분하지 않고
+                                    동일하게 응답합니다.
+                                    """,
+                            content = @Content(
+                                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                    examples = @ExampleObject(
+                                            name = "기능명세서 접근 실패",
+                                            value = """
+                                                    {
+                                                      "code": "FEATURE-SPEC-ACCESS-001",
+                                                      "message": "기능명세서를 찾을 수 없거나 접근할 수 없습니다."
+                                                    }
+                                                    """
+                                    )
+                            )
+                    )
+            }
+    )
+    ResponseEntity<ApiResponse<FeatureSpecStatusResponse>> getExtractionStatus(
+            @Parameter(
+                    name = "projectId",
+                    description = "기능명세서가 속한 프로젝트 ID",
+                    in = ParameterIn.PATH,
+                    required = true,
+                    example = "1"
+            )
+            Long projectId,
+
+            @Parameter(
+                    name = "specDocumentId",
+                    description = "업로드 응답으로 받은 기능명세서 ID",
+                    in = ParameterIn.PATH,
+                    required = true,
+                    example = "1"
+            )
+            Long specDocumentId,
+
+            @Parameter(hidden = true)
+            AuthPrincipal principal
     );
 }

@@ -33,19 +33,35 @@ public class SpecDocument extends BaseEntity {
     @Column(nullable = false, length = 255)
     private String fileName;
 
-    @Column(length = 512)
-    private String storageKey;
-
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ExtractionStatus extractionStatus;
 
+    // FAILED일 때만 채움. 그 외 상태에서는 null이어야 한다.
+    @Enumerated(EnumType.STRING)
+    @Column(length = 30)
+    private ExtractionFailureCode failureCode;
+
     @Builder
-    private SpecDocument(Project project, User user, String fileName, String storageKey) {
+    private SpecDocument(Project project, User user, String fileName) {
         this.project = project;
         this.user = user;
         this.fileName = fileName;
-        this.storageKey = storageKey;
         this.extractionStatus = ExtractionStatus.PENDING;
+    }
+
+    public void markProcessing() {
+        this.extractionStatus = ExtractionStatus.PROCESSING;
+        this.failureCode = null;
+    }
+
+    public void markCompleted() {
+        this.extractionStatus = ExtractionStatus.COMPLETED;
+        this.failureCode = null;
+    }
+
+    public void markFailed(ExtractionFailureCode failureCode) {
+        this.extractionStatus = ExtractionStatus.FAILED;
+        this.failureCode = failureCode;
     }
 }

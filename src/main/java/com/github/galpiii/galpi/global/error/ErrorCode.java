@@ -106,7 +106,12 @@ public enum ErrorCode {
     FEATURE_SPEC_PDF_INVALID("FEATURE-SPEC-PDF-001", HttpStatus.BAD_REQUEST, "정상적으로 열 수 있는 PDF 파일이 아닙니다."),
     FEATURE_SPEC_PDF_ENCRYPTED("FEATURE-SPEC-PDF-002", HttpStatus.BAD_REQUEST, "암호화되거나 비밀번호로 보호된 PDF는 업로드할 수 없습니다."),
     FEATURE_SPEC_PDF_PAGE_MISSING("FEATURE-SPEC-PDF-003", HttpStatus.BAD_REQUEST, "PDF 문서에는 한 페이지 이상이 필요합니다."),
-    FEATURE_SPEC_PDF_PAGE_LIMIT_EXCEEDED("FEATURE-SPEC-PDF-004", HttpStatus.BAD_REQUEST, "PDF 문서는 100페이지를 초과할 수 없습니다.");
+    FEATURE_SPEC_PDF_PAGE_LIMIT_EXCEEDED("FEATURE-SPEC-PDF-004", HttpStatus.BAD_REQUEST, "PDF 문서는 100페이지를 초과할 수 없습니다."),
+
+    // Feature Spec
+    FEATURE_SPEC_ALREADY_EXISTS("FEATURE-SPEC-EXISTS-001", HttpStatus.CONFLICT, "이미 등록된 기능명세서가 있습니다."),
+    FEATURE_SPEC_NOT_ACCESSIBLE("FEATURE-SPEC-ACCESS-001", HttpStatus.NOT_FOUND, "기능명세서를 찾을 수 없거나 접근할 수 없습니다."),
+    FEATURE_SPEC_EXTRACTION_BUSY("FEATURE-SPEC-EXTRACTION-001", HttpStatus.SERVICE_UNAVAILABLE, "분석 요청이 많아 지금은 처리할 수 없습니다. 잠시 후 다시 시도해 주세요.");
 
     private final String code;
     private final HttpStatus status;

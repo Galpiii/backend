@@ -101,10 +101,11 @@ public class Project extends BaseEntity {
     }
 
     /**
-     * 활성 명세서를 교체한다. 프로젝트당 활성 문서는 하나다.
+     * 활성 명세서를 가리킨다. 프로젝트당 문서는 하나다.
      *
-     * <p>이전 문서 행은 지우지 않는다. 추출 결과가 매달려 있고, 새 업로드가 실패해도 과거
-     * 문서를 잃지 않아야 한다.
+     * <p>{@code spec_documents}의 UNIQUE(project_id)가 두 번째 업로드를 409로 막으므로
+     * 실제로 교체가 일어나지는 않는다. 재업로드를 열게 되면 그 제약을 푸는 변경과 함께
+     * 이 자리의 교체 의미도 같이 정해야 한다.
      */
     public void attachSpecDocument(Long specDocumentId) {
         this.activeSpecDocumentId = specDocumentId;

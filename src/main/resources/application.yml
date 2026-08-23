@@ -2,17 +2,19 @@ server:
   port: ${SERVER_PORT}
 
 spring:
+  task:
+    execution:
+      mode: force
+    # 분석 워커의 poll()이 수집 전체를 동기로 실행해 스레드를 수십 분씩 잡는다. 기본값 1이면
+    # 그동안 토큰 폐기 배치가 한 번도 돌지 못한다. @Scheduled를 더 붙이면 이 값도 함께 올린다.
+    scheduling:
+      pool:
+        size: ${TASK_SCHEDULING_POOL_SIZE:2}
+
   servlet:
     multipart:
       max-file-size: 20MB
       max-request-size: 21MB
-
-  # 분석 워커의 poll()이 수집 전체를 동기로 실행해 스레드를 수십 분씩 잡는다. 기본값 1이면
-  # 그동안 토큰 폐기 배치가 한 번도 돌지 못한다. @Scheduled를 더 붙이면 이 값도 함께 올린다.
-  task:
-    scheduling:
-      pool:
-        size: ${TASK_SCHEDULING_POOL_SIZE:2}
 
   datasource:
     url: ${DB_URL}
@@ -47,6 +49,20 @@ spring:
 galpi:
   api-docs:
     enabled: ${API_DOCS_ENABLED:false}
+
+  openai:
+    api-key: ${OPENAI_API_KEY}
+    model: ${OPENAI_MODEL}
+    max-output-tokens: ${OPENAI_MAX_OUTPUT_TOKENS}
+    timeout: ${OPENAI_TIMEOUT}
+    max-attempts: ${OPENAI_MAX_ATTEMPTS}
+    analysis-budget: ${OPENAI_ANALYSIS_BUDGET}
+
+  feature-extraction:
+    core-pool-size: ${FEATURE_EXTRACTION_CORE_POOL_SIZE}
+    max-pool-size: ${FEATURE_EXTRACTION_MAX_POOL_SIZE}
+    queue-capacity: ${FEATURE_EXTRACTION_QUEUE_CAPACITY}
+    await-termination: ${FEATURE_EXTRACTION_AWAIT_TERMINATION}
 
   crypto:
     token:
