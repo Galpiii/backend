@@ -8,7 +8,14 @@ import java.util.Optional;
 
 public interface AiDataConsentRepository extends JpaRepository<AiDataConsent, Long> {
 
-    boolean existsByUserIdAndConsentVersion(Long userId, String consentVersion);
+    /**
+     * 이 버전의 <b>이 문구</b>에 동의했는지.
+     *
+     * <p>버전만 보면 같은 이름 아래 문구가 바뀌었을 때 옛 동의를 그대로 인정하게 된다. 해시가
+     * 어긋나면 사용자가 읽은 것과 지금 보내려는 것이 다르다는 뜻이라 동의로 치지 않는다.
+     */
+    boolean existsByUserIdAndConsentVersionAndNoticeHash(Long userId, String consentVersion,
+                                                         String noticeHash);
 
     Optional<AiDataConsent> findByUserIdAndConsentVersion(Long userId, String consentVersion);
 
