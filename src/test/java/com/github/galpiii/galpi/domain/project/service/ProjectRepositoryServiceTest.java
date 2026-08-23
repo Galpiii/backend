@@ -6,7 +6,9 @@ import com.github.galpiii.galpi.domain.github.entity.GithubRepository;
 import com.github.galpiii.galpi.domain.github.entity.RepositoryAccessStatus;
 import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
+import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.domain.github.service.GithubInstallationService;
+import com.github.galpiii.galpi.domain.github.service.GithubUserTokenService;
 import com.github.galpiii.galpi.domain.github.support.GithubRepositoryUrlParser;
 import com.github.galpiii.galpi.domain.project.dto.LinkedRepositoryResponse;
 import com.github.galpiii.galpi.domain.project.entity.Project;
@@ -65,6 +67,8 @@ class ProjectRepositoryServiceTest {
     private GithubRepositoryRepository repositoryRepository;
     @Mock
     private GithubInstallationService installationService;
+    @Mock
+    private GithubUserTokenService userTokenService;
 
     private ProjectRepositoryService service;
     private Project project;
@@ -76,7 +80,8 @@ class ProjectRepositoryServiceTest {
         service = new ProjectRepositoryService(
                 projectRepository, repositoryRepository, installationService,
                 new ProjectRepositoryLinkWriter(projectRepository, repositoryRepository),
-                new GithubRepositoryUrlParser(githubProperties()));
+                new GithubRepositoryUrlParser(githubProperties()),
+                userTokenService);
         project = Project.create(mock(User.class), "갈피");
         given(projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(PROJECT_ID, USER_ID)).willReturn(Optional.of(project));
         given(repositoryRepository.findAllByProjectIdAndGithubRepositoryIdIn(any(), any()))
@@ -261,6 +266,11 @@ class ProjectRepositoryServiceTest {
     @DisplayName("연결 해제")
     class Unlink {
 
+        @BeforeEach
+        void connected() {
+            given(userTokenService.isValid(USER_ID)).willReturn(true);
+        }
+
         @Test
         @DisplayName("프로젝트에 속한 저장소만 끊을 수 있다")
         void unlinksOwnRepository() {
@@ -282,6 +292,17 @@ class ProjectRepositoryServiceTest {
             assertThatThrownBy(() -> service.unlink(USER_ID, PROJECT_ID, 55L))
                     .isInstanceOf(NotFoundException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_REPOSITORY_NOT_FOUND);
+        }
+
+        @Test
+        @DisplayName("GitHub 연결이 끊겼으면 저장소를 지우지 않는다 — 연결이 없는 동안은 조회만 허용한다")
+        void rejectsWhileDisconnected() {
+            given(userTokenService.isValid(USER_ID)).willReturn(false);
+
+            assertThatThrownBy(() -> service.unlink(USER_ID, PROJECT_ID, 55L))
+                    .isInstanceOf(GithubReauthRequiredException.class);
+
+            verify(repositoryRepository, never()).delete(any());
         }
     }
 

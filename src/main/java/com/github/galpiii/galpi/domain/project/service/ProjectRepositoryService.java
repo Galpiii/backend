@@ -4,8 +4,10 @@ import com.github.galpiii.galpi.domain.github.client.dto.GithubRepositoryRespons
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.dto.SelectableRepositoryResponse;
 import com.github.galpiii.galpi.domain.github.entity.GithubRepository;
+import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
 import com.github.galpiii.galpi.domain.github.service.GithubInstallationService;
+import com.github.galpiii.galpi.domain.github.service.GithubUserTokenService;
 import com.github.galpiii.galpi.domain.github.support.GithubRepositoryUrlParser;
 import com.github.galpiii.galpi.domain.github.support.GithubRepositoryUrlParser.RepositoryUrl;
 import com.github.galpiii.galpi.domain.project.dto.LinkedRepositoryResponse;
@@ -42,6 +44,7 @@ public class ProjectRepositoryService {
     private final GithubInstallationService installationService;
     private final ProjectRepositoryLinkWriter linkWriter;
     private final GithubRepositoryUrlParser urlParser;
+    private final GithubUserTokenService userTokenService;
 
     @Transactional(readOnly = true)
     public List<LinkedRepositoryResponse> list(Long userId, Long projectId) {
@@ -126,9 +129,18 @@ public class ProjectRepositoryService {
      *
      * <p>지금은 물리 삭제다. 1C에서 {@code analysis_run_repositories}가 이 행을 FK로 참조하게
      * 되면 과거 분석 이력이 함께 끊기므로, 그때 소프트 삭제로 바꿀지 다시 판단해야 한다.
+     *
+     * <p>GitHub 연결이 끊긴 상태에서는 거부한다. 이 경로는 GitHub을 부르지 않아 토큰 없이도
+     * 동작하지만, 저장소 구성을 바꾸는 것은 연결이 살아 있을 때만 할 수 있는 일이다 —
+     * 연결이 끊긴 동안 허용되는 것은 조회뿐이다.
      */
     @Transactional
     public void unlink(Long userId, Long projectId, Long repositoryId) {
+        if (!userTokenService.isValid(userId)) {
+            log.info("[GitHub] 연결이 끊긴 상태에서 저장소 삭제를 시도 userId={} projectId={}",
+                    userId, projectId);
+            throw new GithubReauthRequiredException();
+        }
         Project project = ownedProject(userId, projectId);
         GithubRepository repository = repositoryRepository
                 .findByIdAndProjectId(repositoryId, project.getId())
