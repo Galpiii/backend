@@ -9,6 +9,7 @@ import com.github.galpiii.galpi.domain.analysis.entity.AnalysisRunTargetStatus;
 import com.github.galpiii.galpi.domain.analysis.repository.AnalysisConfigRepository;
 import com.github.galpiii.galpi.domain.analysis.repository.AnalysisRunTargetRepository;
 import com.github.galpiii.galpi.domain.analysis.service.AnalysisRunWriter;
+import com.github.galpiii.galpi.domain.collection.CollectionAbandonedException;
 import com.github.galpiii.galpi.domain.collection.RepositoryCollector;
 import com.github.galpiii.galpi.domain.collection.RepositoryCollector.RepositoryCollectionResult;
 import com.github.galpiii.galpi.domain.collection.entity.IncompleteReason;
@@ -141,7 +142,7 @@ public class AnalysisRunExecutor {
             // 저장소 사이가 체크포인트다. 프로젝트가 지워졌거나 작업이 취소됐으면 남은
             // 저장소는 시작하지 않는다. 저장소 하나가 몇 분씩 걸려 여기서 보지 않으면
             // 삭제 직후에도 프로젝트 전체를 끝까지 수집한다.
-            if (writer.isAbandoned(run.getId())) {
+            if (progress.abandoned || writer.isAbandoned(run.getId())) {
                 log.info("[분석] 취소·삭제를 확인해 남은 저장소를 중단한다 runId={} remaining={}",
                         run.getId(), targets.size() - index);
                 progress.abandoned = true;
@@ -229,12 +230,20 @@ public class AnalysisRunExecutor {
                             config == null ? AnalysisConfig.DEFAULT_PR_LIMIT : config.getPrLimit(),
                             config == null ? null : config.getPrSince(),
                             config == null ? List.of() : config.getIncludePaths(),
-                            config == null ? List.of() : config.getExcludePaths()));
+                            config == null ? List.of() : config.getExcludePaths(),
+                            // 수집이 몇 분씩 걸리는 동안 취소됐는지 인계 직전에 다시 묻는다.
+                            () -> writer.isAbandoned(run.getId())));
 
             writer.refreshRepositorySnapshot(repository.getId(),
                     toSnapshot(result.repository(), installationId));
             writer.completeTarget(target.getId(), result);
             progress.completed++;
+        } catch (CollectionAbandonedException e) {
+            // 실패가 아니다. 저장소 상태는 그대로 두고 남은 진행만 접는다 — 취소된 작업의
+            // 저장소별 행을 실패로 덮으면 왜 멈췄는지 화면에서 읽을 수 없게 된다.
+            log.info("[분석] 인계 직전에 취소를 확인해 저장소 수집을 접는다 runId={} repositoryId={}",
+                    run.getId(), repository.getId());
+            progress.abandoned = true;
         } catch (GithubRateLimitedException e) {
             // 여기서 자지 않는다. 작업을 멈추고 사용자가 재시도한다.
             log.warn("[분석] rate limit으로 수집을 중단한다 runId={} repositoryId={} retryAfter={}s",

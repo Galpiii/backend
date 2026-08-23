@@ -7,6 +7,7 @@ import com.github.galpiii.galpi.domain.analysis.entity.AnalysisRunTarget;
 import com.github.galpiii.galpi.domain.analysis.repository.AnalysisConfigRepository;
 import com.github.galpiii.galpi.domain.analysis.repository.AnalysisRunTargetRepository;
 import com.github.galpiii.galpi.domain.analysis.service.AnalysisRunWriter;
+import com.github.galpiii.galpi.domain.collection.CollectionAbandonedException;
 import com.github.galpiii.galpi.domain.collection.RepositoryCollector;
 import com.github.galpiii.galpi.domain.collection.RepositoryCollector.RepositoryCollectionResult;
 import com.github.galpiii.galpi.domain.collection.entity.IncompleteReason;
@@ -329,6 +330,41 @@ class AnalysisRunExecutorTest {
             verify(repositoryCollector).collect(any());
             verify(writer).completeTarget(eq(1L), any());
             verify(writer, never()).startTarget(2L);
+        }
+
+        @Test
+        @DisplayName("수집에 취소 확인 콜백을 함께 넘긴다 — 저장소 하나에 몇 분이 걸린다")
+        void passesLiveCancellationCheckToCollector() {
+            givenTargets(target(1L, 11L, "wb/personal", PERSONAL_INSTALLATION));
+            given(writer.isAbandoned(RUN_ID)).willReturn(false);
+
+            executor.execute(RUN_ID);
+
+            ArgumentCaptor<RepositoryCollector.CollectionRequest> request =
+                    ArgumentCaptor.forClass(RepositoryCollector.CollectionRequest.class);
+            verify(repositoryCollector).collect(request.capture());
+            // 콜백은 시작 시점의 스냅샷이 아니라 그때그때의 상태를 본다.
+            assertThat(request.getValue().abandoned().getAsBoolean()).isFalse();
+            given(writer.isAbandoned(RUN_ID)).willReturn(true);
+            assertThat(request.getValue().abandoned().getAsBoolean()).isTrue();
+        }
+
+        @Test
+        @DisplayName("인계 직전에 취소가 확인되면 그 저장소를 실패로 기록하지 않는다")
+        void doesNotFailTargetWhenHandoffIsAbandoned() {
+            givenTargets(
+                    target(1L, 11L, "wb/first", PERSONAL_INSTALLATION),
+                    target(2L, 22L, "wb/second", PERSONAL_INSTALLATION));
+            given(writer.isAbandoned(RUN_ID)).willReturn(false);
+            willThrow(new CollectionAbandonedException()).given(repositoryCollector).collect(any());
+
+            executor.execute(RUN_ID);
+
+            verify(writer, never()).failTarget(anyLong(), anyString(), anyString());
+            verify(writer, never()).completeTarget(anyLong(), any());
+            // 남은 저장소도 시작하지 않고, 상태는 CANCELLED로 남긴다.
+            verify(writer, never()).startTarget(2L);
+            verify(writer, never()).finishRun(anyLong(), any());
         }
 
         @Test
