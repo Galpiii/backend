@@ -31,14 +31,6 @@ class GithubTokenRevocationWriter {
 
     private final GithubTokenRevocationRepository revocationRepository;
 
-    /** 폐기에 실패한 암호문을 재시도 큐에 남긴다. 외부 호출과 분리된 짧은 트랜잭션이다. */
-    @Transactional
-    void enqueueFailedToken(Long userId, String encryptedAccessToken, int tokenVersion,
-                            String cause) {
-        revocationRepository.save(GithubTokenRevocation.pending(
-                userId, encryptedAccessToken, tokenVersion, cause));
-    }
-
     @Transactional(readOnly = true)
     List<Long> findDueIds(Limit limit) {
         return revocationRepository.findDueIds(
@@ -53,8 +45,12 @@ class GithubTokenRevocationWriter {
                         row.getEncryptedAccessToken(), row.getTokenVersion(), row.getAttempts()));
     }
 
+    /**
+     * 더 폐기할 것이 없어진 항목을 큐에서 지운다. 폐기에 성공했거나, grant 폐기가 먼저 그
+     * 토큰을 죽였거나 — 어느 쪽이든 남겨 둘 이유가 없다.
+     */
     @Transactional
-    void recordSuccess(Long id) {
+    void discard(Long id) {
         revocationRepository.findById(id).ifPresent(revocationRepository::delete);
     }
 

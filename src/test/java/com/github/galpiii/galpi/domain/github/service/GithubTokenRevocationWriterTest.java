@@ -45,9 +45,10 @@ class GithubTokenRevocationWriterTest {
         writer = new GithubTokenRevocationWriter(revocationRepository);
     }
 
+    /** 한 번 실패해 배치가 다시 집어 갈 상태의 행. */
     private GithubTokenRevocation row() {
-        GithubTokenRevocation row = GithubTokenRevocation.pending(
-                USER_ID, "ciphertext", 1, "GithubApiException");
+        GithubTokenRevocation row = GithubTokenRevocation.intent(USER_ID, "ciphertext", 1);
+        row.recordFailure("GithubApiException");
         given(revocationRepository.findById(ROW_ID)).willReturn(Optional.of(row));
         return row;
     }
@@ -70,11 +71,11 @@ class GithubTokenRevocationWriterTest {
     }
 
     @Test
-    @DisplayName("성공을 기록하면 큐에서 지운다")
-    void successRemovesTheRow() {
+    @DisplayName("더 폐기할 것이 없으면 큐에서 지운다")
+    void discardRemovesTheRow() {
         GithubTokenRevocation row = row();
 
-        writer.recordSuccess(ROW_ID);
+        writer.discard(ROW_ID);
 
         verify(revocationRepository).delete(row);
     }
@@ -124,7 +125,7 @@ class GithubTokenRevocationWriterTest {
     void recordingIsSafeAfterAnotherInstanceFinished() {
         rowIsGone();
 
-        writer.recordSuccess(ROW_ID);
+        writer.discard(ROW_ID);
         writer.recordFailure(ROW_ID, "GithubApiException");
         writer.markDead(ROW_ID, "DECRYPT_FAILED");
 

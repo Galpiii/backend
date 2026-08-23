@@ -132,6 +132,8 @@ class GithubDisconnectIntegrationTest extends IntegrationTestSupport {
                 .isEmpty();
         assertThat(userRepository.findById(user.getId()).orElseThrow()
                 .getGithubConnectionStatus()).isEqualTo(GithubConnectionStatus.DISCONNECTED);
+        // 해제와 함께 남겼던 폐기 의도는 grant가 죽인 뒤라 할 일이 없다.
+        assertThat(revocationRepository.findAll()).isEmpty();
     }
 
     @Test
@@ -191,13 +193,17 @@ class GithubDisconnectIntegrationTest extends IntegrationTestSupport {
         assertThatThrownBy(() -> connectionService.disconnect(user.getId()))
                 .isInstanceOf(DataIntegrityViolationException.class);
 
-        // 셋 다 그대로여야 한다. 하나라도 커밋됐으면 사용자는 반쪽 상태에 갇힌다.
+        // 넷 다 그대로여야 한다. 하나라도 커밋됐으면 사용자는 반쪽 상태에 갇힌다.
         assertThat(tokenRepository.findByUserIdAndProvider(user.getId(), OAuthProvider.GITHUB))
                 .isPresent();
         assertThat(userRepository.findById(user.getId()).orElseThrow()
                 .getGithubConnectionStatus()).isEqualTo(GithubConnectionStatus.CONNECTED);
         assertThat(runRepository.findById(runId).orElseThrow().getStatus())
                 .isEqualTo(AnalysisRunStatus.QUEUED);
+        // 폐기 의도도 함께 되돌아간다. 남으면 아직 연결된 사용자의 토큰을 배치가 죽인다.
+        assertThat(revocationRepository.findAll()).isEmpty();
+        // GitHub도 부르지 않았다. 되돌릴 수 없는 호출은 커밋 뒤에만 나간다.
+        verify(apiClient, never()).revokeUserGrant(any());
     }
 
     @Test
@@ -209,9 +215,12 @@ class GithubDisconnectIntegrationTest extends IntegrationTestSupport {
         connectionService.disconnect(user.getId());
         assertThat(revocationRepository.findAll()).hasSize(1);
 
-        // 사용자가 다시 승인해 새 토큰을 받은 뒤 배치가 밀린 항목을 가져간다.
-        userTokenService.save(userRepository.findById(user.getId()).orElseThrow(),
-                NEW_TOKEN, Duration.ofHours(8));
+        // 사용자가 다시 승인해 새 토큰을 받은 뒤 배치가 밀린 항목을 가져간다. 연결 확정과
+        // 마찬가지로 토큰 저장과 상태 전이를 함께 세운다.
+        User reconnected = userRepository.findById(user.getId()).orElseThrow();
+        userTokenService.save(reconnected, NEW_TOKEN, Duration.ofHours(8));
+        reconnected.connectGithub();
+        userRepository.saveAndFlush(reconnected);
         dueNow();
         tokenRevoker.retryPending();
 
@@ -226,9 +235,8 @@ class GithubDisconnectIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("밀린 폐기는 언제 실행돼도 토큰 하나만 죽인다")
     void retryOnlyRevokesTheSingleToken() {
-        GithubTokenRevocation pending = GithubTokenRevocation.pending(
-                user.getId(), tokenCipher.encrypt(TOKEN), tokenCipher.currentVersion(),
-                "GithubApiException");
+        GithubTokenRevocation pending = GithubTokenRevocation.intent(
+                user.getId(), tokenCipher.encrypt(TOKEN), tokenCipher.currentVersion());
         ReflectionTestUtils.setField(pending, "nextAttemptAt", OffsetDateTime.now().minusMinutes(1));
         revocationRepository.saveAndFlush(pending);
 

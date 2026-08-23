@@ -17,6 +17,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.data.domain.Limit;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.security.SecureRandom;
 import java.time.OffsetDateTime;
@@ -27,10 +28,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.inOrder;
@@ -73,50 +72,73 @@ class GithubTokenRevokerTest {
     @DisplayName("연결 해제 시점")
     class OnDisconnect {
 
-        @Test
-        @DisplayName("authorization 폐기에 성공하면 큐에 남기지 않는다")
-        void doesNotEnqueueOnSuccess() {
-            assertThat(revoker.revokeGrantOrEnqueueToken(USER_ID, TOKEN)).isTrue();
+        private static final long REVOCATION_ID = 31L;
 
-            verify(apiClient).revokeUserGrant(TOKEN);
-            verify(writer, never()).enqueueFailedToken(anyLong(), any(), anyInt(), any());
+        private ArgumentCaptor<GithubTokenRevocation> enqueue() {
+            ArgumentCaptor<GithubTokenRevocation> saved =
+                    ArgumentCaptor.forClass(GithubTokenRevocation.class);
+            given(revocationRepository.save(saved.capture())).willAnswer(call -> {
+                GithubTokenRevocation row = call.getArgument(0);
+                ReflectionTestUtils.setField(row, "id", REVOCATION_ID);
+                return row;
+            });
+            return saved;
         }
 
         @Test
-        @DisplayName("실패하면 grant가 아니라 토큰 폐기를 큐에 남긴다 — 미룬 grant 폐기는 재연결한 권한을 죽인다")
-        void enqueuesTokenRevocationOnFailure() {
-            willThrow(new GithubApiException()).given(apiClient).revokeUserGrant(TOKEN);
+        @DisplayName("GitHub을 부르기 전에 폐기 의도를 남긴다 — 호출자의 트랜잭션에 참여한다")
+        void enqueuesIntentWithoutCallingGithub() {
+            enqueue();
 
-            assertThat(revoker.revokeGrantOrEnqueueToken(USER_ID, TOKEN)).isFalse();
+            assertThat(revoker.enqueueDisconnectIntent(USER_ID, TOKEN)).isEqualTo(REVOCATION_ID);
 
-            verify(writer).enqueueFailedToken(eq(USER_ID), any(), anyInt(),
-                    eq("GithubApiException"));
+            // 짧은 트랜잭션을 따로 여는 writer가 아니라 리포지토리를 그대로 쓴다.
+            verify(apiClient, never()).revokeUserGrant(any());
+            verify(revocationRepository).save(any());
         }
 
         @Test
-        @DisplayName("큐 적재는 GitHub 호출과 분리된 트랜잭션에 맡긴다 — 외부 응답을 트랜잭션 안에서 기다리지 않는다")
-        void keepsHttpCallOutsideTransaction() {
-            willThrow(new GithubApiException()).given(apiClient).revokeUserGrant(TOKEN);
+        @DisplayName("큐에 남기는 토큰도 암호문이고, 시도한 적 없는 건으로 남는다")
+        void enqueuesCiphertextAsNeverAttempted() {
+            ArgumentCaptor<GithubTokenRevocation> saved = enqueue();
 
-            revoker.revokeGrantOrEnqueueToken(USER_ID, TOKEN);
+            revoker.enqueueDisconnectIntent(USER_ID, TOKEN);
 
-            // 성공 경로에는 DB 쓰기가 없고, 실패 경로만 짧은 쓰기 트랜잭션으로 넘어간다.
-            verify(revocationRepository, never()).save(any());
-            verify(writer).enqueueFailedToken(anyLong(), any(), anyInt(), any());
-        }
-
-        @Test
-        @DisplayName("큐에 남기는 토큰도 암호문이다 — 평문이 DB에 눕지 않는다")
-        void enqueuesCiphertextOnly() {
-            willThrow(new GithubApiException()).given(apiClient).revokeUserGrant(TOKEN);
-
-            revoker.revokeGrantOrEnqueueToken(USER_ID, TOKEN);
-
-            ArgumentCaptor<String> ciphertext = ArgumentCaptor.forClass(String.class);
-            verify(writer).enqueueFailedToken(eq(USER_ID), ciphertext.capture(), anyInt(), any());
-            assertThat(ciphertext.getValue())
+            assertThat(saved.getValue().getUserId()).isEqualTo(USER_ID);
+            assertThat(saved.getValue().getAttempts()).isZero();
+            assertThat(saved.getValue().getEncryptedAccessToken())
                     .doesNotContain(TOKEN)
                     .doesNotContain("ghu_");
+            // 커밋 직후의 grant 폐기가 먼저 끝나도록 첫 시도를 조금 미룬다.
+            assertThat(saved.getValue().getNextAttemptAt()).isAfter(OffsetDateTime.now());
+        }
+
+        @Test
+        @DisplayName("authorization 폐기에 성공하면 남겨 둔 의도를 지운다")
+        void discardsIntentOnSuccess() {
+            assertThat(revoker.revokeGrantAfterDisconnect(USER_ID, TOKEN, REVOCATION_ID)).isTrue();
+
+            verify(apiClient).revokeUserGrant(TOKEN);
+            verify(writer).discard(REVOCATION_ID);
+        }
+
+        @Test
+        @DisplayName("실패하면 의도를 그대로 둔다 — 배치가 토큰 하나만 폐기한다")
+        void keepsIntentOnFailure() {
+            willThrow(new GithubApiException()).given(apiClient).revokeUserGrant(TOKEN);
+
+            assertThat(revoker.revokeGrantAfterDisconnect(USER_ID, TOKEN, REVOCATION_ID)).isFalse();
+
+            verify(writer, never()).discard(anyLong());
+        }
+
+        @Test
+        @DisplayName("의도를 지우지 못해도 폐기 성공을 실패로 뒤집지 않는다 — 배치가 죽은 토큰을 한 번 더 부를 뿐이다")
+        void survivesFailureToDiscardIntent() {
+            willThrow(new CannotAcquireLockException("delete failed"))
+                    .given(writer).discard(REVOCATION_ID);
+
+            assertThat(revoker.revokeGrantAfterDisconnect(USER_ID, TOKEN, REVOCATION_ID)).isTrue();
         }
     }
 
@@ -213,7 +235,7 @@ class GithubTokenRevokerTest {
             InOrder order = inOrder(writer, apiClient);
             order.verify(writer).load(ROW_ID);
             order.verify(apiClient).revokeUserToken(TOKEN);
-            order.verify(writer).recordSuccess(ROW_ID);
+            order.verify(writer).discard(ROW_ID);
         }
 
         @Test
@@ -226,7 +248,7 @@ class GithubTokenRevokerTest {
             assertThat(revoker.retryPending()).isZero();
 
             verify(writer).recordFailure(ROW_ID, "GithubApiException");
-            verify(writer, never()).recordSuccess(ROW_ID);
+            verify(writer, never()).discard(ROW_ID);
         }
 
         @Test

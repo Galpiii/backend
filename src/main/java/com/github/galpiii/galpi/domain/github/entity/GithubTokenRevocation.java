@@ -17,12 +17,13 @@ import java.time.OffsetDateTime;
  * GitHub에 폐기를 요청하지 못한 user access token.
  *
  * <p>연결 해제는 GitHub 장애로 막히면 안 되지만, 그렇다고 로컬 원본만 지우고 끝내면 외부에
- * 살아 있는 토큰을 다시는 회수할 수 없다. 그래서 폐기에 실패한 토큰은 암호문 상태로 여기에
- * 남겨 두고 배치가 재시도한다.
+ * 살아 있는 토큰을 다시는 회수할 수 없다. 그래서 원본을 지울 때 암호문을 여기에 함께 남기고,
+ * 폐기가 끝나지 않은 채로 남은 것을 배치가 가져간다.
  *
- * <p>들어오는 경로는 둘이다. 연결 해제에서 authorization 폐기가 실패해 남은 토큰과, 재로그인으로
- * 밀려나 아직 폐기를 시도해 보지도 않은 토큰({@link #superseded})이다. {@code attempts}가 0이면
- * 후자다 — 실패한 적이 없으므로 폐기율 같은 지표에서 실패로 세면 안 된다.
+ * <p>들어오는 경로는 둘 다 <b>아직 폐기를 시도해 보지 않은</b> 토큰이다. 연결 해제가 로컬
+ * 원본을 지우면서 함께 남기는 의도({@link #intent})와, 재로그인으로 밀려난 이전
+ * 토큰({@link #superseded})이다. 그래서 새로 만들어진 행의 {@code attempts}는 언제나 0이다 —
+ * 실패한 적이 없으므로 폐기율 같은 지표에서 실패로 세면 안 된다.
  *
  * <p><b>이 큐가 하는 폐기는 언제나 토큰 하나짜리다</b>({@code DELETE /applications/{id}/token}).
  * authorization 전체 폐기({@code .../grant})는 이 사용자의 <b>모든</b> 토큰을 죽이므로, 큐에
@@ -81,13 +82,19 @@ public class GithubTokenRevocation extends BaseEntity {
     }
 
     /**
-     * 폐기를 시도했으나 실패했다. 한 번 실패한 원인은 대개 바로 사라지지 않으므로 첫 재시도를
-     * 조금 미룬다.
+     * 연결 해제가 로컬 원본을 지우면서 함께 남기는 폐기 의도다.
+     *
+     * <p>원본을 지우고 나면 평문은 이 요청의 메모리에만 남는다. 그 뒤에 프로세스가 죽으면 외부에
+     * 살아 있는 토큰을 회수할 수단이 사라지므로, <b>지우는 그 트랜잭션에서</b> 암호문을 함께
+     * 남긴다. 커밋 뒤에 grant 폐기가 성공하면 호출자가 이 행을 지운다.
+     *
+     * <p>다음 회차로 바로 내보내지는 않는다. 커밋 직후의 grant 폐기 시도와 겹치면 배치가 곧
+     * 죽을 토큰을 한 번 더 부르게 된다. 그 호출이 해로운 것은 아니지만 굳이 할 이유도 없다.
      */
-    public static GithubTokenRevocation pending(Long userId, String encryptedAccessToken,
-                                                int tokenVersion, String lastError) {
+    public static GithubTokenRevocation intent(Long userId, String encryptedAccessToken,
+                                               int tokenVersion) {
         return new GithubTokenRevocation(userId, encryptedAccessToken, tokenVersion,
-                1, OffsetDateTime.now().plus(FIRST_BACKOFF), lastError);
+                0, OffsetDateTime.now().plus(FIRST_BACKOFF), null);
     }
 
     /**
