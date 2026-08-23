@@ -2,6 +2,7 @@ package com.github.galpiii.galpi.domain.consent.service;
 
 import com.github.galpiii.galpi.domain.analysis.repository.AnalysisRunRepository;
 import com.github.galpiii.galpi.domain.analysis.service.AnalysisRunService;
+import com.github.galpiii.galpi.domain.consent.AiDataNotice;
 import com.github.galpiii.galpi.domain.consent.config.ConsentProperties;
 import com.github.galpiii.galpi.domain.consent.dto.AiDataConsentStatusResponse;
 import com.github.galpiii.galpi.domain.consent.entity.AiDataConsent;
@@ -102,7 +103,12 @@ class AiDataConsentIntegrationTest extends IntegrationTestSupport {
                 user.getId(), properties.aiDataVersion()))
                 .isPresent()
                 .get()
-                .satisfies(consent -> assertThat(consent.getAgreedAt()).isNotNull());
+                .satisfies(consent -> {
+                    assertThat(consent.getAgreedAt()).isNotNull();
+                    // 버전만으로는 무엇에 동의했는지 증명되지 않는다. 문구 해시가 함께 남는다.
+                    assertThat(consent.getNoticeHash())
+                            .isEqualTo(AiDataNotice.hash(properties.aiDataVersion()));
+                });
 
         assertThat(analysisRunService.create(user.getId(), projectId).analysisRunId()).isNotNull();
     }
@@ -111,7 +117,7 @@ class AiDataConsentIntegrationTest extends IntegrationTestSupport {
     @DisplayName("정책 버전이 올라가면 이전 버전에만 동의한 사용자는 다시 막힌다")
     void requiresReconsentAfterVersionBump() {
         // 현재 버전이 올라간 상황을 이전 버전 동의만 남겨 재현한다.
-        consentRepository.save(AiDataConsent.agree(user, OLD_VERSION));
+        consentRepository.save(AiDataConsent.agree(user, OLD_VERSION, "old-notice-hash"));
 
         assertThatThrownBy(() -> analysisRunService.create(user.getId(), projectId))
                 .isInstanceOf(ForbiddenException.class);

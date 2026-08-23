@@ -14,7 +14,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Optional;
+import java.util.List;
 
 /**
  * 외부 LLM 전송 동의.
@@ -24,7 +24,8 @@ import java.util.Optional;
  *
  * <p>동의는 시각이 아니라 <b>버전</b>으로 관리한다. 제공자나 보관 정책이 바뀌면
  * {@code galpi.consent.ai-data-version}을 올리는 것만으로 기존 사용자 전체가 재동의 대상이
- * 된다.
+ * 된다. 그 버전이 가리키는 문구는 {@link AiDataNotice}가 들고 있고, 동의 행에는 그 문구의
+ * 해시가 함께 남는다.
  */
 @Slf4j
 @Service
@@ -38,16 +39,18 @@ public class AiDataConsentService {
     @Transactional(readOnly = true)
     public AiDataConsentStatusResponse status(Long userId) {
         String current = properties.aiDataVersion();
-        Optional<AiDataConsent> latest =
-                consentRepository.findFirstByUserIdOrderByAgreedAtDescIdDesc(userId);
-        boolean agreed = consentRepository.existsByUserIdAndConsentVersion(userId, current);
+        // 한 번만 읽는다. 두 번 물으면 그 사이의 커밋 때문에 서로 모순되는 응답이 나온다.
+        List<AiDataConsent> history = consentRepository.findAllByUserIdOrderByAgreedAtDescIdDesc(userId);
+        AiDataConsent latest = history.isEmpty() ? null : history.getFirst();
+        boolean agreed = history.stream()
+                .anyMatch(consent -> current.equals(consent.getConsentVersion()));
 
         return new AiDataConsentStatusResponse(
                 current,
                 agreed,
-                latest.map(AiDataConsent::getConsentVersion).orElse(null),
-                latest.map(AiDataConsent::getAgreedAt).orElse(null),
-                AiDataNotice.TEXT);
+                latest == null ? null : latest.getConsentVersion(),
+                latest == null ? null : latest.getAgreedAt(),
+                AiDataNotice.text(current));
     }
 
     /**
@@ -70,11 +73,15 @@ public class AiDataConsentService {
 
         if (!consentRepository.existsByUserIdAndConsentVersion(userId, current)) {
             try {
-                writer.save(userId, current);
+                writer.save(userId, current, AiDataNotice.hash(current));
                 log.info("[동의] 외부 AI 전송에 동의 userId={} version={}", userId, current);
             } catch (DataIntegrityViolationException e) {
-                // 같은 사용자의 동의 요청 둘이 겹쳤다. 먼저 커밋된 행이 그대로 정답이다.
-                // 저장을 별도 트랜잭션으로 떼어 뒀기에 여기서 삼키고 상태를 다시 읽을 수 있다.
+                // 중복 키만 삼킨다. 무결성 위반은 FK나 제약 불일치로도 나는데, 그것까지 삼키면
+                // 진짜 고장을 agreed=false인 200 응답으로 감춘다. 행이 실제로 생겼는지 확인하고,
+                // 없으면 원래 예외를 그대로 올린다.
+                if (consentRepository.findByUserIdAndConsentVersion(userId, current).isEmpty()) {
+                    throw e;
+                }
                 log.info("[동의] 동시 동의 요청을 하나로 합친다 userId={} version={}", userId, current);
             }
         }

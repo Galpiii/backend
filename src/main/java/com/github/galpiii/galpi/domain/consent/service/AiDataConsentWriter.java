@@ -25,9 +25,9 @@ class AiDataConsentWriter {
     private final UserRepository userRepository;
 
     @Transactional
-    void save(Long userId, String consentVersion) {
+    void save(Long userId, String consentVersion, String noticeHash) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UnauthorizedException(ErrorCode.UNAUTHORIZED));
-        consentRepository.saveAndFlush(AiDataConsent.agree(user, consentVersion));
+        consentRepository.saveAndFlush(AiDataConsent.agree(user, consentVersion, noticeHash));
     }
 }

@@ -22,6 +22,11 @@ import java.time.OffsetDateTime;
  *
  * <p>이전 버전 행은 지우지 않는다. 재동의는 새 행을 더하는 것이고, "그때 무엇에 동의했는지"는
  * 나중에 되짚을 수 있어야 한다.
+ *
+ * <p>그래서 버전만으로는 부족하다. 버전은 이름일 뿐이라 문구가 몰래 바뀌면 같은 이름이 다른
+ * 내용을 가리킨다. 사용자가 실제로 본 문구의 해시를 함께 남겨,
+ * {@link com.github.galpiii.galpi.domain.consent.AiDataNotice}가 보관한 원문과 대조할 수 있게
+ * 한다.
  */
 @Entity
 @Getter
@@ -36,16 +41,21 @@ public class AiDataConsent extends BaseEntity {
     @Column(nullable = false, length = 20)
     private String consentVersion;
 
+    /** 동의 시점 문구의 SHA-256. 원문은 {@code AiDataNotice}가 버전별로 들고 있다. */
+    @Column(nullable = false, length = 64)
+    private String noticeHash;
+
     @Column(nullable = false)
     private OffsetDateTime agreedAt;
 
-    private AiDataConsent(User user, String consentVersion) {
+    private AiDataConsent(User user, String consentVersion, String noticeHash) {
         this.user = user;
         this.consentVersion = consentVersion;
+        this.noticeHash = noticeHash;
         this.agreedAt = OffsetDateTime.now();
     }
 
-    public static AiDataConsent agree(User user, String consentVersion) {
-        return new AiDataConsent(user, consentVersion);
+    public static AiDataConsent agree(User user, String consentVersion, String noticeHash) {
+        return new AiDataConsent(user, consentVersion, noticeHash);
     }
 }
