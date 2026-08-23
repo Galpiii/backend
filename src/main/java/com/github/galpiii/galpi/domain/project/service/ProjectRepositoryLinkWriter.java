@@ -50,7 +50,7 @@ public class ProjectRepositoryLinkWriter {
     public List<GithubRepository> link(Long userId, Long projectId,
                                        Collection<Long> githubRepositoryIds,
                                        Map<Long, RepositorySnapshot> accessible) {
-        Project project = projectRepository.findByIdAndUserId(projectId, userId)
+        Project project = projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(projectId, userId)
                 .orElseThrow(() -> new NotFoundException(ErrorCode.PROJECT_NOT_FOUND));
 
         List<GithubRepository> already = repositoryRepository
@@ -63,7 +63,13 @@ public class ProjectRepositoryLinkWriter {
                 .map(id -> GithubRepository.link(project, accessible.get(id)))
                 .toList();
 
-        return saveOrConflict(linked, projectId);
+        List<GithubRepository> saved = saveOrConflict(linked, projectId);
+
+        // 저장소가 붙은 순간 프로젝트는 더 이상 DRAFT가 아니다. 위저드도 ③ 단계로 넘어간다.
+        // 마지막 저장소를 빼도 DRAFT로 되돌리지는 않는다 — 되돌릴 수 있는 전이가 아니다.
+        project.markRepositoriesLinked();
+
+        return saved;
     }
 
     /**

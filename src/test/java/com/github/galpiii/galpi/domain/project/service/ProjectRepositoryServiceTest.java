@@ -1,15 +1,19 @@
 package com.github.galpiii.galpi.domain.project.service;
 
+import com.github.galpiii.galpi.domain.github.client.dto.GithubRepositoryResponse;
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.entity.GithubRepository;
 import com.github.galpiii.galpi.domain.github.entity.RepositoryAccessStatus;
 import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
+import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.service.GithubInstallationService;
+import com.github.galpiii.galpi.domain.github.support.GithubRepositoryUrlParser;
 import com.github.galpiii.galpi.domain.project.dto.LinkedRepositoryResponse;
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.domain.user.entity.User;
 import com.github.galpiii.galpi.global.error.ErrorCode;
+import com.github.galpiii.galpi.global.error.exception.BadRequestException;
 import com.github.galpiii.galpi.global.error.exception.ConflictException;
 import com.github.galpiii.galpi.global.error.exception.ForbiddenException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
@@ -26,6 +30,8 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.sql.SQLException;
+import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -69,13 +75,22 @@ class ProjectRepositoryServiceTest {
         // 않지만, 검증하려는 것은 트랜잭션 경계가 아니라 저장 전 순서다.
         service = new ProjectRepositoryService(
                 projectRepository, repositoryRepository, installationService,
-                new ProjectRepositoryLinkWriter(projectRepository, repositoryRepository));
+                new ProjectRepositoryLinkWriter(projectRepository, repositoryRepository),
+                new GithubRepositoryUrlParser(githubProperties()));
         project = Project.create(mock(User.class), "갈피");
-        given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID)).willReturn(Optional.of(project));
+        given(projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(PROJECT_ID, USER_ID)).willReturn(Optional.of(project));
         given(repositoryRepository.findAllByProjectIdAndGithubRepositoryIdIn(any(), any()))
                 .willReturn(List.of());
         given(repositoryRepository.saveAllAndFlush(any()))
                 .willAnswer(invocation -> List.copyOf(invocation.getArgument(0)));
+    }
+
+    private static GithubAppProperties githubProperties() {
+        return new GithubAppProperties(
+                "12345", "galpi-app", "Iv1.client", "secret", "pem", "https://api.galpi.dev",
+                "2022-11-28", "https://api.github.com", "https://github.com", "Galpi",
+                List.of("https://galpi.dev"), "https://galpi.dev/auth/callback",
+                Duration.ofSeconds(5), Duration.ofSeconds(15), 2, 10);
     }
 
     private static RepositorySnapshot snapshot(long id, long installationId, String fullName) {
@@ -178,7 +193,7 @@ class ProjectRepositoryServiceTest {
         @Test
         @DisplayName("남의 프로젝트에는 연결할 수 없다")
         void rejectsForeignProject() {
-            given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID)).willReturn(Optional.empty());
+            given(projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(PROJECT_ID, USER_ID)).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> service.link(USER_ID, PROJECT_ID, List.of(1L)))
                     .isInstanceOf(NotFoundException.class)
@@ -192,14 +207,14 @@ class ProjectRepositoryServiceTest {
         void rechecksOwnershipBeforeSaving() {
             given(installationService.accessibleSnapshots(eq(USER_ID), any()))
                     .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
-            given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID))
+            given(projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(PROJECT_ID, USER_ID))
                     .willReturn(Optional.of(project), Optional.empty());
 
             assertThatThrownBy(() -> service.link(USER_ID, PROJECT_ID, List.of(1L)))
                     .isInstanceOf(NotFoundException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_FOUND);
 
-            verify(projectRepository, times(2)).findByIdAndUserId(PROJECT_ID, USER_ID);
+            verify(projectRepository, times(2)).findByIdAndOwnerIdAndDeletedAtIsNull(PROJECT_ID, USER_ID);
             verify(repositoryRepository, never()).saveAllAndFlush(any());
         }
 
@@ -267,6 +282,99 @@ class ProjectRepositoryServiceTest {
             assertThatThrownBy(() -> service.unlink(USER_ID, PROJECT_ID, 55L))
                     .isInstanceOf(NotFoundException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_REPOSITORY_NOT_FOUND);
+        }
+    }
+
+    @Nested
+    @DisplayName("URL로 저장소 찾기")
+    class Resolve {
+
+        private GithubRepositoryResponse githubRepository(long id, String fullName) {
+            String owner = fullName.substring(0, fullName.indexOf('/'));
+            String name = fullName.substring(fullName.indexOf('/') + 1);
+            return new GithubRepositoryResponse(id, name, fullName,
+                    new GithubRepositoryResponse.Owner(1L, owner, "User"), true, "main",
+                    "https://github.com/" + fullName, Map.of("pull", true),
+                    "설명", "Java", OffsetDateTime.parse("2026-08-18T00:00:00Z"));
+        }
+
+        @Test
+        @DisplayName("접근 가능한 저장소면 선택 목록에 넣을 정보를 돌려준다")
+        void resolvesAccessibleRepository() {
+            given(installationService.findAccessibleRepository(USER_ID, "galpiii", "backend"))
+                    .willReturn(Optional.of(githubRepository(1L, "galpiii/backend")));
+
+            assertThat(service.resolve(USER_ID, PROJECT_ID,
+                    "https://github.com/galpiii/backend.git"))
+                    .satisfies(response -> {
+                        assertThat(response.githubRepositoryId()).isEqualTo(1L);
+                        assertThat(response.fullName()).isEqualTo("galpiii/backend");
+                        assertThat(response.linked()).isFalse();
+                        assertThat(response.language()).isEqualTo("Java");
+                    });
+        }
+
+        @Test
+        @DisplayName("GitHub 저장소 URL이 아니면 GitHub을 부르지도 않는다")
+        void rejectsInvalidUrl() {
+            assertThatThrownBy(() -> service.resolve(USER_ID, PROJECT_ID,
+                    "https://gitlab.com/galpiii/backend"))
+                    .isInstanceOf(BadRequestException.class)
+                    .hasFieldOrPropertyWithValue("errorCode",
+                            ErrorCode.PROJECT_REPOSITORY_URL_INVALID);
+
+            verify(installationService, never())
+                    .findAccessibleRepository(anyLong(), any(), any());
+        }
+
+        @Test
+        @DisplayName("없는 저장소와 권한 없는 비공개 저장소의 응답이 같다")
+        void doesNotDistinguishMissingFromForbidden() {
+            given(installationService.findAccessibleRepository(anyLong(), any(), any()))
+                    .willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.resolve(USER_ID, PROJECT_ID,
+                    "https://github.com/galpiii/does-not-exist"))
+                    .isInstanceOf(NotFoundException.class)
+                    .hasFieldOrPropertyWithValue("errorCode",
+                            ErrorCode.PROJECT_REPOSITORY_NOT_ACCESSIBLE);
+
+            assertThatThrownBy(() -> service.resolve(USER_ID, PROJECT_ID,
+                    "https://github.com/someone/private-repo"))
+                    .isInstanceOf(NotFoundException.class)
+                    .hasFieldOrPropertyWithValue("errorCode",
+                            ErrorCode.PROJECT_REPOSITORY_NOT_ACCESSIBLE);
+        }
+
+        @Test
+        @DisplayName("이미 이 프로젝트에 있는 저장소는 409다")
+        void rejectsAlreadyLinked() {
+            given(installationService.findAccessibleRepository(USER_ID, "galpiii", "backend"))
+                    .willReturn(Optional.of(githubRepository(1L, "galpiii/backend")));
+            given(repositoryRepository.findAllByProjectIdAndGithubRepositoryIdIn(any(), any()))
+                    .willReturn(List.of(GithubRepository.link(
+                            project, snapshot(1L, PERSONAL_INSTALLATION, "galpiii/backend"))));
+
+            assertThatThrownBy(() -> service.resolve(USER_ID, PROJECT_ID,
+                    "https://github.com/galpiii/backend"))
+                    .isInstanceOf(ConflictException.class)
+                    .hasFieldOrPropertyWithValue("errorCode",
+                            ErrorCode.PROJECT_REPOSITORY_ALREADY_LINKED);
+        }
+
+        @Test
+        @DisplayName("남의 프로젝트면 GitHub을 부르기 전에 끝난다")
+        void rejectsForeignProject() {
+            given(projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(PROJECT_ID, USER_ID))
+                    .willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.resolve(USER_ID, PROJECT_ID,
+                    "https://github.com/galpiii/backend"))
+                    .isInstanceOf(NotFoundException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_FOUND);
+
+            verify(installationService, never())
+                    .findAccessibleRepository(anyLong(), any(), any());
         }
     }
 }

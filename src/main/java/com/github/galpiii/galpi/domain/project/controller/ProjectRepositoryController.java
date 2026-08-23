@@ -1,8 +1,10 @@
 package com.github.galpiii.galpi.domain.project.controller;
 
 import com.github.galpiii.galpi.domain.auth.jwt.AuthPrincipal;
+import com.github.galpiii.galpi.domain.github.dto.SelectableRepositoryResponse;
 import com.github.galpiii.galpi.domain.project.dto.LinkRepositoriesRequest;
 import com.github.galpiii.galpi.domain.project.dto.LinkedRepositoryResponse;
+import com.github.galpiii.galpi.domain.project.dto.ResolveRepositoryRequest;
 import com.github.galpiii.galpi.domain.project.service.ProjectRepositoryService;
 import com.github.galpiii.galpi.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -54,6 +56,26 @@ public class ProjectRepositoryController {
             @Valid @RequestBody LinkRepositoriesRequest request) {
         return ResponseEntity.ok(ApiResponse.success(projectRepositoryService.link(
                 principal.userId(), projectId, request.githubRepositoryIds())));
+    }
+
+    @Operation(summary = "URL로 저장소 찾기",
+            description = """
+                    목록에 뜨지 않는 저장소를 사용자가 URL로 직접 넣는 경로다. .git 접미사,
+                    트레일링 슬래시, /tree/main 같은 경로가 붙어 있어도 정규화하며, GitHub
+                    이외의 호스트는 거부한다(PROJECT-007).
+
+                    확인만 하고 저장하지 않는다. 여기서 받은 githubRepositoryId를
+                    POST /projects/{projectId}/repositories로 보내면 연결된다.
+
+                    저장소가 없는 경우와 갈피에 권한이 없는 경우를 구분하지 않고 똑같이
+                    PROJECT-008로 응답한다. 구분하면 비공개 저장소의 존재 여부가 노출된다.""")
+    @PostMapping("/resolve")
+    public ResponseEntity<ApiResponse<SelectableRepositoryResponse>> resolve(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable Long projectId,
+            @Valid @RequestBody ResolveRepositoryRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                projectRepositoryService.resolve(principal.userId(), projectId, request.url())));
     }
 
     @Operation(summary = "저장소 연결 해제",

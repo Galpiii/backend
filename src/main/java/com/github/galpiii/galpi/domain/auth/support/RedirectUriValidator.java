@@ -54,6 +54,16 @@ public class RedirectUriValidator {
         return buildFrontendUrl(paramName, value, returnTo);
     }
 
+    /**
+     * 이미 만들어진 프론트 URL에 파라미터를 하나 더 붙인다.
+     *
+     * <p>{@code buildFrontendUrl}이 항상 {@code ?}를 포함한 URL을 만들기 때문에 구분자는 늘
+     * {@code &}다. 이 메서드는 그 결과에만 쓴다.
+     */
+    public String withParam(String url, String name, String value) {
+        return url + '&' + name + '=' + urlEncode(value);
+    }
+
     private String buildFrontendUrl(String paramName, String paramValue, String returnTo) {
         StringBuilder url = new StringBuilder(properties.defaultRedirectUri());
         url.append(properties.defaultRedirectUri().contains("?") ? '&' : '?')

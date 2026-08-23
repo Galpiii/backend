@@ -5,6 +5,11 @@ spring:
   task:
     execution:
       mode: force
+    # 분석 워커의 poll()이 수집 전체를 동기로 실행해 스레드를 수십 분씩 잡는다. 기본값 1이면
+    # 그동안 토큰 폐기 배치가 한 번도 돌지 못한다. @Scheduled를 더 붙이면 이 값도 함께 올린다.
+    scheduling:
+      pool:
+        size: ${TASK_SCHEDULING_POOL_SIZE:2}
 
   servlet:
     multipart:
@@ -106,6 +111,39 @@ galpi:
       timeout: ${GITHUB_OPERATION_TIMEOUT:30s}
       max-concurrent-per-user: ${GITHUB_OPERATION_MAX_CONCURRENT_PER_USER:1}
       acquire-timeout: ${GITHUB_OPERATION_ACQUIRE_TIMEOUT:3s}
+
+  # 저장소 하나를 수집할 때의 상한. 낮추는 것은 안전하고, 올리면 워커의 디스크와 시간을
+  # 그만큼 더 쓴다.
+  collection:
+    max-download-size: ${COLLECTION_MAX_DOWNLOAD_SIZE:200MB}
+    max-extracted-size: ${COLLECTION_MAX_EXTRACTED_SIZE:1GB}
+    max-entry-count: ${COLLECTION_MAX_ENTRY_COUNT:20000}
+    max-file-size: ${COLLECTION_MAX_FILE_SIZE:1MB}
+    max-total-content-size: ${COLLECTION_MAX_TOTAL_CONTENT_SIZE:20MB}
+    max-pull-request-content-size: ${COLLECTION_MAX_PR_CONTENT_SIZE:20MB}
+    max-redirects: ${COLLECTION_MAX_REDIRECTS:3}
+    download-timeout: ${COLLECTION_DOWNLOAD_TIMEOUT:120s}
+    max-pull-request-file-pages: ${COLLECTION_MAX_PR_FILE_PAGES:30}
+    max-pull-request-commit-pages: ${COLLECTION_MAX_PR_COMMIT_PAGES:30}
+    max-pull-request-list-pages: ${COLLECTION_MAX_PR_LIST_PAGES:30}
+    max-pull-request-api-requests: ${COLLECTION_MAX_PR_API_REQUESTS:930}
+
+  project:
+    # 남용 방지용 상한이다. 기능 제한이 아니라 한 계정이 프로젝트를 무한정 만들어 두는 것을
+    # 막는 선이라 넉넉하게 잡는다. 삭제한 프로젝트는 세지 않는다.
+    max-per-user: ${PROJECT_MAX_PER_USER:50}
+    default-page-size: ${PROJECT_DEFAULT_PAGE_SIZE:20}
+    max-page-size: ${PROJECT_MAX_PAGE_SIZE:100}
+
+  analysis:
+    worker:
+      # 인스턴스를 여러 개 띄워도 SKIP LOCKED 선점이 중복 실행을 막는다. 수집만 하는
+      # 인스턴스를 따로 두고 싶으면 API 쪽에서 이 값을 false로 둔다.
+      enabled: ${ANALYSIS_WORKER_ENABLED:true}
+      poll-interval: ${ANALYSIS_WORKER_POLL_INTERVAL:5s}
+      lease: ${ANALYSIS_WORKER_LEASE:30m}
+      max-attempts: ${ANALYSIS_WORKER_MAX_ATTEMPTS:3}
+      rate-limit-threshold: ${ANALYSIS_WORKER_RATE_LIMIT_THRESHOLD:1000}
 
 springdoc:
   api-docs:

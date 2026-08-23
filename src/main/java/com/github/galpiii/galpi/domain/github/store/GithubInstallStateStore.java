@@ -10,6 +10,8 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -35,17 +37,41 @@ public class GithubInstallStateStore {
     private static final String STATE_PREFIX = "github:install-state:";
     private static final int STATE_BYTES = 32;
 
+    /** 되살릴 선택의 상한. 한 번에 연결할 수 있는 저장소 수와 같게 둔다. */
+    private static final int MAX_SELECTED_REPOSITORIES = 100;
+
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
-    public String issue(Long userId, String returnTo) {
+    /**
+     * @param selectedRepositoryIds 설치 화면으로 나가기 전에 골라 둔 저장소.
+     *                              돌아왔을 때 선택을 되살리는 데만 쓰고 권한 판단에는 쓰지 않는다
+     */
+    public String issue(Long userId, String returnTo, List<Long> selectedRepositoryIds) {
         String state = Hashes.randomUrlSafe(STATE_BYTES);
         String payload = objectMapper.writeValueAsString(
                 new InstallIntent(userId, state, returnTo == null ? "" : returnTo,
-                        OffsetDateTime.now()));
+                        capped(selectedRepositoryIds), OffsetDateTime.now()));
 
         redisTemplate.opsForValue().set(STATE_PREFIX + state, payload, TTL);
         return state;
+    }
+
+    /**
+     * 저장하는 선택 개수를 제한한다.
+     *
+     * <p>이 값은 Redis에 그대로 들어갔다가 리다이렉트 URL에 실려 나간다. 개수를 열어 두면
+     * 사용자가 보낸 목록 길이가 그대로 저장 크기와 URL 길이가 된다.
+     */
+    private static List<Long> capped(List<Long> selectedRepositoryIds) {
+        if (selectedRepositoryIds == null || selectedRepositoryIds.isEmpty()) {
+            return List.of();
+        }
+        return selectedRepositoryIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .limit(MAX_SELECTED_REPOSITORIES)
+                .toList();
     }
 
     /** 한 번 읽으면 사라진다. 같은 state로 들어오는 두 번째 콜백은 기록 없음으로 떨어진다. */
@@ -68,7 +94,19 @@ public class GithubInstallStateStore {
         }
     }
 
+    /**
+     * 설치 흐름을 시작한 사실.
+     *
+     * <p>{@code selectedRepositoryIds}가 없는 예전 payload가 TTL 동안 남아 있을 수 있어
+     * {@code null}을 빈 목록으로 받는다.
+     */
     public record InstallIntent(Long userId, String state, String returnTo,
-                                OffsetDateTime createdAt) {
+                                List<Long> selectedRepositoryIds, OffsetDateTime createdAt) {
+
+        public InstallIntent {
+            selectedRepositoryIds = selectedRepositoryIds == null
+                    ? List.of()
+                    : List.copyOf(selectedRepositoryIds);
+        }
     }
 }

@@ -53,6 +53,21 @@ public class SpecDocumentWriter {
     }
 
     /**
+     * 활성 명세서 포인터를 옮기고 위저드를 ② 저장소 연결 단계로 넘긴다.
+     *
+     * <p>접수와 같은 트랜잭션에 넣지 않는다. 분석 제출이 거부되면 {@link #delete}로 접수를
+     * 취소하는데, 단계 전진은 앞으로만 움직여 되돌릴 수단이 없다. 제출이 성공한 뒤에 옮겨야
+     * 명세서가 없는 프로젝트가 ② 단계에 멈춰 서는 일이 없다.
+     *
+     * <p>{@code upload()}는 비동기 추출을 걸기 위해 트랜잭션 밖에 있다. 거기서 엔티티를
+     * 고치면 영속성 컨텍스트가 없어 flush될 자리가 없으므로 여기서 경계를 연다.
+     */
+    @Transactional
+    public void attachToProject(Long projectId, Long specDocumentId) {
+        projectRepository.getReferenceById(projectId).attachSpecDocument(specDocumentId);
+    }
+
+    /**
      * 업로드 접수를 되돌린다.
      *
      * <p>분석 제출이 거부되면 분석을 시작조차 못 한 것이므로 행을 남기지 않는다. FAILED로 두면

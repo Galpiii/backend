@@ -1,13 +1,19 @@
 package com.github.galpiii.galpi.domain.project.service;
 
+import com.github.galpiii.galpi.domain.github.client.dto.GithubRepositoryResponse;
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
+import com.github.galpiii.galpi.domain.github.dto.SelectableRepositoryResponse;
 import com.github.galpiii.galpi.domain.github.entity.GithubRepository;
 import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
 import com.github.galpiii.galpi.domain.github.service.GithubInstallationService;
+import com.github.galpiii.galpi.domain.github.support.GithubRepositoryUrlParser;
+import com.github.galpiii.galpi.domain.github.support.GithubRepositoryUrlParser.RepositoryUrl;
 import com.github.galpiii.galpi.domain.project.dto.LinkedRepositoryResponse;
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
+import com.github.galpiii.galpi.global.error.exception.BadRequestException;
+import com.github.galpiii.galpi.global.error.exception.ConflictException;
 import com.github.galpiii.galpi.global.error.exception.ForbiddenException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +41,7 @@ public class ProjectRepositoryService {
     private final GithubRepositoryRepository repositoryRepository;
     private final GithubInstallationService installationService;
     private final ProjectRepositoryLinkWriter linkWriter;
+    private final GithubRepositoryUrlParser urlParser;
 
     @Transactional(readOnly = true)
     public List<LinkedRepositoryResponse> list(Long userId, Long projectId) {
@@ -78,6 +85,43 @@ public class ProjectRepositoryService {
     }
 
     /**
+     * URL로 저장소 하나를 찾는다. 목록에 안 뜨는 저장소를 사용자가 직접 넣는 경로다.
+     *
+     * <p>여기서는 확인만 하고 저장하지 않는다. 확인된 저장소는 프론트의 선택 목록에 더해지고,
+     * 실제 연결은 {@link #link}가 같은 권한 재검증을 다시 거쳐 처리한다.
+     *
+     * <p><b>없는 저장소와 접근 권한이 없는 저장소를 구분해 알려주지 않는다.</b> 둘 다 같은
+     * 404다 — 구분하면 URL만 바꿔 넣어 보는 것으로 남의 비공개 저장소가 존재하는지 알아낼 수
+     * 있다. 이미 이 프로젝트에 있는 저장소만 따로 409로 구분한다. 다른 프로젝트에 이미
+     * 있는 것은 중복이 아니다. 프로젝트 간에는 같은 저장소를 공유할 수 있다.
+     */
+    public SelectableRepositoryResponse resolve(Long userId, Long projectId, String url) {
+        // GitHub을 부르기 전에 소유권부터 본다.
+        ownedProject(userId, projectId);
+
+        RepositoryUrl parsed = urlParser.parse(url).orElseThrow(() -> {
+            log.info("[GitHub] 저장소 URL 형식이 아니다 userId={} projectId={}", userId, projectId);
+            return new BadRequestException(ErrorCode.PROJECT_REPOSITORY_URL_INVALID);
+        });
+
+        GithubRepositoryResponse repository = installationService
+                .findAccessibleRepository(userId, parsed.owner(), parsed.name())
+                .orElseThrow(() -> {
+                    log.info("[GitHub] URL로 찾은 저장소에 접근할 수 없다 userId={} projectId={}",
+                            userId, projectId);
+                    return new NotFoundException(ErrorCode.PROJECT_REPOSITORY_NOT_ACCESSIBLE);
+                });
+
+        boolean alreadyLinked = !repositoryRepository
+                .findAllByProjectIdAndGithubRepositoryIdIn(projectId, List.of(repository.id()))
+                .isEmpty();
+        if (alreadyLinked) {
+            throw new ConflictException(ErrorCode.PROJECT_REPOSITORY_ALREADY_LINKED);
+        }
+        return SelectableRepositoryResponse.of(repository, false);
+    }
+
+    /**
      * 연결을 끊는다.
      *
      * <p>지금은 물리 삭제다. 1C에서 {@code analysis_run_repositories}가 이 행을 FK로 참조하게
@@ -94,7 +138,7 @@ public class ProjectRepositoryService {
     }
 
     private Project ownedProject(Long userId, Long projectId) {
-        return projectRepository.findByIdAndUserId(projectId, userId)
+        return projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(projectId, userId)
                 .orElseThrow(() -> new NotFoundException(ErrorCode.PROJECT_NOT_FOUND));
     }
 }

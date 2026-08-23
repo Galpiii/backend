@@ -26,6 +26,11 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'org.apache.pdfbox:pdfbox:3.0.8'
 
+	// tarball 해제. 직접 파서를 짜지 않는 이유는 symlink/hardlink/device 엔트리 판별이 보안
+	// 요구사항이기 때문이다. tar 헤더의 typeflag를 손으로 다루다 하나 틀리면 경로 탈출 방어가
+	// 그대로 뚫린다.
+	implementation 'org.apache.commons:commons-compress:1.27.1'
+
 	implementation 'com.nimbusds:nimbus-jose-jwt:10.4'
 
 	implementation 'com.openai:openai-java:4.51.0'

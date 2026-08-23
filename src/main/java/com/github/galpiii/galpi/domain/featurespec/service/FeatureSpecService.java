@@ -49,6 +49,10 @@ public class FeatureSpecService {
 
         submitExtraction(savedSpecDocument.getId(), validatedFeatureSpec.tempFile());
 
+        // 위저드를 ② 저장소 연결 단계로 넘긴다. 제출이 거부되면 접수 자체를 되돌리는데
+        // 단계 전진은 되돌릴 수단이 없으므로, 제출이 성공한 뒤에만 옮긴다.
+        specDocumentWriter.attachToProject(projectId, savedSpecDocument.getId());
+
         log.info(
                 "[기능명세서 업로드] 업로드 완료. specDocumentId: {}, projectId: {}, userId: {}",
                 savedSpecDocument.getId(),
@@ -110,8 +114,11 @@ public class FeatureSpecService {
     }
 
     // 프로젝트 존재 및 소유자 검증
+    //
+    // 소유자 확인과 삭제 여부를 조회 조건에 함께 넣는다. 남의 프로젝트, 없는 프로젝트,
+    // 삭제된 프로젝트가 모두 같은 404로 나가야 프로젝트 id의 존재 여부가 새지 않는다.
     private void verifyProjectOwner(Long projectId, Long userId) {
-        if (projectRepository.findByIdAndUserId(projectId, userId).isEmpty()) {
+        if (projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(projectId, userId).isEmpty()) {
             log.warn(
                     "[기능명세서] 프로젝트가 없거나 접근 권한이 없습니다. projectId: {}, userId: {}",
                     projectId,

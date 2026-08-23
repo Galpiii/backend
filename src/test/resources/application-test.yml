@@ -99,6 +99,30 @@ galpi:
       max-concurrent-per-user: 1
       acquire-timeout: 3s
 
+  collection:
+    max-download-size: 200MB
+    max-extracted-size: 1GB
+    max-entry-count: 20000
+    max-file-size: 1MB
+    max-total-content-size: 20MB
+    max-pull-request-content-size: 20MB
+    max-redirects: 3
+    download-timeout: 120s
+    max-pull-request-file-pages: 30
+    max-pull-request-commit-pages: 30
+    max-pull-request-list-pages: 30
+    max-pull-request-api-requests: 930
+
+  analysis:
+    worker:
+      # 스케줄러 자체는 SchedulingConfig가 test 프로파일에서 꺼 둔다. 테스트는 워커를
+      # 직접 호출한다.
+      enabled: true
+      poll-interval: 5s
+      lease: 30m
+      max-attempts: 3
+      rate-limit-threshold: 1000
+
 logging:
   level:
     org.hibernate.SQL: warn

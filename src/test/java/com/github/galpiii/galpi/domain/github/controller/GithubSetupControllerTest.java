@@ -2,6 +2,7 @@ package com.github.galpiii.galpi.domain.github.controller;
 
 import com.github.galpiii.galpi.domain.auth.jwt.JwtTokenProvider;
 import com.github.galpiii.galpi.domain.github.dto.InstallUrlResponse;
+import com.github.galpiii.galpi.domain.github.dto.SelectableRepositoriesResponse;
 import com.github.galpiii.galpi.domain.github.exception.GithubRateLimitedException;
 import com.github.galpiii.galpi.support.WebMvcTestSupport;
 import jakarta.servlet.http.Cookie;
@@ -47,17 +48,19 @@ class GithubSetupControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("인증된 사용자에게 설치 URL을 돌려준다")
         void returnsInstallUrl() throws Exception {
-            given(githubSetupService.buildInstallUrl(eq(USER_ID), any()))
+            given(githubSetupService.buildInstallUrl(eq(USER_ID), any(), any()))
                     .willReturn(new InstallUrlResponse(INSTALL_URL));
 
             mockMvc.perform(post("/github/install-url")
                             .param("returnTo", "/projects/3/repositories")
+                            .param("selectedRepositoryIds", "11", "12")
                             .header("Authorization", bearer()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.installUrl").value(INSTALL_URL))
                     .andExpect(header().string("Cache-Control", "no-store"));
 
-            verify(githubSetupService).buildInstallUrl(USER_ID, "/projects/3/repositories");
+            verify(githubSetupService)
+                    .buildInstallUrl(USER_ID, "/projects/3/repositories", List.of(11L, 12L));
         }
 
         @Test
@@ -84,7 +87,7 @@ class GithubSetupControllerTest extends WebMvcTestSupport {
         @DisplayName("읽기 전용 응답은 GET으로 제공하고 캐시하지 않는다")
         void isGetAndNotCached() throws Exception {
             given(githubInstallationService.listRepositories(USER_ID, 3L))
-                    .willReturn(List.of());
+                    .willReturn(new SelectableRepositoriesResponse(List.of(), List.of(), false));
 
             mockMvc.perform(get("/github/repositories")
                             .param("projectId", "3")

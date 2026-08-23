@@ -80,7 +80,7 @@ class FeatureSpecServiceTest {
     }
 
     private void givenOwnedProject() {
-        given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID))
+        given(projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(PROJECT_ID, USER_ID))
                 .willReturn(Optional.of(mock(Project.class)));
     }
 
@@ -173,7 +173,7 @@ class FeatureSpecServiceTest {
     @Test
     @DisplayName("타인 프로젝트이거나 없는 프로젝트면 파일을 읽지 않는다")
     void rejectsInaccessibleProjectBeforeTouchingFile() {
-        given(projectRepository.findByIdAndUserId(PROJECT_ID, USER_ID)).willReturn(Optional.empty());
+        given(projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(PROJECT_ID, USER_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.upload(PROJECT_ID, USER_ID, file))
                 .isInstanceOf(NotFoundException.class)

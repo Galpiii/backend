@@ -12,7 +12,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * App 설치 시작과 setup 콜백을 처리한다.
@@ -30,14 +33,25 @@ public class GithubSetupService {
     private static final String RESULT_VERIFIED = "verified";
     private static final String RESULT_UNVERIFIED = "unverified";
 
+    /** 설치 화면에 나가기 전 골라 둔 저장소를 그대로 돌려주는 파라미터. */
+    private static final String SELECTED_PARAM = "selectedRepositoryIds";
+
+    /** 그중 돌아와 보니 접근할 수 없게 된 것. 선택에서 빠졌다는 사실을 화면이 알려야 한다. */
+    private static final String UNAVAILABLE_PARAM = "unavailableRepositoryIds";
+
     private final GithubInstallStateStore installStateStore;
     private final GithubInstallationService installationService;
     private final RedirectUriValidator redirectUriValidator;
     private final GithubAppProperties properties;
 
-    public InstallUrlResponse buildInstallUrl(Long userId, String returnTo) {
+    /**
+     * @param selectedRepositoryIds ② 단계에서 이미 골라 둔 저장소. 설치 화면으로 나갔다
+     *                              돌아오면 프론트 상태가 날아가므로 서버가 들고 있는다
+     */
+    public InstallUrlResponse buildInstallUrl(Long userId, String returnTo,
+                                              List<Long> selectedRepositoryIds) {
         String validatedReturnTo = redirectUriValidator.validate(returnTo);
-        String state = installStateStore.issue(userId, validatedReturnTo);
+        String state = installStateStore.issue(userId, validatedReturnTo, selectedRepositoryIds);
         return new InstallUrlResponse(properties.installUrl(state));
     }
 
@@ -71,16 +85,62 @@ public class GithubSetupService {
             // 조직 관리자 승인 대기(setup_action=request)가 대부분 여기로 온다. 오류가 아니다.
             log.info("[GitHub] installation_id 없이 콜백. 설치 확인 안 됨으로 보낸다 userId={}",
                     resolved.userId());
-            return buildResult(RESULT_UNVERIFIED, returnTo);
+            return withSelection(buildResult(RESULT_UNVERIFIED, returnTo), resolved);
         }
 
         if (!ownsInstallationOrUnverified(resolved.userId(), installationId)) {
-            return buildResult(RESULT_UNVERIFIED, returnTo);
+            return withSelection(buildResult(RESULT_UNVERIFIED, returnTo), resolved);
         }
 
         log.info("[GitHub] 설치 확인 완료 userId={} installationId={}",
                 resolved.userId(), installationId);
-        return buildResult(RESULT_VERIFIED, returnTo);
+        return withSelection(buildResult(RESULT_VERIFIED, returnTo), resolved);
+    }
+
+    /**
+     * 설치 화면에 나가기 전의 선택을 리다이렉트에 실어 되돌려준다.
+     *
+     * <p>그 사이에 접근할 수 없게 된 저장소는 선택에서 빼고 따로 알린다. 조직 설치를 다시
+     * 설정하면서 저장소를 뺀 경우가 여기에 해당한다 — 그대로 돌려주면 사용자는 고른 적 없는
+     * 실패를 연결 단계에서 만난다.
+     *
+     * <p>대조 자체가 실패하면 선택을 그대로 돌려준다. 되살린 선택은 표시일 뿐이고, 실제 연결은
+     * {@code POST /projects/{id}/repositories}가 같은 검증을 다시 하기 때문에 여기서 못 걸러도
+     * 권한이 새지 않는다. 반대로 조회 실패를 이유로 선택을 통째로 버리면 사용자만 손해다.
+     */
+    private String withSelection(String url, InstallIntent intent) {
+        List<Long> selected = intent.selectedRepositoryIds();
+        if (selected.isEmpty()) {
+            return url;
+        }
+
+        List<Long> available = accessibleOrAll(intent.userId(), selected);
+        List<Long> unavailable = selected.stream()
+                .filter(id -> !available.contains(id))
+                .toList();
+
+        String result = available.isEmpty()
+                ? url
+                : redirectUriValidator.withParam(url, SELECTED_PARAM, join(available));
+        return unavailable.isEmpty()
+                ? result
+                : redirectUriValidator.withParam(result, UNAVAILABLE_PARAM, join(unavailable));
+    }
+
+    private List<Long> accessibleOrAll(Long userId, List<Long> selected) {
+        try {
+            Set<Long> accessible =
+                    installationService.accessibleSnapshots(userId, selected).keySet();
+            return selected.stream().filter(accessible::contains).toList();
+        } catch (GlobalException e) {
+            log.warn("[GitHub] 선택 복원 중 접근 권한을 대조하지 못했다 userId={} code={}",
+                    userId, e.getErrorCode().getCode());
+            return selected;
+        }
+    }
+
+    private static String join(List<Long> ids) {
+        return ids.stream().map(String::valueOf).collect(Collectors.joining(","));
     }
 
     /**

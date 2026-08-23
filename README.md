@@ -65,3 +65,5 @@ App 설정은 `Settings → Developer settings → GitHub Apps → {App}`에서 
 | `GITHUB_OPERATION_TIMEOUT` | 다음 GitHub 요청 시작을 막는 작업별 soft deadline. 기본 30초 |
 | `GITHUB_OPERATION_MAX_CONCURRENT_PER_USER` | 사용자별 동시 GitHub 작업 수. 기본 1 |
 | `GITHUB_OPERATION_ACQUIRE_TIMEOUT` | 사용자별 permit을 기다리는 최대 시간. 기본 3초 |
+| `PROJECT_MAX_PER_USER` | 사용자당 프로젝트 수 상한. 기본 50. 삭제한 프로젝트는 세지 않는다 |
+| `PROJECT_DEFAULT_PAGE_SIZE` / `PROJECT_MAX_PAGE_SIZE` | 프로젝트 목록 페이지 크기의 기본값과 상한. 기본 20 / 100 |

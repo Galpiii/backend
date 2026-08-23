@@ -1,6 +1,7 @@
 package com.github.galpiii.galpi.domain.github.client;
 
 import com.github.galpiii.galpi.domain.github.client.dto.GithubInstallationResponse;
+import com.github.galpiii.galpi.domain.github.client.dto.GithubListResult;
 import com.github.galpiii.galpi.domain.github.client.dto.GithubUserResponse;
 import com.github.galpiii.galpi.domain.github.config.GithubAppProperties;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
@@ -109,7 +110,8 @@ class GithubApiClientTest {
                             """, MediaType.APPLICATION_JSON));
 
             GithubInstallationResponse installation =
-                    client.getUserInstallations(TOKEN, client.newOperationBudget()).getFirst();
+                    client.getUserInstallations(TOKEN, client.newOperationBudget()).items()
+                            .getFirst();
 
             assertThat(installation.isSuspended()).isTrue();
         }
@@ -275,8 +277,8 @@ class GithubApiClientTest {
 
             retryClient.getAuthenticatedUser(TOKEN);
 
-            assertThat(recorder.latest("core")).isNotNull();
-            assertThat(recorder.latest("core").remaining()).isEqualTo(4321);
+            assertThat(recorder.latest(TOKEN, "core")).isNotNull();
+            assertThat(recorder.latest(TOKEN, "core").remaining()).isEqualTo(4321);
             retryServer.verify();
         }
 
@@ -395,11 +397,12 @@ class GithubApiClientTest {
             server.expect(requestTo(PAGE_2))
                     .andRespond(withSuccess("[\"c\"]", MediaType.APPLICATION_JSON));
 
-            List<String> all = client.getAllPages(
+            GithubListResult<String> all = client.getAllPages(
                     "/user/repos", TOKEN, new ParameterizedTypeReference<>() {
                     }, client.newOperationBudget());
 
-            assertThat(all).containsExactly("a", "b", "c");
+            assertThat(all.items()).containsExactly("a", "b", "c");
+            assertThat(all.truncated()).isFalse();
             server.verify();
         }
 
@@ -412,11 +415,13 @@ class GithubApiClientTest {
                     .andRespond(withSuccess("[\"a\"]", MediaType.APPLICATION_JSON)
                             .headers(linkHeader("<" + PAGE_2 + ">; rel=\"next\"")));
 
-            List<String> all = client.getAllPages(
+            GithubListResult<String> all = client.getAllPages(
                     "/user/repos", TOKEN, new ParameterizedTypeReference<>() {
                     }, client.newOperationBudget());
 
-            assertThat(all).containsExactly("a");
+            assertThat(all.items()).containsExactly("a");
+            // 상한에 걸려 멈췄다는 사실이 결과에 남아야 화면이 "이게 전부"라고 오해하지 않는다.
+            assertThat(all.truncated()).isTrue();
             server.verify();
         }
 
@@ -429,11 +434,12 @@ class GithubApiClientTest {
                     .andRespond(withSuccess("[\"a\"]", MediaType.APPLICATION_JSON)
                             .headers(linkHeader("<" + PAGE_2 + ">; rel=\"next\"")));
 
-            List<String> all = client.getAllPages(
+            GithubListResult<String> all = client.getAllPages(
                     "/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
                     }, client.newOperationBudget());
 
-            assertThat(all).containsExactly("a");
+            assertThat(all.items()).containsExactly("a");
+            assertThat(all.truncated()).isTrue();
             server.verify();
         }
 
@@ -488,11 +494,11 @@ class GithubApiClientTest {
                     .andRespond(withSuccess("[\"a\"]", MediaType.APPLICATION_JSON)
                             .headers(linkHeader("<https://evil.example/user/repos?page=2>; rel=\"next\"")));
 
-            List<String> all = client.getAllPages(
+            GithubListResult<String> all = client.getAllPages(
                     "/user/repos", TOKEN, new ParameterizedTypeReference<>() {
                     }, client.newOperationBudget());
 
-            assertThat(all).containsExactly("a");
+            assertThat(all.items()).containsExactly("a");
             // 두 번째 요청이 나갔다면 MockRestServiceServer가 예상치 못한 호출로 실패시킨다.
             server.verify();
         }
@@ -506,7 +512,7 @@ class GithubApiClientTest {
 
             assertThat(client.getAllPages(
                     "/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
-                    }, client.newOperationBudget())).containsExactly("a");
+                    }, client.newOperationBudget()).items()).containsExactly("a");
             server.verify();
         }
 
@@ -522,7 +528,7 @@ class GithubApiClientTest {
 
             assertThat(client.getAllPages(
                     "/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
-                    }, client.newOperationBudget())).containsExactly("a", "b");
+                    }, client.newOperationBudget()).items()).containsExactly("a", "b");
             server.verify();
         }
 
@@ -536,7 +542,7 @@ class GithubApiClientTest {
 
             assertThat(client.getAllPages(
                     "/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
-                    }, client.newOperationBudget())).containsExactly("a");
+                    }, client.newOperationBudget()).items()).containsExactly("a");
             server.verify();
         }
 
@@ -551,7 +557,7 @@ class GithubApiClientTest {
 
             assertThat(client.getAllPages(
                     "/user/repos", TOKEN, new ParameterizedTypeReference<List<String>>() {
-                    }, client.newOperationBudget())).containsExactly("a", "b");
+                    }, client.newOperationBudget()).items()).containsExactly("a", "b");
             server.verify();
         }
 
