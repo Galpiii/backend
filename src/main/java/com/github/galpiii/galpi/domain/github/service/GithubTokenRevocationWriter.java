@@ -1,6 +1,7 @@
 package com.github.galpiii.galpi.domain.github.service;
 
 import com.github.galpiii.galpi.domain.github.client.GithubApiClient;
+import com.github.galpiii.galpi.domain.github.entity.GithubRevocationType;
 import com.github.galpiii.galpi.domain.github.entity.GithubTokenRevocation;
 import com.github.galpiii.galpi.domain.github.entity.GithubTokenRevocationStatus;
 import com.github.galpiii.galpi.domain.github.repository.GithubTokenRevocationRepository;
@@ -51,15 +52,21 @@ class GithubTokenRevocationWriter {
         }
 
         try {
-            apiClient.revokeUserToken(accessToken);
+            // 적재 시점에 정해진 종류를 그대로 따른다. 여기서 종류를 하나로 뭉뚱그리면
+            // 밀려난 토큰 하나를 지우려다 사용자의 authorization 전체를 폐기하게 된다.
+            if (pending.getRevocationType() == GithubRevocationType.GRANT) {
+                apiClient.revokeUserGrant(accessToken);
+            } else {
+                apiClient.revokeUserToken(accessToken);
+            }
             revocationRepository.delete(pending);
-            log.info("[GitHub] 밀린 user token 폐기 성공 userId={} 시도={}",
-                    pending.getUserId(), pending.getAttempts());
+            log.info("[GitHub] 밀린 {} 폐기 성공 userId={} 시도={}",
+                    pending.getRevocationType(), pending.getUserId(), pending.getAttempts());
             return true;
         } catch (RuntimeException e) {
             pending.recordFailure(e.getClass().getSimpleName());
             if (pending.isDead()) {
-                log.error("[GitHub] user token 폐기를 {}회 실패해 자동 재시도를 멈춘다. "
+                log.error("[GitHub] 토큰 폐기를 {}회 실패해 자동 재시도를 멈춘다. "
                                 + "github_token_revocations 행이 남아 있으니 직접 확인하세요 userId={}",
                         GithubTokenRevocation.MAX_ATTEMPTS, pending.getUserId());
             }

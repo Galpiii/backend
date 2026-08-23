@@ -1,6 +1,7 @@
 package com.github.galpiii.galpi.domain.github.service;
 
 import com.github.galpiii.galpi.domain.github.client.GithubApiClient;
+import com.github.galpiii.galpi.domain.github.entity.GithubRevocationType;
 import com.github.galpiii.galpi.domain.github.entity.GithubTokenRevocation;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.domain.github.repository.GithubTokenRevocationRepository;
@@ -66,18 +67,18 @@ class GithubTokenRevokerTest {
         @Test
         @DisplayName("폐기에 성공하면 큐에 남기지 않는다")
         void doesNotEnqueueOnSuccess() {
-            revoker.revokeOrEnqueue(USER_ID, TOKEN);
+            revoker.revokeOrEnqueue(USER_ID, TOKEN, GithubRevocationType.GRANT);
 
-            verify(apiClient).revokeUserToken(TOKEN);
+            verify(apiClient).revokeUserGrant(TOKEN);
             verify(revocationRepository, never()).save(any());
         }
 
         @Test
         @DisplayName("폐기에 실패하면 재시도 큐에 남긴다 — 외부 토큰을 잊어버리면 안 된다")
         void enqueuesOnFailure() {
-            willThrow(new GithubApiException()).given(apiClient).revokeUserToken(TOKEN);
+            willThrow(new GithubApiException()).given(apiClient).revokeUserGrant(TOKEN);
 
-            revoker.revokeOrEnqueue(USER_ID, TOKEN);
+            revoker.revokeOrEnqueue(USER_ID, TOKEN, GithubRevocationType.GRANT);
 
             ArgumentCaptor<GithubTokenRevocation> saved =
                     ArgumentCaptor.forClass(GithubTokenRevocation.class);
@@ -90,9 +91,9 @@ class GithubTokenRevokerTest {
         @Test
         @DisplayName("큐에 남기는 토큰도 암호문이다 — 평문이 DB에 눕지 않는다")
         void enqueuesCiphertextOnly() {
-            willThrow(new GithubApiException()).given(apiClient).revokeUserToken(TOKEN);
+            willThrow(new GithubApiException()).given(apiClient).revokeUserGrant(TOKEN);
 
-            revoker.revokeOrEnqueue(USER_ID, TOKEN);
+            revoker.revokeOrEnqueue(USER_ID, TOKEN, GithubRevocationType.GRANT);
 
             ArgumentCaptor<GithubTokenRevocation> saved =
                     ArgumentCaptor.forClass(GithubTokenRevocation.class);

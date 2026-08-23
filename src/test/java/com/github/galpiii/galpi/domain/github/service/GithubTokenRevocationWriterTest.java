@@ -1,6 +1,7 @@
 package com.github.galpiii.galpi.domain.github.service;
 
 import com.github.galpiii.galpi.domain.github.client.GithubApiClient;
+import com.github.galpiii.galpi.domain.github.entity.GithubRevocationType;
 import com.github.galpiii.galpi.domain.github.entity.GithubTokenRevocation;
 import com.github.galpiii.galpi.domain.github.exception.GithubApiException;
 import com.github.galpiii.galpi.domain.github.repository.GithubTokenRevocationRepository;
@@ -64,7 +65,8 @@ class GithubTokenRevocationWriterTest {
 
     private GithubTokenRevocation rowHolding(String token, TokenCipher cipher) {
         GithubTokenRevocation row = GithubTokenRevocation.pending(
-                USER_ID, cipher.encrypt(token), cipher.currentVersion(), "GithubApiException");
+                USER_ID, cipher.encrypt(token), cipher.currentVersion(),
+                GithubRevocationType.TOKEN, "GithubApiException");
         given(revocationRepository.findById(ROW_ID)).willReturn(Optional.of(row));
         return row;
     }

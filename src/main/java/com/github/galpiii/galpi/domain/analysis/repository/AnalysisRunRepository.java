@@ -102,6 +102,34 @@ public interface AnalysisRunRepository extends JpaRepository<AnalysisRun, Long> 
                @Param("now") OffsetDateTime now);
 
     /**
+     * GitHub 연결이 끊겼을 때 이 사용자의 프로젝트에서 아직 끝나지 않은 작업을 취소한다.
+     *
+     * <p>작업은 "이 사용자가 지금 이 저장소에 접근할 수 있다"는 확인을 근거로 만들어졌다.
+     * 연결을 끊은 순간 그 근거가 사라지므로, 워커가 installation token만으로 계속 수집할 수
+     * 있다는 사실이 오히려 문제다. 프로젝트 삭제와 마찬가지로 이미 선점된 작업은 실행 쪽이
+     * 저장소마다 {@link #isAbandoned}를 다시 보고 멈춘다.
+     */
+    default int cancelInFlightByOwner(Long ownerId, OffsetDateTime now) {
+        return cancelByOwner(ownerId, AnalysisRunStatus.CANCELLED,
+                List.of(AnalysisRunStatus.QUEUED, AnalysisRunStatus.RUNNING), now);
+    }
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update AnalysisRun run
+               set run.status = :cancelled,
+                   run.finishedAt = :now,
+                   run.updatedAt = :now
+             where run.project.id in (select project.id from Project project
+                                       where project.owner.id = :ownerId)
+               and run.status in :inFlight
+            """)
+    int cancelByOwner(@Param("ownerId") Long ownerId,
+                      @Param("cancelled") AnalysisRunStatus cancelled,
+                      @Param("inFlight") Collection<AnalysisRunStatus> inFlight,
+                      @Param("now") OffsetDateTime now);
+
+    /**
      * 이 작업을 계속 진행할 이유가 사라졌는지.
      *
      * <p>취소됐거나 프로젝트가 삭제된 경우다. 워커는 저장소 사이의 체크포인트마다 이것을 보고

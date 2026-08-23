@@ -1,6 +1,7 @@
 package com.github.galpiii.galpi.domain.github.service;
 
 import com.github.galpiii.galpi.domain.github.client.GithubApiClient;
+import com.github.galpiii.galpi.domain.github.entity.GithubRevocationType;
 import com.github.galpiii.galpi.domain.github.entity.GithubTokenRevocation;
 import com.github.galpiii.galpi.domain.github.repository.GithubTokenRevocationRepository;
 import com.github.galpiii.galpi.global.crypto.TokenCipher;
@@ -36,18 +37,32 @@ public class GithubTokenRevoker {
      *
      * <p>큐 적재까지 실패하면 예외가 그대로 올라간다. 회수할 수 없게 된 토큰을 두고
      * 연결 해제를 성공으로 보고할 수는 없다.
+     *
+     * @return GitHub이 폐기를 받아들였으면 true. false면 큐에 밀려 있는 상태이므로 호출자는
+     *         사용자에게 GitHub 설정에서 직접 해제하는 방법을 함께 안내해야 한다
      */
     @Transactional
-    public void revokeOrEnqueue(Long userId, String accessToken) {
+    public boolean revokeOrEnqueue(Long userId, String accessToken, GithubRevocationType type) {
         try {
-            apiClient.revokeUserToken(accessToken);
-            log.info("[GitHub] user token 폐기 완료 userId={}", userId);
+            call(type, accessToken);
+            log.info("[GitHub] {} 폐기 완료 userId={}", type, userId);
+            return true;
         } catch (RuntimeException e) {
             String cause = e.getClass().getSimpleName();
-            log.warn("[GitHub] user token 폐기 실패. 재시도 큐에 넣는다 userId={} cause={}", userId, cause);
+            log.warn("[GitHub] {} 폐기 실패. 재시도 큐에 넣는다 userId={} cause={}", type, userId, cause);
             revocationRepository.save(GithubTokenRevocation.pending(
-                    userId, tokenCipher.encrypt(accessToken), tokenCipher.currentVersion(), cause));
+                    userId, tokenCipher.encrypt(accessToken), tokenCipher.currentVersion(),
+                    type, cause));
+            return false;
         }
+    }
+
+    private void call(GithubRevocationType type, String accessToken) {
+        if (type == GithubRevocationType.GRANT) {
+            apiClient.revokeUserGrant(accessToken);
+            return;
+        }
+        apiClient.revokeUserToken(accessToken);
     }
 
     /**
