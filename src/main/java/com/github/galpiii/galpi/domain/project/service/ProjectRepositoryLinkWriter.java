@@ -62,11 +62,14 @@ public class ProjectRepositoryLinkWriter {
 
         Map<Long, GithubRepository> linked = new LinkedHashMap<>();
         for (GithubRepository existing : repositoryRepository
-                .findAllByProjectIdAndGithubRepositoryIdIn(project.getId(), githubRepositoryIds)) {
-            // 방금 GitHub에 물어 확인한 값으로 갱신한다. 이름이 바뀐 저장소를 옛 이름 그대로
-            // 돌려주지 않고, 수집 경로가 INACCESSIBLE로 표시해 둔 저장소는 여기서 되살아난다 —
-            // 다시 보인다는 것 자체가 접근 권한이 돌아왔다는 뜻이다.
-            existing.refresh(accessible.get(existing.getGithubRepositoryId()));
+                .findAllForRelink(project.getId(), githubRepositoryIds)) {
+            // 끊겨 있던 행이면 여기서 되살아난다. 새로 만들지 않는 덕분에 끊기 전에 수집해 둔
+            // PR과 분석 이력이 그대로 이어진다.
+            //
+            // 방금 GitHub에 물어 확인한 값으로 갱신도 함께 한다. 이름이 바뀐 저장소를 옛 이름
+            // 그대로 돌려주지 않고, 수집 경로가 INACCESSIBLE로 표시해 둔 저장소는 여기서
+            // 풀린다 — 다시 보인다는 것 자체가 접근 권한이 돌아왔다는 뜻이다.
+            existing.relink(accessible.get(existing.getGithubRepositoryId()));
             linked.put(existing.getGithubRepositoryId(), existing);
         }
 

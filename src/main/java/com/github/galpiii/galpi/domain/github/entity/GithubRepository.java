@@ -70,6 +70,15 @@ public class GithubRepository extends BaseEntity {
 
     private OffsetDateTime lastSyncedAt;
 
+    /**
+     * 연결을 끊은 시각. {@code null}이면 이 프로젝트에 연결돼 있다.
+     *
+     * <p>물리 삭제하지 않는 이유는 {@code analysis_run_repositories}와 {@code pull_requests}가
+     * 이 행을 {@code ON DELETE CASCADE}로 물고 있어서다. 행을 지우면 저장소 하나를 빼는 것만으로
+     * 그 저장소의 수집 근거와 과거 분석 결과가 함께 사라진다.
+     */
+    private OffsetDateTime unlinkedAt;
+
     private GithubRepository(Project project, RepositorySnapshot snapshot) {
         this.project = project;
         this.githubRepositoryId = snapshot.githubRepositoryId();
@@ -104,5 +113,32 @@ public class GithubRepository extends BaseEntity {
 
     public void markInaccessible() {
         this.accessStatus = RepositoryAccessStatus.INACCESSIBLE;
+    }
+
+    /**
+     * 프로젝트에서 뺀다. 행은 남는다.
+     *
+     * <p>이미 끊긴 저장소를 다시 끊어도 시각을 덮지 않는다. 처음 뺀 때가 이력이고, 두 번째
+     * 호출은 아무것도 바꾸지 않는 요청이다.
+     */
+    public void unlink() {
+        if (unlinkedAt == null) {
+            this.unlinkedAt = OffsetDateTime.now();
+        }
+    }
+
+    /**
+     * 다시 연결한다. 끊겨 있던 행을 되살리고 최신 스냅샷을 반영한다.
+     *
+     * <p>새 행을 만들지 않는 덕분에 끊기 전에 수집해 둔 PR과 분석 이력이 그대로 이어진다.
+     * 연결돼 있는 저장소에 불러도 {@link #refresh}와 같다.
+     */
+    public void relink(RepositorySnapshot snapshot) {
+        this.unlinkedAt = null;
+        refresh(snapshot);
+    }
+
+    public boolean isUnlinked() {
+        return unlinkedAt != null;
     }
 }

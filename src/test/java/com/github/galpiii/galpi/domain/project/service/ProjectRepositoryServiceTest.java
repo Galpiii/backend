@@ -80,7 +80,7 @@ class ProjectRepositoryServiceTest {
                 new GithubRepositoryUrlParser(githubProperties()));
         project = Project.create(mock(User.class), "갈피");
         given(projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(PROJECT_ID, USER_ID)).willReturn(Optional.of(project));
-        given(repositoryRepository.findAllByProjectIdAndGithubRepositoryIdIn(any(), any()))
+        given(repositoryRepository.findAllForRelink(any(), any()))
                 .willReturn(List.of());
         given(repositoryRepository.saveAllAndFlush(any()))
                 .willAnswer(invocation -> List.copyOf(invocation.getArgument(0)));
@@ -174,7 +174,7 @@ class ProjectRepositoryServiceTest {
             given(installationService.accessibleSnapshots(eq(USER_ID), any())).willReturn(accessible(
                     snapshot(1L, PERSONAL_INSTALLATION, "wb/notes"),
                     snapshot(2L, ORG_INSTALLATION, "galpiii/backend")));
-            given(repositoryRepository.findAllByProjectIdAndGithubRepositoryIdIn(any(), any()))
+            given(repositoryRepository.findAllForRelink(any(), any()))
                     .willReturn(List.of(GithubRepository.link(
                             project, snapshot(1L, PERSONAL_INSTALLATION, "wb/notes"))));
 
@@ -198,7 +198,7 @@ class ProjectRepositoryServiceTest {
         void isIdempotentOnReplay() {
             given(installationService.accessibleSnapshots(eq(USER_ID), any()))
                     .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/notes")));
-            given(repositoryRepository.findAllByProjectIdAndGithubRepositoryIdIn(any(), any()))
+            given(repositoryRepository.findAllForRelink(any(), any()))
                     .willReturn(List.of(GithubRepository.link(
                             project, snapshot(1L, PERSONAL_INSTALLATION, "wb/notes"))));
 
@@ -217,7 +217,7 @@ class ProjectRepositoryServiceTest {
 
             given(installationService.accessibleSnapshots(eq(USER_ID), any()))
                     .willReturn(accessible(snapshot(1L, PERSONAL_INSTALLATION, "wb/renamed")));
-            given(repositoryRepository.findAllByProjectIdAndGithubRepositoryIdIn(any(), any()))
+            given(repositoryRepository.findAllForRelink(any(), any()))
                     .willReturn(List.of(stale));
 
             LinkedRepositoryResponse linked =
@@ -318,7 +318,21 @@ class ProjectRepositoryServiceTest {
 
             service.unlink(USER_ID, PROJECT_ID, 55L);
 
-            verify(repositoryRepository).delete(repository);
+            assertThat(repository.isUnlinked()).isTrue();
+        }
+
+        @Test
+        @DisplayName("행을 지우지 않는다 — 지우면 PR과 분석 이력이 CASCADE로 함께 사라진다")
+        void neverDeletesTheRow() {
+            GithubRepository repository = GithubRepository.link(
+                    project, snapshot(1L, PERSONAL_INSTALLATION, "wb/notes"));
+            given(repositoryRepository.findByIdAndProjectId(any(), any()))
+                    .willReturn(Optional.of(repository));
+
+            service.unlink(USER_ID, PROJECT_ID, 55L);
+
+            verify(repositoryRepository, never()).delete(any());
+            verify(repositoryRepository, never()).deleteById(any());
         }
 
         @Test
@@ -398,9 +412,9 @@ class ProjectRepositoryServiceTest {
         void rejectsAlreadyLinked() {
             given(installationService.findAccessibleRepository(USER_ID, "galpiii", "backend"))
                     .willReturn(Optional.of(githubRepository(1L, "galpiii/backend")));
-            given(repositoryRepository.findAllByProjectIdAndGithubRepositoryIdIn(any(), any()))
-                    .willReturn(List.of(GithubRepository.link(
-                            project, snapshot(1L, PERSONAL_INSTALLATION, "galpiii/backend"))));
+            given(repositoryRepository
+                    .existsByProjectIdAndGithubRepositoryIdAndUnlinkedAtIsNull(PROJECT_ID, 1L))
+                    .willReturn(true);
 
             assertThatThrownBy(() -> service.resolve(USER_ID, PROJECT_ID,
                     "https://github.com/galpiii/backend"))
