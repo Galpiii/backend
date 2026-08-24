@@ -65,6 +65,26 @@ public record GithubAppProperties(
         return base + "/settings/installations/" + installationId;
     }
 
+    /**
+     * 사용자의 GitHub App authorization 목록.
+     *
+     * <p>서버가 authorization을 폐기하지 못했을 때(토큰 만료·GitHub 장애) 사용자가 직접
+     * 해제할 수 있게 안내하는 링크다. 해제만을 위해 재인증을 강요하지 않기 위한 출구다.
+     */
+    public String userAuthorizationsUrl() {
+        return trimTrailingSlash(oauthBaseUrl) + "/settings/apps/authorizations";
+    }
+
+    /**
+     * 사용자의 App 설치 목록.
+     *
+     * <p>설치는 연결 해제로 지우지 않는다. 조직 설치는 다른 갈피 사용자·프로젝트가 공유할 수
+     * 있어 한 사람의 해제로 없애면 남의 분석이 함께 멈춘다. 지우고 싶으면 여기서 직접 한다.
+     */
+    public String userInstallationsUrl() {
+        return trimTrailingSlash(oauthBaseUrl) + "/settings/installations";
+    }
+
     public String authorizeUrl() {
         return trimTrailingSlash(oauthBaseUrl) + "/login/oauth/authorize";
     }

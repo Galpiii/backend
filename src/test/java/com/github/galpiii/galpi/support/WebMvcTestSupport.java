@@ -8,10 +8,12 @@ import com.github.galpiii.galpi.domain.auth.jwt.JwtAuthenticationFilter;
 import com.github.galpiii.galpi.domain.auth.jwt.JwtTokenProvider;
 import com.github.galpiii.galpi.domain.auth.service.AuthService;
 import com.github.galpiii.galpi.domain.auth.support.RefreshCookieFactory;
+import com.github.galpiii.galpi.domain.consent.service.AiDataConsentService;
 import com.github.galpiii.galpi.domain.featurespec.service.FeatureSpecService;
 import com.github.galpiii.galpi.domain.github.service.GithubConnectionService;
 import com.github.galpiii.galpi.domain.github.service.GithubInstallationService;
 import com.github.galpiii.galpi.domain.github.service.GithubOAuthService;
+import com.github.galpiii.galpi.domain.github.service.GithubRepositoryAccessService;
 import com.github.galpiii.galpi.domain.github.service.GithubSetupService;
 import com.github.galpiii.galpi.domain.project.service.ProjectRepositoryService;
 import com.github.galpiii.galpi.domain.project.service.ProjectService;
@@ -55,6 +57,8 @@ public abstract class WebMvcTestSupport {
     @MockitoBean
     protected GithubInstallationService githubInstallationService;
     @MockitoBean
+    protected GithubRepositoryAccessService githubRepositoryAccessService;
+    @MockitoBean
     protected ProjectRepositoryService projectRepositoryService;
     @MockitoBean
     protected ProjectService projectService;
@@ -64,4 +68,6 @@ public abstract class WebMvcTestSupport {
     protected FeatureSpecService featureSpecService;
     @MockitoBean
     protected AnalysisRunService analysisRunService;
+    @MockitoBean
+    protected AiDataConsentService aiDataConsentService;
 }

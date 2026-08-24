@@ -32,7 +32,7 @@ public class GithubOAuthService {
     private final GithubOAuthClient oAuthClient;
     private final GithubApiClient apiClient;
     private final GithubUserService githubUserService;
-    private final GithubUserTokenService userTokenService;
+    private final GithubConnectWriter connectWriter;
     private final GithubTokenExpiryMonitor expiryMonitor;
     private final OAuthStateStore stateStore;
     private final OAuthCodeGuard codeGuard;
@@ -120,8 +120,11 @@ public class GithubOAuthService {
             throw new UnauthorizedException(ErrorCode.GITHUB_OAUTH_FAILED);
         }
 
-        User user = githubUserService.upsert(githubUser);
-        userTokenService.save(user, userAccessToken, tokenResponse.expiresIn());
+        // 행 확보와 연결 확정을 나눈다. 앞은 첫 로그인 경합 때문에 독립 트랜잭션이어야 하고,
+        // 뒤는 토큰 저장과 상태 전이가 함께 커밋돼야 한다.
+        User user = githubUserService.findOrCreate(githubUser);
+        connectWriter.connect(user.getId(), githubUser, userAccessToken,
+                tokenResponse.expiresIn());
 
         return loginCodeStore.issue(user.getId(), jwtProperties.loginCodeTtl());
     }

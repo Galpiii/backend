@@ -107,6 +107,12 @@ public class AnalysisRunWriter {
         return runRepository.findById(runId).orElseThrow();
     }
 
+    /** 작업을 요청한 사용자. 인계 직전 동의 확인이 이 값을 쓴다. */
+    @Transactional(readOnly = true)
+    public Long requesterIdOf(Long runId) {
+        return runRepository.findRequesterId(runId).orElseThrow();
+    }
+
     /**
      * 이 작업을 계속할 이유가 남아 있는지.
      *

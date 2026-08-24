@@ -7,6 +7,7 @@ import com.github.galpiii.galpi.domain.analysis.service.AnalysisRunService;
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
 import com.github.galpiii.galpi.domain.github.service.GithubInstallationService;
+import com.github.galpiii.galpi.domain.github.service.GithubUserTokenService;
 import com.github.galpiii.galpi.domain.project.dto.ProjectCreateRequest;
 import com.github.galpiii.galpi.domain.project.dto.ProjectDetailResponse;
 import com.github.galpiii.galpi.domain.project.dto.ProjectListResponse;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +65,8 @@ class ProjectLifecycleIntegrationTest extends IntegrationTestSupport {
     private AnalysisRunRepository runRepository;
     @Autowired
     private UserRepository userRepository;
+    @Autowired
+    private GithubUserTokenService userTokenService;
 
     @MockitoBean
     private GithubInstallationService installationService;
@@ -75,8 +79,15 @@ class ProjectLifecycleIntegrationTest extends IntegrationTestSupport {
         repositoryRepository.deleteAll();
         projectRepository.deleteAll();
 
-        userId = userRepository.save(
-                User.ofGithub(System.nanoTime(), "wb", "wb", null, "https://avatar")).getId();
+        User user = userRepository.save(
+                User.ofGithub(System.nanoTime(), "wb", "wb", null, "https://avatar"));
+        userId = user.getId();
+        // 저장소 구성을 바꾸는 경로는 GitHub 연결이 살아 있어야 한다. 연결이 끊긴 동안에는
+        // 조회만 허용되므로, 생명주기를 보려면 연결된 상태에서 시작해야 한다. 토큰과 연결
+        // 상태는 실제 연결 확정과 마찬가지로 함께 세운다.
+        userTokenService.save(user, "ghu_lifecycle_test_token_0123456789", Duration.ofHours(8));
+        user.connectGithub();
+        userRepository.saveAndFlush(user);
     }
 
     private Long createProject(String name) {
