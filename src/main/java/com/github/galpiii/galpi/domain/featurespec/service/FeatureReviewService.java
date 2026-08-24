@@ -465,7 +465,7 @@ public class FeatureReviewService {
                     "[기능 검토] 같은 세부 요구사항을 두 번 보냈습니다. featureId: {}",
                     feature.getId()
             );
-            throw new BadRequestException(ErrorCode.FEATURE_REQUIREMENT_NOT_OWNED);
+            throw new BadRequestException(ErrorCode.FEATURE_REQUIREMENT_DUPLICATED);
         }
 
         if (!owned.keySet().containsAll(keptIds)) {
@@ -665,8 +665,8 @@ public class FeatureReviewService {
      * <p>없는 문서, 남의 문서, 삭제된 프로젝트의 문서가 모두 같은 404가 되어야 문서 id의
      * 존재 여부가 새지 않는다.
      */
-    private SpecDocument requireSpecDocument(Long specDocumentId, Long userId) {
-        return specDocumentRepository.findOwned(specDocumentId, userId)
+    private void requireSpecDocument(Long specDocumentId, Long userId) {
+        specDocumentRepository.findOwned(specDocumentId, userId)
                 .orElseThrow(() -> {
                     log.warn(
                             "[기능 검토] 기능명세서가 없거나 접근 권한이 없습니다. specDocumentId: {}, userId: {}",
