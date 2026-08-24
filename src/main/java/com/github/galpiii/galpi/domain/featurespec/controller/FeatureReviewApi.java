@@ -71,25 +71,53 @@ public interface FeatureReviewApi {
                                                                     "requirementId": 34,
                                                                     "content": "게시글을 작성한다.",
                                                                     "sourceText": "사용자는 게시글을 작성할 수 있다."
+                                                                  },
+                                                                  {
+                                                                    "requirementId": 35,
+                                                                    "content": "댓글을 작성한다.",
+                                                                    "sourceText": "사용자는 댓글을 작성할 수 있다."
                                                                   }
                                                                 ],
                                                                 "issues": [
                                                                   {
                                                                     "issueType": "SPLIT_RECOMMENDED",
                                                                     "description": "서로 다른 대상에 대한 요구사항이 섞여 있습니다."
+                                                                  },
+                                                                  {
+                                                                    "issueType": "DUPLICATE_SUSPECTED",
+                                                                    "description": "글쓰기와 요구사항이 겹칩니다."
                                                                   }
                                                                 ],
-                                                                "duplicateCandidates": [],
+                                                                "duplicateCandidates": [
+                                                                  {
+                                                                    "targetFeatureId": 19,
+                                                                    "targetFeatureName": "글쓰기",
+                                                                    "targetSourcePageStart": 6,
+                                                                    "targetSourcePageEnd": 7,
+                                                                    "targetRequirements": [
+                                                                      { "requirementId": 51, "content": "글을 쓴다.", "sourceText": "사용자는 글을 쓸 수 있다." }
+                                                                    ],
+                                                                    "reason": "게시글 작성과 동일한 흐름을 설명합니다.",
+                                                                    "suggestedMergedName": "게시글 작성",
+                                                                    "suggestedSection": "게시글"
+                                                                  }
+                                                                ],
                                                                 "splitSuggestions": [
                                                                   {
                                                                     "suggestionId": 7,
                                                                     "suggestedName": "게시글 관리",
-                                                                    "requirements": ["게시글을 작성한다.", "게시글을 수정한다."]
+                                                                    "suggestedSection": "게시글",
+                                                                    "requirements": [
+                                                                      { "requirementId": 34, "content": "게시글을 작성한다.", "sourceText": "사용자는 게시글을 작성할 수 있다." }
+                                                                    ]
                                                                   },
                                                                   {
                                                                     "suggestionId": 8,
                                                                     "suggestedName": "댓글 관리",
-                                                                    "requirements": ["댓글을 작성한다."]
+                                                                    "suggestedSection": "댓글",
+                                                                    "requirements": [
+                                                                      { "requirementId": 35, "content": "댓글을 작성한다.", "sourceText": "사용자는 댓글을 작성할 수 있다." }
+                                                                    ]
                                                                   }
                                                                 ]
                                                               }
@@ -110,8 +138,7 @@ public interface FeatureReviewApi {
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
                             description = """
-                                    - PROJECT-001: 프로젝트를 찾을 수 없거나 접근할 수 없음
-                                    - FEATURE-SPEC-ACCESS-001: 기능명세서를 찾을 수 없거나 접근할 수 없음
+                                    FEATURE-SPEC-ACCESS-001: 기능명세서를 찾을 수 없거나 접근할 수 없음
                                     """
                     )
             }
@@ -170,8 +197,7 @@ public interface FeatureReviewApi {
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
                             description = """
-                                    - PROJECT-001: 프로젝트를 찾을 수 없거나 접근할 수 없음
-                                    - FEATURE-SPEC-ACCESS-001: 기능명세서를 찾을 수 없거나 접근할 수 없음
+                                    FEATURE-SPEC-ACCESS-001: 기능명세서를 찾을 수 없거나 접근할 수 없음
                                     """
                     )
             }
@@ -202,8 +228,7 @@ public interface FeatureReviewApi {
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
                             description = """
-                                    - PROJECT-001: 프로젝트를 찾을 수 없거나 접근할 수 없음
-                                    - FEATURE-SPEC-ACCESS-001: 기능명세서를 찾을 수 없거나 접근할 수 없음
+                                    FEATURE-SPEC-ACCESS-001: 기능명세서를 찾을 수 없거나 접근할 수 없음
                                     """
                     )
             }
@@ -247,6 +272,7 @@ public interface FeatureReviewApi {
                             description = """
                                     - FEATURE-002: 변경할 값이 없음
                                     - FEATURE-003: 이 기능의 세부 요구사항이 아닌 id를 보냄
+                                    - FEATURE-007: 같은 id를 두 번 보냄
                                     - COMMON-002: 기능명 또는 요구사항 내용이 유효하지 않음
                                     """
                     ),
