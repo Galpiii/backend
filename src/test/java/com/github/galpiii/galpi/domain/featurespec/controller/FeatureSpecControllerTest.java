@@ -38,7 +38,7 @@ class FeatureSpecControllerTest extends WebMvcTestSupport {
     private static final long SPEC_DOCUMENT_ID = 10L;
     private static final String FILE_NAME = "기능명세서.pdf";
     private static final String UPLOAD_PATH = "/projects/{projectId}/feature-specs";
-    private static final String STATUS_PATH = "/projects/{projectId}/feature-specs/{specDocumentId}/status";
+    private static final String STATUS_PATH = "/feature-specs/{specDocumentId}/status";
 
     @Autowired
     private JwtTokenProvider tokenProvider;
@@ -154,11 +154,11 @@ class FeatureSpecControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("분석 중이면 200과 현재 상태를 내려준다")
         void returnsCurrentStatus() throws Exception {
-            given(featureSpecService.getStatus(PROJECT_ID, SPEC_DOCUMENT_ID, USER_ID))
+            given(featureSpecService.getStatus(SPEC_DOCUMENT_ID, USER_ID))
                     .willReturn(new FeatureSpecStatusResponse(
                             SPEC_DOCUMENT_ID, ExtractionStatus.PROCESSING, null));
 
-            mockMvc.perform(get(STATUS_PATH, PROJECT_ID, SPEC_DOCUMENT_ID)
+            mockMvc.perform(get(STATUS_PATH, SPEC_DOCUMENT_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.specDocumentId").value(SPEC_DOCUMENT_ID))
@@ -168,11 +168,11 @@ class FeatureSpecControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("실패가 아니면 failureCode를 아예 내려보내지 않는다")
         void omitsFailureCodeWhenNotFailed() throws Exception {
-            given(featureSpecService.getStatus(PROJECT_ID, SPEC_DOCUMENT_ID, USER_ID))
+            given(featureSpecService.getStatus(SPEC_DOCUMENT_ID, USER_ID))
                     .willReturn(new FeatureSpecStatusResponse(
                             SPEC_DOCUMENT_ID, ExtractionStatus.COMPLETED, null));
 
-            mockMvc.perform(get(STATUS_PATH, PROJECT_ID, SPEC_DOCUMENT_ID)
+            mockMvc.perform(get(STATUS_PATH, SPEC_DOCUMENT_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.failureCode").value(nullValue()));
@@ -181,13 +181,13 @@ class FeatureSpecControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("실패했으면 사유까지 함께 내려준다")
         void returnsFailureCodeWhenFailed() throws Exception {
-            given(featureSpecService.getStatus(PROJECT_ID, SPEC_DOCUMENT_ID, USER_ID))
+            given(featureSpecService.getStatus(SPEC_DOCUMENT_ID, USER_ID))
                     .willReturn(new FeatureSpecStatusResponse(
                             SPEC_DOCUMENT_ID,
                             ExtractionStatus.FAILED,
                             ExtractionFailureCode.NO_FEATURE_EXTRACTED));
 
-            mockMvc.perform(get(STATUS_PATH, PROJECT_ID, SPEC_DOCUMENT_ID)
+            mockMvc.perform(get(STATUS_PATH, SPEC_DOCUMENT_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.extractionStatus").value("FAILED"))
@@ -197,19 +197,19 @@ class FeatureSpecControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("인증 없이 부르면 401이고 서비스를 호출하지 않는다")
         void rejectsUnauthenticatedRequest() throws Exception {
-            mockMvc.perform(get(STATUS_PATH, PROJECT_ID, SPEC_DOCUMENT_ID))
+            mockMvc.perform(get(STATUS_PATH, SPEC_DOCUMENT_ID))
                     .andExpect(status().isUnauthorized());
 
-            verify(featureSpecService, never()).getStatus(any(), any(), any());
+            verify(featureSpecService, never()).getStatus(any(), any());
         }
 
         @Test
         @DisplayName("접근할 수 없는 기능명세서면 404 FEATURE-SPEC-ACCESS-001을 내려준다")
         void returnsNotFoundWhenSpecInaccessible() throws Exception {
             willThrow(new NotFoundException(ErrorCode.FEATURE_SPEC_NOT_ACCESSIBLE))
-                    .given(featureSpecService).getStatus(PROJECT_ID, SPEC_DOCUMENT_ID, USER_ID);
+                    .given(featureSpecService).getStatus(SPEC_DOCUMENT_ID, USER_ID);
 
-            mockMvc.perform(get(STATUS_PATH, PROJECT_ID, SPEC_DOCUMENT_ID)
+            mockMvc.perform(get(STATUS_PATH, SPEC_DOCUMENT_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer()))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.code").value(ErrorCode.FEATURE_SPEC_NOT_ACCESSIBLE.getCode()))

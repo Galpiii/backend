@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/projects/{projectId}/feature-specs/{specDocumentId}")
+@RequestMapping("/feature-specs/{specDocumentId}")
 public class FeatureReviewController implements FeatureReviewApi {
 
     private final FeatureReviewService featureReviewService;
@@ -33,13 +33,11 @@ public class FeatureReviewController implements FeatureReviewApi {
     @Override
     @GetMapping("/features")
     public ResponseEntity<ApiResponse<FeatureReviewResponse>> getFeatures(
-            @PathVariable Long projectId,
             @PathVariable Long specDocumentId,
             @AuthenticationPrincipal AuthPrincipal principal,
             @RequestParam(required = false) FeatureReviewFilter filter
     ) {
         FeatureReviewResponse response = featureReviewService.list(
-                projectId,
                 specDocumentId,
                 principal.userId(),
                 filter
@@ -51,12 +49,10 @@ public class FeatureReviewController implements FeatureReviewApi {
     @Override
     @GetMapping("/review-summary")
     public ResponseEntity<ApiResponse<FeatureReviewSummaryResponse>> getReviewSummary(
-            @PathVariable Long projectId,
             @PathVariable Long specDocumentId,
             @AuthenticationPrincipal AuthPrincipal principal
     ) {
         FeatureReviewSummaryResponse response = featureReviewService.summary(
-                projectId,
                 specDocumentId,
                 principal.userId()
         );
@@ -67,11 +63,10 @@ public class FeatureReviewController implements FeatureReviewApi {
     @Override
     @PostMapping("/features/confirm-all")
     public ResponseEntity<ApiResponse<Void>> confirmAllFeatures(
-            @PathVariable Long projectId,
             @PathVariable Long specDocumentId,
             @AuthenticationPrincipal AuthPrincipal principal
     ) {
-        featureReviewService.confirmAll(projectId, specDocumentId, principal.userId());
+        featureReviewService.confirmAll(specDocumentId, principal.userId());
 
         return ResponseEntity.ok(ApiResponse.success());
     }
@@ -79,14 +74,12 @@ public class FeatureReviewController implements FeatureReviewApi {
     @Override
     @PatchMapping("/features/{featureId}")
     public ResponseEntity<ApiResponse<FeatureReviewResponse.Feature>> updateFeature(
-            @PathVariable Long projectId,
             @PathVariable Long specDocumentId,
             @PathVariable Long featureId,
             @AuthenticationPrincipal AuthPrincipal principal,
             @Valid @RequestBody FeatureUpdateRequest request
     ) {
         FeatureReviewResponse.Feature response = featureReviewService.update(
-                projectId,
                 specDocumentId,
                 principal.userId(),
                 featureId,
@@ -99,12 +92,11 @@ public class FeatureReviewController implements FeatureReviewApi {
     @Override
     @PostMapping("/features/{featureId}/confirm")
     public ResponseEntity<ApiResponse<Void>> confirmFeature(
-            @PathVariable Long projectId,
             @PathVariable Long specDocumentId,
             @PathVariable Long featureId,
             @AuthenticationPrincipal AuthPrincipal principal
     ) {
-        featureReviewService.confirm(projectId, specDocumentId, principal.userId(), featureId);
+        featureReviewService.confirm(specDocumentId, principal.userId(), featureId);
 
         return ResponseEntity.ok(ApiResponse.success());
     }
@@ -112,13 +104,12 @@ public class FeatureReviewController implements FeatureReviewApi {
     @Override
     @PostMapping("/features/{featureId}/merge")
     public ResponseEntity<ApiResponse<Void>> mergeFeature(
-            @PathVariable Long projectId,
             @PathVariable Long specDocumentId,
             @PathVariable Long featureId,
             @AuthenticationPrincipal AuthPrincipal principal,
             @Valid @RequestBody FeatureMergeRequest request
     ) {
-        featureReviewService.merge(projectId, specDocumentId, principal.userId(), featureId, request);
+        featureReviewService.merge(specDocumentId, principal.userId(), featureId, request);
 
         return ResponseEntity.ok(ApiResponse.success());
     }
@@ -126,13 +117,12 @@ public class FeatureReviewController implements FeatureReviewApi {
     @Override
     @PostMapping("/features/{featureId}/split")
     public ResponseEntity<ApiResponse<Void>> splitFeature(
-            @PathVariable Long projectId,
             @PathVariable Long specDocumentId,
             @PathVariable Long featureId,
             @AuthenticationPrincipal AuthPrincipal principal,
             @Valid @RequestBody FeatureSplitRequest request
     ) {
-        featureReviewService.split(projectId, specDocumentId, principal.userId(), featureId, request);
+        featureReviewService.split(specDocumentId, principal.userId(), featureId, request);
 
         return ResponseEntity.ok(ApiResponse.success());
     }
@@ -140,12 +130,11 @@ public class FeatureReviewController implements FeatureReviewApi {
     @Override
     @DeleteMapping("/features/{featureId}")
     public ResponseEntity<ApiResponse<Void>> deleteFeature(
-            @PathVariable Long projectId,
             @PathVariable Long specDocumentId,
             @PathVariable Long featureId,
             @AuthenticationPrincipal AuthPrincipal principal
     ) {
-        featureReviewService.delete(projectId, specDocumentId, principal.userId(), featureId);
+        featureReviewService.delete(specDocumentId, principal.userId(), featureId);
 
         return ResponseEntity.ok(ApiResponse.success());
     }

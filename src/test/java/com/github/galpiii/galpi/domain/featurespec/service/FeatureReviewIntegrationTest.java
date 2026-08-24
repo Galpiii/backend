@@ -146,7 +146,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
 
             // 합쳐진 기능은 displayOrder 0을 물려받는다. 기능 순서로 분류를 정렬하면 새로 만든
             // 분류가 맨 앞으로 올라간다.
-            featureReviewService.merge(projectId, specDocumentId, userId, source.getId(),
+            featureReviewService.merge(specDocumentId, userId, source.getId(),
                     new FeatureMergeRequest(target.getId(), "게시글 관리"));
 
             assertThat(list(FeatureReviewFilter.ALL).sections())
@@ -174,8 +174,8 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             Feature modified = newFeature("댓글 작성", section, 1);
             newFeature("좋아요", section, 2);
 
-            featureReviewService.confirm(projectId, specDocumentId, userId, confirmed.getId());
-            featureReviewService.update(projectId, specDocumentId, userId, modified.getId(),
+            featureReviewService.confirm(specDocumentId, userId, confirmed.getId());
+            featureReviewService.update(specDocumentId, userId, modified.getId(),
                     new FeatureUpdateRequest("댓글 관리", null));
 
             assertThat(featureNames(list(FeatureReviewFilter.REVIEWED)))
@@ -262,7 +262,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
                     User.ofGithub(System.nanoTime(), "stranger", "남", null, null));
 
             assertThatThrownBy(() -> featureReviewService.list(
-                    projectId, specDocumentId, stranger.getId(), FeatureReviewFilter.ALL))
+                    specDocumentId, stranger.getId(), FeatureReviewFilter.ALL))
                     .isInstanceOf(NotFoundException.class);
         }
     }
@@ -278,7 +278,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             FeatureRequirement kept = newRequirement(feature, "게시글을 작성한다.", 0);
             newRequirement(feature, "지워질 요구사항", 1);
 
-            featureReviewService.update(projectId, specDocumentId, userId, feature.getId(),
+            featureReviewService.update(specDocumentId, userId, feature.getId(),
                     new FeatureUpdateRequest(null, List.of(
                             new FeatureUpdateRequest.Requirement(kept.getId(), "게시글을 등록한다."),
                             new FeatureUpdateRequest.Requirement(null, "게시글을 고정한다."))));
@@ -297,7 +297,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             Feature feature = newFeature("게시글", section, 0);
             FeatureRequirement requirement = newRequirement(feature, "게시글을 작성한다.", 0);
 
-            featureReviewService.update(projectId, specDocumentId, userId, feature.getId(),
+            featureReviewService.update(specDocumentId, userId, feature.getId(),
                     new FeatureUpdateRequest(null, List.of(
                             new FeatureUpdateRequest.Requirement(requirement.getId(), "게시글을 등록한다."))));
 
@@ -313,7 +313,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
         void addedRequirementHasNoSourceText() {
             Feature feature = newFeature("게시글", section, 0);
 
-            featureReviewService.update(projectId, specDocumentId, userId, feature.getId(),
+            featureReviewService.update(specDocumentId, userId, feature.getId(),
                     new FeatureUpdateRequest(null, List.of(
                             new FeatureUpdateRequest.Requirement(null, "게시글을 고정한다."))));
 
@@ -330,9 +330,9 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             Feature cleared = newFeature("게시글", section, 1);
             newRequirement(cleared, "게시글을 작성한다.", 0);
 
-            featureReviewService.update(projectId, specDocumentId, userId, untouched.getId(),
+            featureReviewService.update(specDocumentId, userId, untouched.getId(),
                     new FeatureUpdateRequest("댓글 관리", null));
-            featureReviewService.update(projectId, specDocumentId, userId, cleared.getId(),
+            featureReviewService.update(specDocumentId, userId, cleared.getId(),
                     new FeatureUpdateRequest(null, List.of()));
 
             assertThat(featureRequirementRepository
@@ -349,7 +349,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             FeatureRequirement stranger = newRequirement(other, "댓글을 작성한다.", 0);
 
             assertThatThrownBy(() -> featureReviewService.update(
-                    projectId, specDocumentId, userId, feature.getId(),
+                    specDocumentId, userId, feature.getId(),
                     new FeatureUpdateRequest(null, List.of(
                             new FeatureUpdateRequest.Requirement(stranger.getId(), "가로챈 내용")))))
                     .isInstanceOf(BadRequestException.class)
@@ -367,7 +367,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             FeatureRequirement second = newRequirement(feature, "게시글을 수정한다.", 1);
 
             assertThatThrownBy(() -> featureReviewService.update(
-                    projectId, specDocumentId, userId, feature.getId(),
+                    specDocumentId, userId, feature.getId(),
                     new FeatureUpdateRequest(null, List.of(
                             new FeatureUpdateRequest.Requirement(first.getId(), "수정1"),
                             new FeatureUpdateRequest.Requirement(first.getId(), "수정2")))))
@@ -392,7 +392,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             newCandidate(feature, target, "게시글 관리", "게시글");
             newSuggestion(feature, "게시글 관리", "게시글", 0, requirement);
 
-            featureReviewService.update(projectId, specDocumentId, userId, feature.getId(),
+            featureReviewService.update(specDocumentId, userId, feature.getId(),
                     new FeatureUpdateRequest("게시글 관리", null));
 
             assertThat(featureIssueRepository.findAllByFeatureIdIn(List.of(feature.getId()))).isEmpty();
@@ -411,7 +411,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             Feature feature = newFeature("게시글", section, 0);
 
             assertThatThrownBy(() -> featureReviewService.update(
-                    projectId, specDocumentId, userId, feature.getId(),
+                    specDocumentId, userId, feature.getId(),
                     new FeatureUpdateRequest(null, null)))
                     .isInstanceOf(BadRequestException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_UPDATE_EMPTY);
@@ -428,7 +428,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             Feature feature = newFeature("게시글", section, 0);
             newIssue(feature, FeatureIssueType.SOURCE_REVIEW_REQUIRED);
 
-            featureReviewService.confirm(projectId, specDocumentId, userId, feature.getId());
+            featureReviewService.confirm(specDocumentId, userId, feature.getId());
 
             assertThat(reload(feature).getReviewStatus()).isEqualTo(FeatureReviewStatus.USER_CONFIRMED);
             assertThat(featureIssueRepository.findAllByFeatureIdIn(List.of(feature.getId()))).isEmpty();
@@ -439,8 +439,8 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
         void isIdempotent() {
             Feature feature = newFeature("게시글", section, 0);
 
-            featureReviewService.confirm(projectId, specDocumentId, userId, feature.getId());
-            featureReviewService.confirm(projectId, specDocumentId, userId, feature.getId());
+            featureReviewService.confirm(specDocumentId, userId, feature.getId());
+            featureReviewService.confirm(specDocumentId, userId, feature.getId());
 
             assertThat(reload(feature).getReviewStatus()).isEqualTo(FeatureReviewStatus.USER_CONFIRMED);
         }
@@ -460,7 +460,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             newIssue(source, FeatureIssueType.DUPLICATE_SUSPECTED);
             newCandidate(source, target, "게시글 관리", "게시글");
 
-            featureReviewService.merge(projectId, specDocumentId, userId, source.getId(),
+            featureReviewService.merge(specDocumentId, userId, source.getId(),
                     new FeatureMergeRequest(target.getId(), "게시글 관리"));
 
             List<Feature> remaining = featureRepository.findAllForReview(specDocumentId);
@@ -491,7 +491,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             Feature target = newFeature("글쓰기", section, 1, 2, 6);
             newCandidate(source, target, "게시글 관리", "게시글");
 
-            featureReviewService.merge(projectId, specDocumentId, userId, source.getId(),
+            featureReviewService.merge(specDocumentId, userId, source.getId(),
                     new FeatureMergeRequest(target.getId(), "게시글 관리"));
 
             assertThat(featureRepository.findAllForReview(specDocumentId)).singleElement()
@@ -508,7 +508,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             Feature target = newFeature("글쓰기", section, 1);
             newCandidate(source, target, "게시글 관리", "커뮤니티");
 
-            featureReviewService.merge(projectId, specDocumentId, userId, source.getId(),
+            featureReviewService.merge(specDocumentId, userId, source.getId(),
                     new FeatureMergeRequest(target.getId(), "게시글 관리"));
 
             FeatureSection created = featureRepository.findAllForReview(specDocumentId)
@@ -528,7 +528,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             Feature target = newFeature("글쓰기", section, 1);
             newCandidate(source, target, "게시글 관리", "  게시글  ");
 
-            featureReviewService.merge(projectId, specDocumentId, userId, source.getId(),
+            featureReviewService.merge(specDocumentId, userId, source.getId(),
                     new FeatureMergeRequest(target.getId(), "게시글 관리"));
 
             Feature merged = featureRepository.findAllForReview(specDocumentId).getFirst();
@@ -546,7 +546,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             Feature other = newFeature("좋아요", section, 1);
 
             assertThatThrownBy(() -> featureReviewService.merge(
-                    projectId, specDocumentId, userId, source.getId(),
+                    specDocumentId, userId, source.getId(),
                     new FeatureMergeRequest(other.getId(), "합친 기능")))
                     .isInstanceOf(BadRequestException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_MERGE_NOT_ALLOWED);
@@ -560,7 +560,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             newCandidate(source, target, "게시글 관리", "게시글");
 
             assertThatThrownBy(() -> featureReviewService.merge(
-                    projectId, specDocumentId, userId, target.getId(),
+                    specDocumentId, userId, target.getId(),
                     new FeatureMergeRequest(source.getId(), "게시글 관리")))
                     .isInstanceOf(BadRequestException.class);
         }
@@ -580,7 +580,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             SplitFeatureSuggestion first = newSuggestion(source, "게시글 관리", "게시글", 0, write);
             SplitFeatureSuggestion second = newSuggestion(source, "댓글 관리", "댓글", 1, comment);
 
-            featureReviewService.split(projectId, specDocumentId, userId, source.getId(),
+            featureReviewService.split(specDocumentId, userId, source.getId(),
                     new FeatureSplitRequest(List.of(
                             new FeatureSplitRequest.Target(first.getId(), "게시글 관리"),
                             new FeatureSplitRequest.Target(second.getId(), "댓글"))));
@@ -616,7 +616,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             SplitFeatureSuggestion first = newSuggestion(source, "게시글 관리", " 게시글 ", 0, write);
             SplitFeatureSuggestion second = newSuggestion(source, "댓글 관리", "게시글", 1, comment);
 
-            featureReviewService.split(projectId, specDocumentId, userId, source.getId(),
+            featureReviewService.split(specDocumentId, userId, source.getId(),
                     new FeatureSplitRequest(List.of(
                             new FeatureSplitRequest.Target(first.getId(), "게시글 관리"),
                             new FeatureSplitRequest.Target(second.getId(), "댓글 관리"))));
@@ -633,7 +633,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             Feature source = newFeature("게시글", section, 0);
 
             assertThatThrownBy(() -> featureReviewService.split(
-                    projectId, specDocumentId, userId, source.getId(),
+                    specDocumentId, userId, source.getId(),
                     new FeatureSplitRequest(List.of(
                             new FeatureSplitRequest.Target(1L, "게시글 관리")))))
                     .isInstanceOf(BadRequestException.class)
@@ -650,7 +650,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             newSuggestion(source, "댓글 관리", "댓글", 1, comment);
 
             assertThatThrownBy(() -> featureReviewService.split(
-                    projectId, specDocumentId, userId, source.getId(),
+                    specDocumentId, userId, source.getId(),
                     new FeatureSplitRequest(List.of(
                             new FeatureSplitRequest.Target(first.getId(), "게시글 관리")))))
                     .isInstanceOf(BadRequestException.class)
@@ -671,7 +671,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             newRequirement(feature, "게시글을 작성한다.", 0);
             newIssue(feature, FeatureIssueType.SOURCE_REVIEW_REQUIRED);
 
-            featureReviewService.delete(projectId, specDocumentId, userId, feature.getId());
+            featureReviewService.delete(specDocumentId, userId, feature.getId());
 
             assertThat(featureRepository.findAllForReview(specDocumentId)).isEmpty();
             assertThat(featureRequirementRepository.findAll()).isEmpty();
@@ -687,7 +687,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             newCandidate(holder, target, "게시글 관리", "게시글");
 
             // 상대를 지우면 holder→target 행은 CASCADE로 사라지지만 배지는 holder에 남는다.
-            featureReviewService.delete(projectId, specDocumentId, userId, target.getId());
+            featureReviewService.delete(specDocumentId, userId, target.getId());
 
             assertThat(duplicateCandidateRepository.findAllByFeatureIdIn(List.of(holder.getId()))).isEmpty();
             assertThat(featureIssueRepository.findAllByFeatureIdIn(List.of(holder.getId()))).isEmpty();
@@ -702,7 +702,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             newIssue(holder, FeatureIssueType.SOURCE_REVIEW_REQUIRED);
             newCandidate(holder, target, "게시글 관리", "게시글");
 
-            featureReviewService.delete(projectId, specDocumentId, userId, target.getId());
+            featureReviewService.delete(specDocumentId, userId, target.getId());
 
             assertThat(featureIssueRepository.findAllByFeatureIdIn(List.of(holder.getId())))
                     .extracting(FeatureIssue::getIssueType)
@@ -720,7 +720,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             newIssue(bystander, FeatureIssueType.DUPLICATE_SUSPECTED);
             newCandidate(bystander, target, "게시글 관리", "게시글");
 
-            featureReviewService.merge(projectId, specDocumentId, userId, source.getId(),
+            featureReviewService.merge(specDocumentId, userId, source.getId(),
                     new FeatureMergeRequest(target.getId(), "게시글 관리"));
 
             assertThat(featureIssueRepository.findAllByFeatureIdIn(List.of(bystander.getId()))).isEmpty();
@@ -737,10 +737,10 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             Feature unreviewed = newFeature("게시글", section, 0);
             Feature modified = newFeature("댓글", section, 1);
             newIssue(unreviewed, FeatureIssueType.SOURCE_REVIEW_REQUIRED);
-            featureReviewService.update(projectId, specDocumentId, userId, modified.getId(),
+            featureReviewService.update(specDocumentId, userId, modified.getId(),
                     new FeatureUpdateRequest("댓글 관리", null));
 
-            featureReviewService.confirmAll(projectId, specDocumentId, userId);
+            featureReviewService.confirmAll(specDocumentId, userId);
 
             assertThat(reload(unreviewed).getReviewStatus()).isEqualTo(FeatureReviewStatus.USER_CONFIRMED);
             assertThat(reload(modified).getReviewStatus()).isEqualTo(FeatureReviewStatus.USER_MODIFIED);
@@ -760,13 +760,13 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             Feature alsoConfirmed = newFeature("공지", section, 5);
             newIssue(firstIssue, FeatureIssueType.MISSING_REQUIREMENTS);
             newIssue(secondIssue, FeatureIssueType.SOURCE_REVIEW_REQUIRED);
-            featureReviewService.confirm(projectId, specDocumentId, userId, confirmed.getId());
-            featureReviewService.confirm(projectId, specDocumentId, userId, alsoConfirmed.getId());
-            featureReviewService.update(projectId, specDocumentId, userId, modified.getId(),
+            featureReviewService.confirm(specDocumentId, userId, confirmed.getId());
+            featureReviewService.confirm(specDocumentId, userId, alsoConfirmed.getId());
+            featureReviewService.update(specDocumentId, userId, modified.getId(),
                     new FeatureUpdateRequest("신고 관리", null));
 
             FeatureReviewSummaryResponse summary =
-                    featureReviewService.summary(projectId, specDocumentId, userId);
+                    featureReviewService.summary(specDocumentId, userId);
 
             assertThat(summary.reviewRequired()).isEqualTo(2);
             assertThat(summary.noIssue()).isEqualTo(1);
@@ -776,7 +776,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
     }
 
     private FeatureReviewResponse list(FeatureReviewFilter filter) {
-        return featureReviewService.list(projectId, specDocumentId, userId, filter);
+        return featureReviewService.list(specDocumentId, userId, filter);
     }
 
     private List<String> featureNames(FeatureReviewResponse response) {

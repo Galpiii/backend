@@ -117,9 +117,6 @@ public interface FeatureReviewApi {
             }
     )
     ResponseEntity<ApiResponse<FeatureReviewResponse>> getFeatures(
-            @Parameter(name = "projectId", in = ParameterIn.PATH, required = true, example = "1")
-            Long projectId,
-
             @Parameter(name = "specDocumentId", in = ParameterIn.PATH, required = true, example = "1")
             Long specDocumentId,
 
@@ -180,9 +177,6 @@ public interface FeatureReviewApi {
             }
     )
     ResponseEntity<ApiResponse<FeatureReviewSummaryResponse>> getReviewSummary(
-            @Parameter(name = "projectId", in = ParameterIn.PATH, required = true, example = "1")
-            Long projectId,
-
             @Parameter(name = "specDocumentId", in = ParameterIn.PATH, required = true, example = "1")
             Long specDocumentId,
 
@@ -215,9 +209,6 @@ public interface FeatureReviewApi {
             }
     )
     ResponseEntity<ApiResponse<Void>> confirmAllFeatures(
-            @Parameter(name = "projectId", in = ParameterIn.PATH, required = true, example = "1")
-            Long projectId,
-
             @Parameter(name = "specDocumentId", in = ParameterIn.PATH, required = true, example = "1")
             Long specDocumentId,
 
@@ -266,9 +257,6 @@ public interface FeatureReviewApi {
             }
     )
     ResponseEntity<ApiResponse<FeatureReviewResponse.Feature>> updateFeature(
-            @Parameter(name = "projectId", in = ParameterIn.PATH, required = true, example = "1")
-            Long projectId,
-
             @Parameter(name = "specDocumentId", in = ParameterIn.PATH, required = true, example = "1")
             Long specDocumentId,
 
@@ -301,9 +289,6 @@ public interface FeatureReviewApi {
             }
     )
     ResponseEntity<ApiResponse<Void>> confirmFeature(
-            @Parameter(name = "projectId", in = ParameterIn.PATH, required = true, example = "1")
-            Long projectId,
-
             @Parameter(name = "specDocumentId", in = ParameterIn.PATH, required = true, example = "1")
             Long specDocumentId,
 
@@ -357,9 +342,6 @@ public interface FeatureReviewApi {
             }
     )
     ResponseEntity<ApiResponse<Void>> mergeFeature(
-            @Parameter(name = "projectId", in = ParameterIn.PATH, required = true, example = "1")
-            Long projectId,
-
             @Parameter(name = "specDocumentId", in = ParameterIn.PATH, required = true, example = "1")
             Long specDocumentId,
 
@@ -415,9 +397,6 @@ public interface FeatureReviewApi {
             }
     )
     ResponseEntity<ApiResponse<Void>> splitFeature(
-            @Parameter(name = "projectId", in = ParameterIn.PATH, required = true, example = "1")
-            Long projectId,
-
             @Parameter(name = "specDocumentId", in = ParameterIn.PATH, required = true, example = "1")
             Long specDocumentId,
 
@@ -457,9 +436,6 @@ public interface FeatureReviewApi {
             }
     )
     ResponseEntity<ApiResponse<Void>> deleteFeature(
-            @Parameter(name = "projectId", in = ParameterIn.PATH, required = true, example = "1")
-            Long projectId,
-
             @Parameter(name = "specDocumentId", in = ParameterIn.PATH, required = true, example = "1")
             Long specDocumentId,
 

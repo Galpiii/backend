@@ -15,7 +15,7 @@ import java.util.Optional;
 public interface FeatureRepository extends JpaRepository<Feature, Long> {
 
     /**
-     * 소유자·프로젝트·문서를 한 번에 확인한다.
+     * 소유자와 문서를 한 번에 확인한다.
      *
      * <p>없는 기능, 남의 기능, 삭제된 프로젝트의 기능이 모두 같은 404가 되어야 id를 하나씩
      * 넣어 보는 것으로 남의 것을 알아낼 수 없다.
@@ -25,13 +25,11 @@ public interface FeatureRepository extends JpaRepository<Feature, Long> {
               from Feature feature
              where feature.id = :featureId
                and feature.specDocument.id = :specDocumentId
-               and feature.specDocument.project.id = :projectId
                and feature.specDocument.project.owner.id = :userId
                and feature.specDocument.project.deletedAt is null
             """)
     Optional<Feature> findOwned(@Param("featureId") Long featureId,
                                 @Param("specDocumentId") Long specDocumentId,
-                                @Param("projectId") Long projectId,
                                 @Param("userId") Long userId);
 
     /**

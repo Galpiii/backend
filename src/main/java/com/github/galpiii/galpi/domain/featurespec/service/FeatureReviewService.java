@@ -24,7 +24,6 @@ import com.github.galpiii.galpi.domain.featurespec.repository.FeatureSectionRepo
 import com.github.galpiii.galpi.domain.featurespec.repository.SpecDocumentRepository;
 import com.github.galpiii.galpi.domain.featurespec.repository.SplitFeatureSuggestionRepository;
 import com.github.galpiii.galpi.domain.featurespec.repository.SplitSuggestionFeatureRequirementRepository;
-import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.BadRequestException;
 import com.github.galpiii.galpi.global.error.exception.ConflictException;
@@ -67,7 +66,6 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 public class FeatureReviewService {
 
-    private final ProjectRepository projectRepository;
     private final SpecDocumentRepository specDocumentRepository;
     private final FeatureRepository featureRepository;
     private final FeatureSectionRepository featureSectionRepository;
@@ -84,9 +82,8 @@ public class FeatureReviewService {
      * 읽고, 특이사항이 있는 기능 집합은 응답에도 필요해 이미 손에 있다.
      */
     @Transactional(readOnly = true)
-    public FeatureReviewResponse list(Long projectId, Long specDocumentId, Long userId,
-                                      FeatureReviewFilter filter) {
-        requireSpecDocument(projectId, specDocumentId, userId);
+    public FeatureReviewResponse list(Long specDocumentId, Long userId, FeatureReviewFilter filter) {
+        requireSpecDocument(specDocumentId, userId);
 
         List<Feature> features = featureRepository.findAllForReview(specDocumentId);
         Set<Long> withIssue = new HashSet<>(featureIssueRepository.findFeatureIdsWithIssue(specDocumentId));
@@ -105,8 +102,8 @@ public class FeatureReviewService {
     }
 
     @Transactional(readOnly = true)
-    public FeatureReviewSummaryResponse summary(Long projectId, Long specDocumentId, Long userId) {
-        requireSpecDocument(projectId, specDocumentId, userId);
+    public FeatureReviewSummaryResponse summary(Long specDocumentId, Long userId) {
+        requireSpecDocument(specDocumentId, userId);
 
         return FeatureReviewSummaryResponse.of(
                 featureRepository.countBySpecDocumentId(specDocumentId),
@@ -125,13 +122,13 @@ public class FeatureReviewService {
      * 요구사항이 어느 추천 기능에도 속하지 않아 소리 없이 사라진다.
      */
     @Transactional
-    public FeatureReviewResponse.Feature update(Long projectId, Long specDocumentId, Long userId,
+    public FeatureReviewResponse.Feature update(Long specDocumentId, Long userId,
                                                 Long featureId, FeatureUpdateRequest request) {
         if (request.isEmpty()) {
             throw new BadRequestException(ErrorCode.FEATURE_UPDATE_EMPTY);
         }
 
-        Feature feature = requireOwnedFeature(projectId, specDocumentId, userId, featureId);
+        Feature feature = requireOwnedFeature(specDocumentId, userId, featureId);
 
         if (request.name() != null) {
             feature.rename(request.name());
@@ -164,8 +161,8 @@ public class FeatureReviewService {
 
     /** 추출 결과를 그대로 쓴다. 특이사항까지 확인했지만 고칠 것은 없다는 뜻이다. */
     @Transactional
-    public void confirm(Long projectId, Long specDocumentId, Long userId, Long featureId) {
-        Feature feature = requireOwnedFeature(projectId, specDocumentId, userId, featureId);
+    public void confirm(Long specDocumentId, Long userId, Long featureId) {
+        Feature feature = requireOwnedFeature(specDocumentId, userId, featureId);
 
         feature.confirm();
         clearAiOutput(List.of(featureId));
@@ -184,9 +181,9 @@ public class FeatureReviewService {
      * 일반 수정으로 지우면 된다.
      */
     @Transactional
-    public void merge(Long projectId, Long specDocumentId, Long userId,
+    public void merge(Long specDocumentId, Long userId,
                       Long featureId, FeatureMergeRequest request) {
-        Feature source = requireOwnedFeature(projectId, specDocumentId, userId, featureId);
+        Feature source = requireOwnedFeature(specDocumentId, userId, featureId);
 
         DuplicateCandidate candidate = duplicateCandidateRepository
                 .findByFeatureIdAndTargetFeatureId(featureId, request.targetFeatureId())
@@ -238,9 +235,9 @@ public class FeatureReviewService {
      * 분리 제안 연결이 살아남아 이미 적용된 추천안을 계속 가리킨다.
      */
     @Transactional
-    public void split(Long projectId, Long specDocumentId, Long userId,
+    public void split(Long specDocumentId, Long userId,
                       Long featureId, FeatureSplitRequest request) {
-        Feature source = requireOwnedFeature(projectId, specDocumentId, userId, featureId);
+        Feature source = requireOwnedFeature(specDocumentId, userId, featureId);
 
         List<SplitFeatureSuggestion> suggestions =
                 splitFeatureSuggestionRepository.findAllByFeatureIdOrderByDisplayOrderAscIdAsc(featureId);
@@ -284,8 +281,8 @@ public class FeatureReviewService {
 
     /** 잘못 추출된 기능을 지운다. 복원과 삭제 이력은 제공하지 않는다. */
     @Transactional
-    public void delete(Long projectId, Long specDocumentId, Long userId, Long featureId) {
-        requireOwnedFeature(projectId, specDocumentId, userId, featureId);
+    public void delete(Long specDocumentId, Long userId, Long featureId) {
+        requireOwnedFeature(specDocumentId, userId, featureId);
 
         deleteFeatures(specDocumentId, List.of(featureId));
 
@@ -299,8 +296,8 @@ public class FeatureReviewService {
      * 승인했거나 수정한 기능은 건드리지 않는다.
      */
     @Transactional
-    public void confirmAll(Long projectId, Long specDocumentId, Long userId) {
-        requireSpecDocument(projectId, specDocumentId, userId);
+    public void confirmAll(Long specDocumentId, Long userId) {
+        requireSpecDocument(specDocumentId, userId);
 
         List<Long> unreviewedIds = featureRepository.findIdsByReviewStatus(
                 specDocumentId, FeatureReviewStatus.UNREVIEWED);
@@ -649,12 +646,11 @@ public class FeatureReviewService {
                 specDocumentId, FeatureIssueType.DUPLICATE_SUSPECTED);
     }
 
-    private Feature requireOwnedFeature(Long projectId, Long specDocumentId, Long userId, Long featureId) {
-        return featureRepository.findOwned(featureId, specDocumentId, projectId, userId)
+    private Feature requireOwnedFeature(Long specDocumentId, Long userId, Long featureId) {
+        return featureRepository.findOwned(featureId, specDocumentId, userId)
                 .orElseThrow(() -> {
                     log.warn(
-                            "[기능 검토] 기능이 없거나 접근 권한이 없습니다. projectId: {}, specDocumentId: {}, featureId: {}, userId: {}",
-                            projectId,
+                            "[기능 검토] 기능이 없거나 접근 권한이 없습니다. specDocumentId: {}, featureId: {}, userId: {}",
                             specDocumentId,
                             featureId,
                             userId
@@ -666,25 +662,16 @@ public class FeatureReviewService {
     /**
      * 문서 단위 작업의 권한 확인.
      *
-     * <p>남의 프로젝트, 없는 프로젝트, 삭제된 프로젝트가 모두 같은 404가 되어야 프로젝트 id의
+     * <p>없는 문서, 남의 문서, 삭제된 프로젝트의 문서가 모두 같은 404가 되어야 문서 id의
      * 존재 여부가 새지 않는다.
      */
-    private SpecDocument requireSpecDocument(Long projectId, Long specDocumentId, Long userId) {
-        if (projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(projectId, userId).isEmpty()) {
-            log.warn(
-                    "[기능 검토] 프로젝트가 없거나 접근 권한이 없습니다. projectId: {}, userId: {}",
-                    projectId,
-                    userId
-            );
-            throw new NotFoundException(ErrorCode.PROJECT_NOT_FOUND);
-        }
-
-        return specDocumentRepository.findByIdAndProjectId(specDocumentId, projectId)
+    private SpecDocument requireSpecDocument(Long specDocumentId, Long userId) {
+        return specDocumentRepository.findOwned(specDocumentId, userId)
                 .orElseThrow(() -> {
                     log.warn(
-                            "[기능 검토] 기능명세서를 찾을 수 없습니다. projectId: {}, specDocumentId: {}",
-                            projectId,
-                            specDocumentId
+                            "[기능 검토] 기능명세서가 없거나 접근 권한이 없습니다. specDocumentId: {}, userId: {}",
+                            specDocumentId,
+                            userId
                     );
                     return new NotFoundException(ErrorCode.FEATURE_SPEC_NOT_ACCESSIBLE);
                 });

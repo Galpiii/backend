@@ -35,12 +35,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @DisplayName("FeatureReviewController — 기능 검토")
 class FeatureReviewControllerTest extends WebMvcTestSupport {
 
-    private static final long PROJECT_ID = 1L;
     private static final long USER_ID = 7L;
     private static final long SPEC_DOCUMENT_ID = 10L;
     private static final long FEATURE_ID = 12L;
 
-    private static final String BASE = "/projects/{projectId}/feature-specs/{specDocumentId}";
+    private static final String BASE = "/feature-specs/{specDocumentId}";
     private static final String FEATURES_PATH = BASE + "/features";
     private static final String SUMMARY_PATH = BASE + "/review-summary";
     private static final String CONFIRM_ALL_PATH = BASE + "/features/confirm-all";
@@ -65,11 +64,11 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
                     List.of(new FeatureReviewResponse.Requirement(34L, "게시글을 작성한다.", "원문")),
                     List.of(), List.of(), List.of());
 
-            given(featureReviewService.list(PROJECT_ID, SPEC_DOCUMENT_ID, USER_ID, null))
+            given(featureReviewService.list(SPEC_DOCUMENT_ID, USER_ID, null))
                     .willReturn(new FeatureReviewResponse(List.of(
                             new FeatureReviewResponse.SectionGroup(3L, "게시글", List.of(feature)))));
 
-            mockMvc.perform(get(FEATURES_PATH, PROJECT_ID, SPEC_DOCUMENT_ID)
+            mockMvc.perform(get(FEATURES_PATH, SPEC_DOCUMENT_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.sections[0].sectionId").value(3))
@@ -82,23 +81,23 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("filter를 그대로 서비스에 넘긴다")
         void passesFilter() throws Exception {
-            given(featureReviewService.list(PROJECT_ID, SPEC_DOCUMENT_ID, USER_ID,
+            given(featureReviewService.list(SPEC_DOCUMENT_ID, USER_ID,
                     FeatureReviewFilter.REVIEW_REQUIRED))
                     .willReturn(new FeatureReviewResponse(List.of()));
 
-            mockMvc.perform(get(FEATURES_PATH, PROJECT_ID, SPEC_DOCUMENT_ID)
+            mockMvc.perform(get(FEATURES_PATH, SPEC_DOCUMENT_ID)
                             .param("filter", "REVIEW_REQUIRED")
                             .header(HttpHeaders.AUTHORIZATION, bearer()))
                     .andExpect(status().isOk());
 
             verify(featureReviewService).list(
-                    PROJECT_ID, SPEC_DOCUMENT_ID, USER_ID, FeatureReviewFilter.REVIEW_REQUIRED);
+                    SPEC_DOCUMENT_ID, USER_ID, FeatureReviewFilter.REVIEW_REQUIRED);
         }
 
         @Test
         @DisplayName("알 수 없는 filter 값이면 400이다")
         void rejectsUnknownFilter() throws Exception {
-            mockMvc.perform(get(FEATURES_PATH, PROJECT_ID, SPEC_DOCUMENT_ID)
+            mockMvc.perform(get(FEATURES_PATH, SPEC_DOCUMENT_ID)
                             .param("filter", "무엇인가")
                             .header(HttpHeaders.AUTHORIZATION, bearer()))
                     .andExpect(status().isBadRequest())
@@ -108,10 +107,10 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("인증 없이 부르면 401이고 서비스를 호출하지 않는다")
         void requiresAuthentication() throws Exception {
-            mockMvc.perform(get(FEATURES_PATH, PROJECT_ID, SPEC_DOCUMENT_ID))
+            mockMvc.perform(get(FEATURES_PATH, SPEC_DOCUMENT_ID))
                     .andExpect(status().isUnauthorized());
 
-            verify(featureReviewService, never()).list(any(), any(), any(), any());
+            verify(featureReviewService, never()).list(any(), any(), any());
         }
     }
 
@@ -122,10 +121,10 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("탭별 개수를 200으로 내려준다")
         void returnsSummary() throws Exception {
-            given(featureReviewService.summary(PROJECT_ID, SPEC_DOCUMENT_ID, USER_ID))
+            given(featureReviewService.summary(SPEC_DOCUMENT_ID, USER_ID))
                     .willReturn(new FeatureReviewSummaryResponse(5, 7, 25, 37));
 
-            mockMvc.perform(get(SUMMARY_PATH, PROJECT_ID, SPEC_DOCUMENT_ID)
+            mockMvc.perform(get(SUMMARY_PATH, SPEC_DOCUMENT_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.reviewRequired").value(5))
@@ -138,9 +137,9 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
         @DisplayName("접근할 수 없는 기능명세서면 404다")
         void returnsNotFound() throws Exception {
             willThrow(new NotFoundException(ErrorCode.FEATURE_SPEC_NOT_ACCESSIBLE))
-                    .given(featureReviewService).summary(PROJECT_ID, SPEC_DOCUMENT_ID, USER_ID);
+                    .given(featureReviewService).summary(SPEC_DOCUMENT_ID, USER_ID);
 
-            mockMvc.perform(get(SUMMARY_PATH, PROJECT_ID, SPEC_DOCUMENT_ID)
+            mockMvc.perform(get(SUMMARY_PATH, SPEC_DOCUMENT_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer()))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.code").value(ErrorCode.FEATURE_SPEC_NOT_ACCESSIBLE.getCode()));
@@ -154,13 +153,13 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("수정된 기능을 200으로 내려준다")
         void returnsUpdatedFeature() throws Exception {
-            given(featureReviewService.update(eq(PROJECT_ID), eq(SPEC_DOCUMENT_ID), eq(USER_ID),
+            given(featureReviewService.update(eq(SPEC_DOCUMENT_ID), eq(USER_ID),
                     eq(FEATURE_ID), any()))
                     .willReturn(new FeatureReviewResponse.Feature(
                             FEATURE_ID, "게시글 관리", FeatureReviewStatus.USER_MODIFIED, 3, 4,
                             List.of(), List.of(), List.of(), List.of()));
 
-            mockMvc.perform(patch(FEATURE_PATH, PROJECT_ID, SPEC_DOCUMENT_ID, FEATURE_ID)
+            mockMvc.perform(patch(FEATURE_PATH, SPEC_DOCUMENT_ID, FEATURE_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
@@ -174,7 +173,7 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("요구사항 내용이 비어 있으면 400이고 서비스를 호출하지 않는다")
         void rejectsBlankRequirement() throws Exception {
-            mockMvc.perform(patch(FEATURE_PATH, PROJECT_ID, SPEC_DOCUMENT_ID, FEATURE_ID)
+            mockMvc.perform(patch(FEATURE_PATH, SPEC_DOCUMENT_ID, FEATURE_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
@@ -184,17 +183,17 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
                     .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_INPUT_VALUE.getCode()));
 
             verify(featureReviewService, never())
-                    .update(any(), any(), any(), any(), any());
+                    .update(any(), any(), any(), any());
         }
 
         @Test
         @DisplayName("남의 기능이면 404다")
         void returnsNotFound() throws Exception {
             willThrow(new NotFoundException(ErrorCode.FEATURE_NOT_ACCESSIBLE))
-                    .given(featureReviewService).update(eq(PROJECT_ID), eq(SPEC_DOCUMENT_ID),
+                    .given(featureReviewService).update(eq(SPEC_DOCUMENT_ID),
                             eq(USER_ID), eq(FEATURE_ID), any());
 
-            mockMvc.perform(patch(FEATURE_PATH, PROJECT_ID, SPEC_DOCUMENT_ID, FEATURE_ID)
+            mockMvc.perform(patch(FEATURE_PATH, SPEC_DOCUMENT_ID, FEATURE_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
@@ -212,27 +211,27 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("승인은 본문 없이 200이다")
         void confirmsFeature() throws Exception {
-            mockMvc.perform(post(FEATURE_PATH + "/confirm", PROJECT_ID, SPEC_DOCUMENT_ID, FEATURE_ID)
+            mockMvc.perform(post(FEATURE_PATH + "/confirm", SPEC_DOCUMENT_ID, FEATURE_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer()))
                     .andExpect(status().isOk());
 
-            verify(featureReviewService).confirm(PROJECT_ID, SPEC_DOCUMENT_ID, USER_ID, FEATURE_ID);
+            verify(featureReviewService).confirm(SPEC_DOCUMENT_ID, USER_ID, FEATURE_ID);
         }
 
         @Test
         @DisplayName("일괄 승인은 본문 없이 200이다")
         void confirmsAll() throws Exception {
-            mockMvc.perform(post(CONFIRM_ALL_PATH, PROJECT_ID, SPEC_DOCUMENT_ID)
+            mockMvc.perform(post(CONFIRM_ALL_PATH, SPEC_DOCUMENT_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer()))
                     .andExpect(status().isOk());
 
-            verify(featureReviewService).confirmAll(PROJECT_ID, SPEC_DOCUMENT_ID, USER_ID);
+            verify(featureReviewService).confirmAll(SPEC_DOCUMENT_ID, USER_ID);
         }
 
         @Test
         @DisplayName("병합에 합칠 상대가 없으면 400이고 서비스를 호출하지 않는다")
         void rejectsMergeWithoutTarget() throws Exception {
-            mockMvc.perform(post(FEATURE_PATH + "/merge", PROJECT_ID, SPEC_DOCUMENT_ID, FEATURE_ID)
+            mockMvc.perform(post(FEATURE_PATH + "/merge", SPEC_DOCUMENT_ID, FEATURE_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
@@ -240,17 +239,17 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
                                     """))
                     .andExpect(status().isBadRequest());
 
-            verify(featureReviewService, never()).merge(any(), any(), any(), any(), any());
+            verify(featureReviewService, never()).merge(any(), any(), any(), any());
         }
 
         @Test
         @DisplayName("중복으로 지목되지 않은 기능을 합치려 하면 400 FEATURE-004다")
         void returnsMergeNotAllowed() throws Exception {
             willThrow(new BadRequestException(ErrorCode.FEATURE_MERGE_NOT_ALLOWED))
-                    .given(featureReviewService).merge(eq(PROJECT_ID), eq(SPEC_DOCUMENT_ID),
+                    .given(featureReviewService).merge(eq(SPEC_DOCUMENT_ID),
                             eq(USER_ID), eq(FEATURE_ID), any());
 
-            mockMvc.perform(post(FEATURE_PATH + "/merge", PROJECT_ID, SPEC_DOCUMENT_ID, FEATURE_ID)
+            mockMvc.perform(post(FEATURE_PATH + "/merge", SPEC_DOCUMENT_ID, FEATURE_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
@@ -263,7 +262,7 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("분리 추천안이 비어 있으면 400이고 서비스를 호출하지 않는다")
         void rejectsEmptySplit() throws Exception {
-            mockMvc.perform(post(FEATURE_PATH + "/split", PROJECT_ID, SPEC_DOCUMENT_ID, FEATURE_ID)
+            mockMvc.perform(post(FEATURE_PATH + "/split", SPEC_DOCUMENT_ID, FEATURE_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
@@ -271,26 +270,26 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
                                     """))
                     .andExpect(status().isBadRequest());
 
-            verify(featureReviewService, never()).split(any(), any(), any(), any(), any());
+            verify(featureReviewService, never()).split(any(), any(), any(), any());
         }
 
         @Test
         @DisplayName("삭제는 본문 없이 200이다")
         void deletesFeature() throws Exception {
-            mockMvc.perform(delete(FEATURE_PATH, PROJECT_ID, SPEC_DOCUMENT_ID, FEATURE_ID)
+            mockMvc.perform(delete(FEATURE_PATH, SPEC_DOCUMENT_ID, FEATURE_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer()))
                     .andExpect(status().isOk());
 
-            verify(featureReviewService).delete(PROJECT_ID, SPEC_DOCUMENT_ID, USER_ID, FEATURE_ID);
+            verify(featureReviewService).delete(SPEC_DOCUMENT_ID, USER_ID, FEATURE_ID);
         }
 
         @Test
         @DisplayName("같은 요청이 겹치면 409 FEATURE-006이다")
         void returnsConflict() throws Exception {
             willThrow(new ConflictException(ErrorCode.FEATURE_REVIEW_CONFLICT))
-                    .given(featureReviewService).delete(PROJECT_ID, SPEC_DOCUMENT_ID, USER_ID, FEATURE_ID);
+                    .given(featureReviewService).delete(SPEC_DOCUMENT_ID, USER_ID, FEATURE_ID);
 
-            mockMvc.perform(delete(FEATURE_PATH, PROJECT_ID, SPEC_DOCUMENT_ID, FEATURE_ID)
+            mockMvc.perform(delete(FEATURE_PATH, SPEC_DOCUMENT_ID, FEATURE_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer()))
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.code").value(ErrorCode.FEATURE_REVIEW_CONFLICT.getCode()));
