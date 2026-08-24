@@ -25,7 +25,7 @@ public class FeatureRequirement extends BaseEntity {
     @Column(nullable = false, columnDefinition = "text")
     private String content;
 
-    @Column(nullable = false, columnDefinition = "text")
+    @Column(columnDefinition = "text")
     private String sourceText;
 
     @Column(nullable = false)
@@ -36,6 +36,14 @@ public class FeatureRequirement extends BaseEntity {
         this.feature = feature;
         this.content = content;
         this.sourceText = sourceText;
+        this.displayOrder = displayOrder;
+    }
+
+    public void updateContent(String content) {
+        this.content = content;
+    }
+
+    public void updateDisplayOrder(int displayOrder) {
         this.displayOrder = displayOrder;
     }
 }

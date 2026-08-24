@@ -111,7 +111,17 @@ public enum ErrorCode {
     // Feature Spec
     FEATURE_SPEC_ALREADY_EXISTS("FEATURE-SPEC-EXISTS-001", HttpStatus.CONFLICT, "이미 등록된 기능명세서가 있습니다."),
     FEATURE_SPEC_NOT_ACCESSIBLE("FEATURE-SPEC-ACCESS-001", HttpStatus.NOT_FOUND, "기능명세서를 찾을 수 없거나 접근할 수 없습니다."),
-    FEATURE_SPEC_EXTRACTION_BUSY("FEATURE-SPEC-EXTRACTION-001", HttpStatus.SERVICE_UNAVAILABLE, "분석 요청이 많아 지금은 처리할 수 없습니다. 잠시 후 다시 시도해 주세요.");
+    FEATURE_SPEC_EXTRACTION_BUSY("FEATURE-SPEC-EXTRACTION-001", HttpStatus.SERVICE_UNAVAILABLE, "분석 요청이 많아 지금은 처리할 수 없습니다. 잠시 후 다시 시도해 주세요."),
+
+    // Feature Review
+    FEATURE_NOT_ACCESSIBLE("FEATURE-001", HttpStatus.NOT_FOUND, "기능을 찾을 수 없거나 접근할 수 없습니다."),
+    FEATURE_UPDATE_EMPTY("FEATURE-002", HttpStatus.BAD_REQUEST, "변경할 값이 없습니다."),
+    FEATURE_REQUIREMENT_NOT_OWNED("FEATURE-003", HttpStatus.BAD_REQUEST, "이 기능의 세부 요구사항이 아닙니다."),
+    FEATURE_MERGE_NOT_ALLOWED("FEATURE-004", HttpStatus.BAD_REQUEST, "중복으로 판단된 기능이 아닙니다."),
+    FEATURE_SPLIT_NOT_ALLOWED("FEATURE-005", HttpStatus.BAD_REQUEST, "적용할 수 있는 분리 추천안이 아닙니다."),
+    // 같은 기능을 동시에 두 번 병합하거나, 이미 사라진 기능을 다시 바꾸려 할 때. 아무것도
+    // 저장되지 않으므로 목록을 다시 불러오면 된다.
+    FEATURE_REVIEW_CONFLICT("FEATURE-006", HttpStatus.CONFLICT, "다른 요청이 먼저 처리되어 대상이 변경되었습니다. 목록을 새로고침해 주세요.");
 
     private final String code;
     private final HttpStatus status;
