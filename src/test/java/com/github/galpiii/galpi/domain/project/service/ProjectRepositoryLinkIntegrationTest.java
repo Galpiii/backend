@@ -8,8 +8,6 @@ import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.domain.user.entity.User;
 import com.github.galpiii.galpi.domain.user.repository.UserRepository;
-import com.github.galpiii.galpi.global.error.ErrorCode;
-import com.github.galpiii.galpi.global.error.exception.ConflictException;
 import com.github.galpiii.galpi.support.IntegrationTestSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -115,14 +113,34 @@ class ProjectRepositoryLinkIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("사전 조회가 잡아내면 409다")
-    void rejectsAlreadyLinkedBeforeHittingTheConstraint() {
+    @DisplayName("같은 저장소를 다시 연결해도 행이 늘지 않는다 — 사전 조회가 제약에 닿기 전에 걸러 낸다")
+    void isIdempotentAcrossCalls() {
         Map<Long, RepositorySnapshot> accessible = accessible(snapshot(REPOSITORY_ID, "wb/notes"));
         linkWriter.link(userId, projectId, List.of(REPOSITORY_ID), accessible);
 
-        assertThatThrownBy(() -> linkWriter.link(userId, projectId, List.of(REPOSITORY_ID), accessible))
-                .isInstanceOf(ConflictException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_REPOSITORY_ALREADY_LINKED);
+        List<GithubRepository> linked =
+                linkWriter.link(userId, projectId, List.of(REPOSITORY_ID), accessible);
+
+        assertThat(linked).extracting(GithubRepository::getGithubRepositoryId)
+                .containsExactly(REPOSITORY_ID);
+        assertThat(repositoryRepository.findAllByProjectId(projectId)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("이미 연결된 것과 새 저장소를 함께 보내면 새 것만 추가된다")
+    void addsOnlyTheMissingOnes() {
+        linkWriter.link(userId, projectId, List.of(REPOSITORY_ID),
+                accessible(snapshot(REPOSITORY_ID, "wb/notes")));
+
+        List<GithubRepository> linked = linkWriter.link(userId, projectId,
+                List.of(REPOSITORY_ID, 2L),
+                accessible(snapshot(REPOSITORY_ID, "wb/notes"), snapshot(2L, "galpiii/backend")));
+
+        assertThat(linked).extracting(GithubRepository::getGithubRepositoryId)
+                .containsExactly(REPOSITORY_ID, 2L);
+        assertThat(repositoryRepository.findAllByProjectId(projectId))
+                .extracting(GithubRepository::getGithubRepositoryId)
+                .containsExactlyInAnyOrder(REPOSITORY_ID, 2L);
     }
 
     /**

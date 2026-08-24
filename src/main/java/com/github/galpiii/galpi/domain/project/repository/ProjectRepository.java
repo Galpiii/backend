@@ -39,7 +39,8 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
                        project.status,
                        project.onboardingStep,
                        (select count(repository.id) from GithubRepository repository
-                         where repository.project.id = project.id),
+                         where repository.project.id = project.id
+                           and repository.unlinkedAt is null),
                        project.activeSpecDocumentId,
                        run.id,
                        run.status,

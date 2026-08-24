@@ -48,7 +48,14 @@ public class ProjectRepositoryController {
             description = """
                     githubRepositoryId가 지금 이 사용자에게 실제로 보이는 저장소인지 서버에서
                     다시 확인한 뒤 저장한다. 서로 다른 installation의 저장소를 함께 보내도 된다.
-                    이미 연결된 저장소가 섞여 있으면 409로 거부한다.""")
+
+                    멱등하다. 이미 연결된 저장소가 섞여 있어도 거부하지 않고 건너뛰므로,
+                    화면의 선택 상태를 통째로 보내도 되고 같은 요청을 두 번 보내도 결과가 같다.
+                    응답은 요청한 저장소 전부의 현재 모습이며, 새로 붙인 것과 이미 있던 것을
+                    구분하지 않는다.
+
+                    409는 같은 저장소를 두 요청이 동시에 연결할 때만 나온다. 그대로 다시
+                    보내면 성공한다.""")
     @PostMapping
     public ResponseEntity<ApiResponse<List<LinkedRepositoryResponse>>> link(
             @AuthenticationPrincipal AuthPrincipal principal,
