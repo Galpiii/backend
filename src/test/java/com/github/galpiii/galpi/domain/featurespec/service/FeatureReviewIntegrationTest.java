@@ -221,6 +221,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
                 assertThat(candidate.targetFeatureId()).isEqualTo(target.getId());
                 assertThat(candidate.targetFeatureName()).isEqualTo("글쓰기");
                 assertThat(candidate.targetSourcePageStart()).isEqualTo(7);
+                assertThat(candidate.targetSourcePageEnd()).isEqualTo(9);
                 assertThat(candidate.targetRequirements())
                         .extracting(FeatureReviewResponse.Requirement::content)
                         .containsExactly("글을 쓴다.", "글을 지운다.");
@@ -372,7 +373,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
                             new FeatureUpdateRequest.Requirement(first.getId(), "수정1"),
                             new FeatureUpdateRequest.Requirement(first.getId(), "수정2")))))
                     .isInstanceOf(BadRequestException.class)
-                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_REQUIREMENT_NOT_OWNED);
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_REQUIREMENT_DUPLICATED);
 
             // 조용히 접히면 2건이 1건이 되고, 보내지 않은 second가 삭제된다.
             assertThat(featureRequirementRepository
