@@ -29,6 +29,8 @@ import com.github.galpiii.galpi.global.error.exception.BadRequestException;
 import com.github.galpiii.galpi.global.error.exception.ConflictException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,6 +67,9 @@ import java.util.stream.Stream;
 @Service
 @RequiredArgsConstructor
 public class FeatureReviewService {
+
+    /** V10 마이그레이션의 제약 이름. 바꾸면 409가 조용히 500으로 돌아간다. */
+    private static final String UNIQUE_FEATURE_SECTIONS_TITLE = "uk_feature_sections_title";
 
     private final SpecDocumentRepository specDocumentRepository;
     private final FeatureRepository featureRepository;
@@ -606,17 +611,44 @@ public class FeatureReviewService {
                 continue;
             }
 
-            byTitle.put(title, featureSectionRepository.save(FeatureSection.builder()
-                    .specDocument(specDocument)
-                    .title(title)
-                    .displayOrder(nextOrder++)
-                    .build()));
+            byTitle.put(title, createSection(specDocument, title, nextOrder++));
         }
 
         Map<String, FeatureSection> resolved = new LinkedHashMap<>();
         strippedByRequested.forEach((requested, stripped) -> resolved.put(requested, byTitle.get(stripped)));
 
         return resolved;
+    }
+
+    private FeatureSection createSection(SpecDocument specDocument, String title, int displayOrder) {
+        try {
+            return featureSectionRepository.saveAndFlush(FeatureSection.builder()
+                    .specDocument(specDocument)
+                    .title(title)
+                    .displayOrder(displayOrder)
+                    .build());
+        } catch (DataIntegrityViolationException e) {
+            if (!isDuplicatedSectionTitle(e)) {
+                throw e;
+            }
+
+            log.warn(
+                    "[기능 검토] 같은 분류가 동시에 만들어져 되돌립니다. specDocumentId: {}, title: {}",
+                    specDocument.getId(),
+                    title
+            );
+            throw new ConflictException(ErrorCode.FEATURE_REVIEW_CONFLICT);
+        }
+    }
+
+    private static boolean isDuplicatedSectionTitle(DataIntegrityViolationException e) {
+        for (Throwable cause = e.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation) {
+                return UNIQUE_FEATURE_SECTIONS_TITLE.equalsIgnoreCase(violation.getConstraintName());
+            }
+        }
+
+        return false;
     }
 
     /**
