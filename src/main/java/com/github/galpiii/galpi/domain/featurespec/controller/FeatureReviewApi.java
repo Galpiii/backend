@@ -275,15 +275,15 @@ public interface FeatureReviewApi {
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "400",
                             description = """
-                                    - FEATURE-002: 변경할 값이 없음
-                                    - FEATURE-003: 이 기능의 세부 요구사항이 아닌 id를 보냄
-                                    - FEATURE-007: 같은 id를 두 번 보냄
+                                    - FEATURE-REVIEW-002: 변경할 값이 없음
+                                    - FEATURE-REVIEW-003: 이 기능의 세부 요구사항이 아닌 id를 보냄
+                                    - FEATURE-REVIEW-007: 같은 id를 두 번 보냄
                                     - COMMON-002: 기능명 또는 요구사항 내용이 유효하지 않음
                                     """
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
-                            description = "FEATURE-001: 기능을 찾을 수 없거나 접근할 수 없음"
+                            description = "FEATURE-REVIEW-001: 기능을 찾을 수 없거나 접근할 수 없음"
                     )
             }
     )
@@ -320,7 +320,7 @@ public interface FeatureReviewApi {
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
-                            description = "FEATURE-001: 기능을 찾을 수 없거나 접근할 수 없음"
+                            description = "FEATURE-REVIEW-001: 기능을 찾을 수 없거나 접근할 수 없음"
                     )
             }
     )
@@ -360,16 +360,16 @@ public interface FeatureReviewApi {
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "400",
-                            description = "FEATURE-004: 중복으로 판단된 기능이 아님"
+                            description = "FEATURE-REVIEW-004: 중복으로 판단된 기능이 아님"
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
-                            description = "FEATURE-001: 기능을 찾을 수 없거나 접근할 수 없음"
+                            description = "FEATURE-REVIEW-001: 기능을 찾을 수 없거나 접근할 수 없음"
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "409",
                             description = """
-                                    FEATURE-006: 다른 요청이 먼저 처리되어 대상이 변경됨
+                                    FEATURE-REVIEW-006: 다른 요청이 먼저 처리되어 대상이 변경됨
 
                                     같은 병합이 두 번 접수된 경우입니다. 아무것도 저장되지 않으므로
                                     목록을 다시 불러오면 됩니다.
@@ -415,7 +415,7 @@ public interface FeatureReviewApi {
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "400",
                             description = """
-                                    FEATURE-005: 적용할 수 있는 분리 추천안이 아님
+                                    FEATURE-REVIEW-005: 적용할 수 있는 분리 추천안이 아님
 
                                     분리 추천안이 없는 기능이거나, 보낸 suggestionId가 저장된 추천안과
                                     정확히 일대일로 대응하지 않는 경우입니다. 일부만 보내거나 같은
@@ -425,11 +425,11 @@ public interface FeatureReviewApi {
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
-                            description = "FEATURE-001: 기능을 찾을 수 없거나 접근할 수 없음"
+                            description = "FEATURE-REVIEW-001: 기능을 찾을 수 없거나 접근할 수 없음"
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "409",
-                            description = "FEATURE-006: 다른 요청이 먼저 처리되어 대상이 변경됨"
+                            description = "FEATURE-REVIEW-006: 다른 요청이 먼저 처리되어 대상이 변경됨"
                     )
             }
     )
@@ -464,11 +464,11 @@ public interface FeatureReviewApi {
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
-                            description = "FEATURE-001: 기능을 찾을 수 없거나 접근할 수 없음"
+                            description = "FEATURE-REVIEW-001: 기능을 찾을 수 없거나 접근할 수 없음"
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "409",
-                            description = "FEATURE-006: 다른 요청이 먼저 처리되어 대상이 변경됨"
+                            description = "FEATURE-REVIEW-006: 다른 요청이 먼저 처리되어 대상이 변경됨"
                     )
             }
     )

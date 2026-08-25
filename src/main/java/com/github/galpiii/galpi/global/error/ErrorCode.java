@@ -114,13 +114,13 @@ public enum ErrorCode {
     FEATURE_SPEC_EXTRACTION_BUSY("FEATURE-SPEC-EXTRACTION-001", HttpStatus.SERVICE_UNAVAILABLE, "분석 요청이 많아 지금은 처리할 수 없습니다. 잠시 후 다시 시도해 주세요."),
 
     // Feature Review
-    FEATURE_NOT_ACCESSIBLE("FEATURE-001", HttpStatus.NOT_FOUND, "기능을 찾을 수 없거나 접근할 수 없습니다."),
-    FEATURE_UPDATE_EMPTY("FEATURE-002", HttpStatus.BAD_REQUEST, "변경할 값이 없습니다."),
-    FEATURE_REQUIREMENT_NOT_OWNED("FEATURE-003", HttpStatus.BAD_REQUEST, "이 기능의 세부 요구사항이 아닙니다."),
-    FEATURE_MERGE_NOT_ALLOWED("FEATURE-004", HttpStatus.BAD_REQUEST, "중복으로 판단된 기능이 아닙니다."),
-    FEATURE_SPLIT_NOT_ALLOWED("FEATURE-005", HttpStatus.BAD_REQUEST, "적용할 수 있는 분리 추천안이 아닙니다."),
-    FEATURE_REVIEW_CONFLICT("FEATURE-006", HttpStatus.CONFLICT, "다른 요청이 먼저 처리되어 대상이 변경되었습니다. 목록을 새로고침해 주세요."),
-    FEATURE_REQUIREMENT_DUPLICATED("FEATURE-007", HttpStatus.BAD_REQUEST, "같은 세부 요구사항을 두 번 보냈습니다.");
+    FEATURE_NOT_ACCESSIBLE("FEATURE-REVIEW-001", HttpStatus.NOT_FOUND, "기능을 찾을 수 없거나 접근할 수 없습니다."),
+    FEATURE_UPDATE_EMPTY("FEATURE-REVIEW-002", HttpStatus.BAD_REQUEST, "변경할 값이 없습니다."),
+    FEATURE_REQUIREMENT_NOT_OWNED("FEATURE-REVIEW-003", HttpStatus.BAD_REQUEST, "이 기능의 세부 요구사항이 아닙니다."),
+    FEATURE_MERGE_NOT_ALLOWED("FEATURE-REVIEW-004", HttpStatus.BAD_REQUEST, "중복으로 판단된 기능이 아닙니다."),
+    FEATURE_SPLIT_NOT_ALLOWED("FEATURE-REVIEW-005", HttpStatus.BAD_REQUEST, "적용할 수 있는 분리 추천안이 아닙니다."),
+    FEATURE_REVIEW_CONFLICT("FEATURE-REVIEW-006", HttpStatus.CONFLICT, "다른 요청이 먼저 처리되어 대상이 변경되었습니다. 목록을 새로고침해 주세요."),
+    FEATURE_REQUIREMENT_DUPLICATED("FEATURE-REVIEW-007", HttpStatus.BAD_REQUEST, "같은 세부 요구사항을 두 번 보냈습니다.");
 
     private final String code;
     private final HttpStatus status;

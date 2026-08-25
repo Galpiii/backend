@@ -257,7 +257,7 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
         }
 
         @Test
-        @DisplayName("중복으로 지목되지 않은 기능을 합치려 하면 400 FEATURE-004다")
+        @DisplayName("중복으로 지목되지 않은 기능을 합치려 하면 400 FEATURE-REVIEW-004다")
         void returnsMergeNotAllowed() throws Exception {
             willThrow(new BadRequestException(ErrorCode.FEATURE_MERGE_NOT_ALLOWED))
                     .given(featureReviewService).merge(eq(SPEC_DOCUMENT_ID),
@@ -312,7 +312,7 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
         }
 
         @Test
-        @DisplayName("같은 요청이 겹치면 409 FEATURE-006이다")
+        @DisplayName("같은 요청이 겹치면 409 FEATURE-REVIEW-006이다")
         void returnsConflict() throws Exception {
             willThrow(new ConflictException(ErrorCode.FEATURE_REVIEW_CONFLICT))
                     .given(featureReviewService).delete(SPEC_DOCUMENT_ID, USER_ID, FEATURE_ID);
