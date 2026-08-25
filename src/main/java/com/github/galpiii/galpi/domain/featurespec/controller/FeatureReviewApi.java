@@ -261,6 +261,11 @@ public interface FeatureReviewApi {
                     **수정하면 이 기능의 특이사항·중복 후보·분리 추천안이 모두 삭제됩니다.**
                     직접 수정했다는 것은 AI 제안을 따르지 않기로 했다는 뜻이기 때문입니다.
                     따라서 수정 후에는 이 기능에서 병합·분리를 시작할 수 없습니다.
+
+                    **다른 기능이 이 기능을 중복 상대로 지목한 후보도 함께 삭제됩니다.**
+                    그 제안은 수정 전 내용을 근거로 만들어진 것이라 더 이상 성립하지 않습니다.
+                    상대가 사라진 중복 의심 표시도 함께 정리되므로, 이 기능을 지목하던 기능의
+                    duplicateCandidates와 배지가 사라질 수 있습니다.
                     """,
             responses = {
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -302,6 +307,10 @@ public interface FeatureReviewApi {
 
                     이 기능의 특이사항·중복 후보·분리 추천안이 함께 삭제됩니다.
                     이미 검토가 끝난 기능에 다시 요청해도 오류가 아닙니다.
+
+                    수정과 달리, 다른 기능이 이 기능을 중복 상대로 지목한 후보는 그대로 둡니다.
+                    승인은 이 기능에 붙은 특이사항에 대한 답이고, 중복 여부는 지목한 쪽 카드에서만
+                    묻는 질문이라 승인으로 답한 적이 없기 때문입니다.
                     """,
             responses = {
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(

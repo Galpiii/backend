@@ -30,4 +30,15 @@ public interface DuplicateCandidateRepository extends JpaRepository<DuplicateCan
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from DuplicateCandidate candidate where candidate.feature.id in :featureIds")
     int deleteByFeatureIds(@Param("featureIds") Collection<Long> featureIds);
+
+    /**
+     * 이 기능을 상대로 지목한 후보를 지운다.
+     *
+     * <p>기능이 수정되면 그 기능을 가리키던 제안은 사라진 버전을 설명하게 된다. reason도
+     * 병합 제안명도 수정 전 내용을 기준으로 만들어진 것이라, 남겨 두면 지목한 쪽 사용자가
+     * 낡은 근거로 병합을 판단한다.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from DuplicateCandidate candidate where candidate.targetFeature.id in :featureIds")
+    int deleteByTargetFeatureIds(@Param("featureIds") Collection<Long> featureIds);
 }

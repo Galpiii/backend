@@ -407,6 +407,43 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
         }
 
         @Test
+        @DisplayName("수정하면 이 기능을 가리키던 중복 후보와 그쪽 배지도 정리한다")
+        void clearsIncomingDuplicateCandidates() {
+            Feature holder = newFeature("포스트 등록", section, 0);
+            Feature edited = newFeature("게시글 작성", section, 1);
+            newIssue(holder, FeatureIssueType.DUPLICATE_SUSPECTED);
+            newCandidate(holder, edited, "게시글 관리", "게시글");
+
+            featureReviewService.update(specDocumentId, userId, edited.getId(),
+                    new FeatureUpdateRequest("게시글 등록", null));
+
+            // holder의 제안은 수정 전 edited를 설명하던 것이라 근거가 무너졌다.
+            assertThat(duplicateCandidateRepository.findAllByFeatureIdIn(List.of(holder.getId())))
+                    .isEmpty();
+            assertThat(featureIssueRepository.findAllByFeatureIdIn(List.of(holder.getId())))
+                    .isEmpty();
+            assertThat(reload(holder).getReviewStatus()).isEqualTo(FeatureReviewStatus.UNREVIEWED);
+        }
+
+        @Test
+        @DisplayName("승인은 이 기능을 가리키던 중복 후보를 건드리지 않는다")
+        void keepsIncomingDuplicateCandidatesOnConfirm() {
+            Feature holder = newFeature("포스트 등록", section, 0);
+            Feature confirmed = newFeature("게시글 작성", section, 1);
+            newIssue(holder, FeatureIssueType.DUPLICATE_SUSPECTED);
+            newCandidate(holder, confirmed, "게시글 관리", "게시글");
+
+            featureReviewService.confirm(specDocumentId, userId, confirmed.getId());
+
+            // 승인은 confirmed 자신의 특이사항에 대한 답이지 holder의 중복 질문에 대한 답이 아니다.
+            assertThat(duplicateCandidateRepository.findAllByFeatureIdIn(List.of(holder.getId())))
+                    .hasSize(1);
+            assertThat(featureIssueRepository.findAllByFeatureIdIn(List.of(holder.getId())))
+                    .extracting(FeatureIssue::getIssueType)
+                    .containsExactly(FeatureIssueType.DUPLICATE_SUSPECTED);
+        }
+
+        @Test
         @DisplayName("바꿀 값이 하나도 없으면 거절한다")
         void rejectsEmptyRequest() {
             Feature feature = newFeature("게시글", section, 0);

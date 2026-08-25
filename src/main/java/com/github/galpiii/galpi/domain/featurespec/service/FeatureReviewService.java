@@ -150,6 +150,7 @@ public class FeatureReviewService {
         // 난다. 응답에 그런 필드를 더해야 하면 벌크 삭제 전에 값을 꺼내 두어야 한다.
         feature.markModified();
         clearAiOutput(List.of(featureId));
+        clearIncomingDuplicateCandidates(specDocumentId, List.of(featureId));
 
         log.info("[기능 검토] 기능을 수정했습니다. featureId: {}, userId: {}", featureId, userId);
 
@@ -660,6 +661,19 @@ public class FeatureReviewService {
         featureIssueRepository.deleteByFeatureIds(featureIds);
         duplicateCandidateRepository.deleteByFeatureIds(featureIds);
         splitFeatureSuggestionRepository.deleteByFeatureIds(featureIds);
+    }
+
+    /**
+     * 이 기능을 상대로 지목한 후보를 무효화한다.
+     *
+     * <p>승인에는 하지 않는다. 승인은 그 기능에 붙은 특이사항에 대한 답이고, 중복 여부는
+     * 지목한 쪽 카드에서만 묻는 질문이라 승인으로 답한 적이 없다. 반면 수정은 제안의 근거인
+     * 요구사항을 바꾸므로 제안 자체가 성립하지 않게 된다.
+     */
+    private void clearIncomingDuplicateCandidates(Long specDocumentId, Collection<Long> featureIds) {
+        duplicateCandidateRepository.deleteByTargetFeatureIds(featureIds);
+        featureIssueRepository.deleteOrphanDuplicateIssues(
+                specDocumentId, FeatureIssueType.DUPLICATE_SUSPECTED);
     }
 
     /**
