@@ -187,6 +187,20 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
         }
 
         @Test
+        @DisplayName("요구사항 배열에 null 원소가 있으면 400이고 서비스를 호출하지 않는다")
+        void rejectsNullRequirementElement() throws Exception {
+            mockMvc.perform(patch(FEATURE_PATH, SPEC_DOCUMENT_ID, FEATURE_ID)
+                            .header(HttpHeaders.AUTHORIZATION, bearer())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"requirements": [null]}
+                                    """))
+                    .andExpect(status().isBadRequest());
+
+            verify(featureReviewService, never()).update(any(), any(), any(), any());
+        }
+
+        @Test
         @DisplayName("남의 기능이면 404다")
         void returnsNotFound() throws Exception {
             willThrow(new NotFoundException(ErrorCode.FEATURE_NOT_ACCESSIBLE))
@@ -267,6 +281,20 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {"features": []}
+                                    """))
+                    .andExpect(status().isBadRequest());
+
+            verify(featureReviewService, never()).split(any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("분리 추천안 배열에 null 원소가 있으면 400이고 서비스를 호출하지 않는다")
+        void rejectsNullSplitTarget() throws Exception {
+            mockMvc.perform(post(FEATURE_PATH + "/split", SPEC_DOCUMENT_ID, FEATURE_ID)
+                            .header(HttpHeaders.AUTHORIZATION, bearer())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"features": [null]}
                                     """))
                     .andExpect(status().isBadRequest());
 

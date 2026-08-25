@@ -20,8 +20,11 @@ public record FeatureSplitRequest(
 
         @Valid
         @NotEmpty(message = "적용할 분리 추천안이 없습니다.")
-        List<Target> features
+        @Size(max = MAX_FEATURES, message = "분리 추천안은 100개를 넘을 수 없습니다.")
+        List<@NotNull(message = "분리 추천안 항목이 비어 있습니다.") Target> features
 ) {
+
+    public static final int MAX_FEATURES = 100;
 
     public record Target(
 
