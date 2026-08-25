@@ -2,7 +2,9 @@ package com.github.galpiii.galpi.domain.featurespec.repository;
 
 import com.github.galpiii.galpi.domain.featurespec.entity.Feature;
 import com.github.galpiii.galpi.domain.featurespec.entity.FeatureReviewStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -20,6 +22,7 @@ public interface FeatureRepository extends JpaRepository<Feature, Long> {
      * <p>없는 기능, 남의 기능, 삭제된 프로젝트의 기능이 모두 같은 404가 되어야 id를 하나씩
      * 넣어 보는 것으로 남의 것을 알아낼 수 없다.
      */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select feature
               from Feature feature

@@ -554,6 +554,25 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
         }
 
         @Test
+        @DisplayName("다른 문서의 기능을 합칠 상대로 보내면 404다")
+        void rejectsTargetFromAnotherDocument() {
+            Feature source = newFeature("게시글 작성", section, 0);
+
+            User owner = userRepository.findById(userId).orElseThrow();
+            Project otherProject = projectRepository.save(Project.create(owner, "다른 프로젝트"));
+            SpecDocument otherDocument = specDocumentRepository.save(SpecDocument.builder()
+                    .project(otherProject).user(owner).fileName("다른.pdf").build());
+            Feature outsider = featureRepository.save(Feature.builder()
+                    .specDocument(otherDocument).name("남의 문서 기능").displayOrder(0).build());
+
+            assertThatThrownBy(() -> featureReviewService.merge(
+                    specDocumentId, userId, source.getId(),
+                    new FeatureMergeRequest(outsider.getId(), "합친 기능")))
+                    .isInstanceOf(NotFoundException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_NOT_ACCESSIBLE);
+        }
+
+        @Test
         @DisplayName("지목되지 않은 반대 방향으로는 합칠 수 없다")
         void rejectsReverseDirection() {
             Feature source = newFeature("게시글 작성", section, 0);

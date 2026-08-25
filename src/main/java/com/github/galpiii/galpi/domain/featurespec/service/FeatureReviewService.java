@@ -183,7 +183,7 @@ public class FeatureReviewService {
     @Transactional
     public void merge(Long specDocumentId, Long userId,
                       Long featureId, FeatureMergeRequest request) {
-        Feature source = requireOwnedFeature(specDocumentId, userId, featureId);
+        Feature source = requireOwnedFeaturePair(specDocumentId, userId, featureId, request.targetFeatureId());
 
         DuplicateCandidate candidate = duplicateCandidateRepository
                 .findByFeatureIdAndTargetFeatureId(featureId, request.targetFeatureId())
@@ -649,6 +649,20 @@ public class FeatureReviewService {
 
         featureIssueRepository.deleteOrphanDuplicateIssues(
                 specDocumentId, FeatureIssueType.DUPLICATE_SUSPECTED);
+    }
+
+    /**
+     * 작은 id부터 잠근다. 순서가 엇갈리면 반대 방향 병합과 교착한다.
+     */
+    private Feature requireOwnedFeaturePair(Long specDocumentId, Long userId,
+                                            Long featureId, Long targetFeatureId) {
+        long first = Math.min(featureId, targetFeatureId);
+        long second = Math.max(featureId, targetFeatureId);
+
+        Feature firstFeature = requireOwnedFeature(specDocumentId, userId, first);
+        Feature secondFeature = requireOwnedFeature(specDocumentId, userId, second);
+
+        return first == featureId ? firstFeature : secondFeature;
     }
 
     private Feature requireOwnedFeature(Long specDocumentId, Long userId, Long featureId) {
