@@ -305,6 +305,27 @@ class FeatureExtractionResultNormalizerTest {
         }
 
         @Test
+        @DisplayName("배지 없는 기능이 먼저 와도 배지 있는 반대 방향은 살린다")
+        void keepsWellFormedDirectionWhenBadgelessComesFirst() {
+            Feature badgeless = new Feature("f1", "기능 f1", null, List.of(),
+                    new Source(1, 1),
+                    List.of(),
+                    List.of(new DuplicateCandidate("f2", "같다.", "병합", "섹션")),
+                    null);
+            Feature wellFormed = duplicateOf("f2", "f1");
+
+            FeatureSpecExtractionResult result = normalize(List.of(), List.of(badgeless, wellFormed));
+
+            assertThat(result.features().getFirst().duplicateCandidates()).isEmpty();
+            assertThat(result.features().getLast().duplicateCandidates())
+                    .extracting(DuplicateCandidate::targetExtractionId)
+                    .containsExactly("f1");
+            assertThat(result.features().getLast().issues())
+                    .extracting(Issue::type)
+                    .containsExactly("DUPLICATE_SUSPECTED");
+        }
+
+        @Test
         @DisplayName("서로 다른 쌍은 접지 않는다")
         void keepsDistinctPairs() {
             Feature first = duplicateOf("f1", "f2");

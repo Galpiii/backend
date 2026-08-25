@@ -39,7 +39,7 @@ import java.util.stream.Collectors;
  *   <li>기능의 섹션이 어느 섹션명과도 맞지 않음 → 미분류로 둔다
  *   <li>특이사항 유형을 알 수 없거나 한 기능에 같은 유형이 겹침 → 버린다
  *   <li>중복 후보가 없는 기능·자기 자신·중복된 extractionId를 가리킴 → 그 후보만 버린다
- *   <li>같은 중복 관계가 양방향(A→B, B→A)으로 옴 → 먼저 온 방향만 남긴다
+ *   <li>같은 중복 관계가 양방향(A→B, B→A)으로 옴 → 배지가 붙은 방향 중 먼저 온 것만 남긴다
  *   <li>분리 제안이 요구사항을 누락·중복해 배정하거나 후보가 2개 미만 → 제안 전체를 버린다
  *   <li>특이사항 배지와 실제 데이터의 짝이 맞지 않음 → 양쪽을 모두 버린다
  * </ul>
@@ -132,20 +132,24 @@ public class FeatureExtractionResultNormalizer {
         String section = resolveSection(specDocumentId, feature, sectionTitles);
         List<FeatureSpecExtractionResult.Requirement> requirements = nullToEmpty(feature.requirements());
 
-        List<DuplicateCandidate> duplicateCandidates =
-                normalizeDuplicateCandidates(specDocumentId, feature, referableIds, claimedPairs);
+        Set<String> issueTypes = normalizeIssueTypes(specDocumentId, feature);
+        boolean hasDuplicateIssue = issueTypes.contains(FeatureIssueType.DUPLICATE_SUSPECTED.name());
+        List<DuplicateCandidate> duplicateCandidates = List.of();
+
+        if (hasDuplicateIssue) {
+            duplicateCandidates =
+                    normalizeDuplicateCandidates(specDocumentId, feature, referableIds, claimedPairs);
+
+            if (duplicateCandidates.isEmpty()) {
+                logMismatch(specDocumentId, feature, FeatureIssueType.DUPLICATE_SUSPECTED);
+                issueTypes.remove(FeatureIssueType.DUPLICATE_SUSPECTED.name());
+            }
+        } else if (!nullToEmpty(feature.duplicateCandidates()).isEmpty()) {
+            logMismatch(specDocumentId, feature, FeatureIssueType.DUPLICATE_SUSPECTED);
+        }
+
         SplitSuggestion splitSuggestion =
                 normalizeSplitSuggestion(specDocumentId, feature, requirements.size());
-        Set<String> issueTypes = normalizeIssueTypes(specDocumentId, feature);
-
-        boolean hasDuplicateIssue = issueTypes.contains(FeatureIssueType.DUPLICATE_SUSPECTED.name());
-        boolean hasDuplicateCandidates = !duplicateCandidates.isEmpty();
-
-        if (hasDuplicateIssue != hasDuplicateCandidates) {
-            logMismatch(specDocumentId, feature, FeatureIssueType.DUPLICATE_SUSPECTED);
-            duplicateCandidates = List.of();
-            issueTypes.remove(FeatureIssueType.DUPLICATE_SUSPECTED.name());
-        }
 
         boolean hasSplitIssue = issueTypes.contains(FeatureIssueType.SPLIT_RECOMMENDED.name());
 
