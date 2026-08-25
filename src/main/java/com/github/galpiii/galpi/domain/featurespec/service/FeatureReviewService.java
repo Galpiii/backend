@@ -524,6 +524,11 @@ public class FeatureReviewService {
                         (first, second) -> first,
                         LinkedHashMap::new));
 
+        if (namesBySuggestionId.size() != request.features().size()) {
+            log.warn("[기능 검토] 같은 분리 추천안을 두 번 보냈습니다. featureId: {}", featureId);
+            throw new BadRequestException(ErrorCode.FEATURE_SPLIT_NOT_ALLOWED);
+        }
+
         Set<Long> suggestionIds = suggestions.stream()
                 .map(SplitFeatureSuggestion::getId)
                 .collect(Collectors.toSet());

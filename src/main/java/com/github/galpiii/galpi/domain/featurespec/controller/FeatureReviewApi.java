@@ -407,9 +407,10 @@ public interface FeatureReviewApi {
                             description = """
                                     FEATURE-005: 적용할 수 있는 분리 추천안이 아님
 
-                                    분리 추천안이 없는 기능이거나, 보낸 suggestionId 집합이 저장된
-                                    추천안과 정확히 일치하지 않는 경우입니다. 기능을 수정하면
-                                    추천안이 삭제되므로 이후에는 분리할 수 없습니다.
+                                    분리 추천안이 없는 기능이거나, 보낸 suggestionId가 저장된 추천안과
+                                    정확히 일대일로 대응하지 않는 경우입니다. 일부만 보내거나 같은
+                                    suggestionId를 두 번 보내면 거절합니다. 기능을 수정하면 추천안이
+                                    삭제되므로 이후에는 분리할 수 없습니다.
                                     """
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(

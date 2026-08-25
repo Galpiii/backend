@@ -642,6 +642,29 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
         }
 
         @Test
+        @DisplayName("같은 분리 추천안을 두 번 보내면 거절한다")
+        void rejectsDuplicateSuggestionId() {
+            Feature source = newFeature("게시글", section, 0);
+            FeatureRequirement write = newRequirement(source, "게시글을 작성한다.", 0);
+            FeatureRequirement comment = newRequirement(source, "댓글을 작성한다.", 1);
+            SplitFeatureSuggestion first = newSuggestion(source, "게시글 관리", "게시글", 0, write);
+            SplitFeatureSuggestion second = newSuggestion(source, "댓글 관리", "댓글", 1, comment);
+
+            assertThatThrownBy(() -> featureReviewService.split(
+                    specDocumentId, userId, source.getId(),
+                    new FeatureSplitRequest(List.of(
+                            new FeatureSplitRequest.Target(first.getId(), "게시글 관리"),
+                            new FeatureSplitRequest.Target(first.getId(), "게시글 보관"),
+                            new FeatureSplitRequest.Target(second.getId(), "댓글 관리")))))
+                    .isInstanceOf(BadRequestException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_SPLIT_NOT_ALLOWED);
+
+            assertThat(featureRepository.findAllForReview(specDocumentId))
+                    .extracting(Feature::getId)
+                    .containsExactly(source.getId());
+        }
+
+        @Test
         @DisplayName("추천안 일부만 보내면 거절한다")
         void rejectsPartialSuggestions() {
             Feature source = newFeature("게시글", section, 0);
