@@ -473,6 +473,18 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
         }
 
         @Test
+        @DisplayName("수정한 기능을 승인해도 USER_MODIFIED로 남는다")
+        void keepsModifiedStatusOnConfirm() {
+            Feature feature = newFeature("게시글", section, 0);
+            featureReviewService.update(specDocumentId, userId, feature.getId(),
+                    new FeatureUpdateRequest("게시글 관리", null));
+
+            featureReviewService.confirm(specDocumentId, userId, feature.getId());
+
+            assertThat(reload(feature).getReviewStatus()).isEqualTo(FeatureReviewStatus.USER_MODIFIED);
+        }
+
+        @Test
         @DisplayName("이미 승인한 기능에 다시 요청해도 오류가 아니다")
         void isIdempotent() {
             Feature feature = newFeature("게시글", section, 0);

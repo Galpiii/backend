@@ -303,7 +303,8 @@ public interface FeatureReviewApi {
     @Operation(
             summary = "기능 승인",
             description = """
-                    추출 결과를 변경 없이 그대로 사용합니다. USER_CONFIRMED가 됩니다.
+                    추출 결과를 변경 없이 그대로 사용합니다. 아직 확인하지 않은 기능이면
+                    USER_CONFIRMED가 되고, 이미 수정한 기능은 USER_MODIFIED로 남습니다.
 
                     이 기능의 특이사항·중복 후보·분리 추천안이 함께 삭제됩니다.
                     이미 검토가 끝난 기능에 다시 요청해도 오류가 아닙니다.

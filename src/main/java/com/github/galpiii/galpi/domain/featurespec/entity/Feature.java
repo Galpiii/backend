@@ -60,7 +60,9 @@ public class Feature extends BaseEntity {
 
     /** 추출 결과를 그대로 쓰기로 했다. */
     public void confirm() {
-        this.reviewStatus = FeatureReviewStatus.USER_CONFIRMED;
+        if (reviewStatus == FeatureReviewStatus.UNREVIEWED) {
+            this.reviewStatus = FeatureReviewStatus.USER_CONFIRMED;
+        }
     }
 
     /** 사용자 판단으로 내용이 바뀌었다. */

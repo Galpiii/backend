@@ -142,27 +142,23 @@ public class FeatureReviewService {
             replaceRequirements(feature, request.requirements());
         }
 
-        // 엔티티 변경을 먼저 끝낸다. 아래 벌크 삭제가 flush 후 영속성 컨텍스트를 비우므로,
-        // 그 뒤에 엔티티를 고치면 반영될 자리가 없다.
-        //
-        // 같은 이유로 clearAiOutput 아래에서 feature는 준영속이다. 이미 읽어 둔 필드만
-        // 쓸 수 있고, 지연 로딩 필드(section 등)를 건드리면 LazyInitializationException이
-        // 난다. 응답에 그런 필드를 더해야 하면 벌크 삭제 전에 값을 꺼내 두어야 한다.
         feature.markModified();
+
+        FeatureReviewResponse.Feature response = FeatureReviewResponse.Feature.of(
+                feature,
+                toRequirements(featureRequirementRepository
+                        .findAllByFeatureIdOrderByDisplayOrderAscIdAsc(featureId)),
+                List.of(),
+                List.of(),
+                List.of()
+        );
+
         clearAiOutput(List.of(featureId));
         clearIncomingDuplicateCandidates(specDocumentId, List.of(featureId));
 
         log.info("[기능 검토] 기능을 수정했습니다. featureId: {}, userId: {}", featureId, userId);
 
-        return FeatureReviewResponse.Feature.of(
-                feature,
-                featureRequirementRepository.findAllByFeatureIdOrderByDisplayOrderAscIdAsc(featureId).stream()
-                        .map(FeatureReviewResponse.Requirement::from)
-                        .toList(),
-                List.of(),
-                List.of(),
-                List.of()
-        );
+        return response;
     }
 
     /** 추출 결과를 그대로 쓴다. 특이사항까지 확인했지만 고칠 것은 없다는 뜻이다. */
@@ -313,7 +309,7 @@ public class FeatureReviewService {
         }
 
         clearAiOutput(unreviewedIds);
-        featureRepository.confirmAllUnreviewed(
+        int confirmed = featureRepository.confirmAllUnreviewed(
                 specDocumentId,
                 FeatureReviewStatus.UNREVIEWED,
                 FeatureReviewStatus.USER_CONFIRMED,
@@ -323,7 +319,7 @@ public class FeatureReviewService {
         log.info(
                 "[기능 검토] 남은 기능을 일괄 승인했습니다. specDocumentId: {}, count: {}, userId: {}",
                 specDocumentId,
-                unreviewedIds.size(),
+                confirmed,
                 userId
         );
     }

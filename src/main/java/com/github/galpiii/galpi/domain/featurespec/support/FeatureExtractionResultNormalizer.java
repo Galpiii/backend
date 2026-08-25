@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
  *
  * <p>검증하고 복구하는 항목은 다음과 같다.
  * <ul>
- *   <li>이름·섹션명에 앞뒤 공백이 붙음 → 뗀다. 이 값들은 분류를 찾는 키로 쓰인다
+ *   <li>이름·섹션명에 앞뒤 공백이 붙음 → 뗀다. 공백뿐인 섹션명은 버린다
  *   <li>이름·섹션명이 255자를 넘음 → 자른다. 원문을 담는 sourceTitle은 TEXT라 자르지 않는다
  *   <li>섹션명이 중복됨 → 먼저 온 섹션만 남긴다. 기능이 어느 섹션에 속하는지 정할 수 없다
  *   <li>기능의 섹션이 어느 섹션명과도 맞지 않음 → 미분류로 둔다
@@ -82,6 +82,14 @@ public class FeatureExtractionResultNormalizer {
 
         for (Section section : sections) {
             String title = truncate(specDocumentId, "섹션명", section.title());
+
+            if (title == null || title.isBlank()) {
+                log.warn(
+                        "[기능명세서 분석] 섹션명이 비어 있어 섹션을 버렸습니다. specDocumentId: {}",
+                        specDocumentId
+                );
+                continue;
+            }
 
             if (!seenTitles.add(title)) {
                 log.warn(

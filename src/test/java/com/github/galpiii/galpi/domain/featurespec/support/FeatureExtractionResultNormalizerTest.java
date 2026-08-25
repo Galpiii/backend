@@ -104,6 +104,17 @@ class FeatureExtractionResultNormalizerTest {
         }
 
         @Test
+        @DisplayName("공백뿐인 섹션명은 버린다")
+        void dropsBlankSectionTitle() {
+            FeatureSpecExtractionResult result =
+                    normalize(List.of(section("   "), section("회원")), List.of());
+
+            assertThat(result.sections())
+                    .extracting(Section::title)
+                    .containsExactly("회원");
+        }
+
+        @Test
         @DisplayName("섹션명이 255자를 넘으면 자른다")
         void truncatesSectionTitle() {
             FeatureSpecExtractionResult result =
