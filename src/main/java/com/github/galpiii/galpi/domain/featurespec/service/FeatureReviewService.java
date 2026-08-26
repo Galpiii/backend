@@ -68,7 +68,7 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 public class FeatureReviewService {
 
-    /** V10 마이그레이션의 제약 이름. 바꾸면 409가 조용히 500으로 돌아간다. */
+    /** V15 마이그레이션의 제약 이름. 바꾸면 409가 조용히 500으로 돌아간다. */
     private static final String UNIQUE_FEATURE_SECTIONS_TITLE = "uk_feature_sections_title";
 
     private final SpecDocumentRepository specDocumentRepository;

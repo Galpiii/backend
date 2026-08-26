@@ -6,11 +6,16 @@ import com.github.galpiii.galpi.domain.analysis.repository.AnalysisRunRepository
 import com.github.galpiii.galpi.domain.analysis.repository.AnalysisRunTargetRepository;
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.entity.GithubRepository;
+import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
+import com.github.galpiii.galpi.domain.user.entity.GithubConnectionStatus;
+import com.github.galpiii.galpi.domain.user.entity.User;
+import com.github.galpiii.galpi.domain.user.repository.UserRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
+import com.github.galpiii.galpi.global.error.exception.UnauthorizedException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -29,12 +34,17 @@ import java.util.stream.Collectors;
  *
  * <p>엔티티가 아니라 id를 받는 이유도 같다. 바깥에서 읽은 엔티티는 이 트랜잭션에서 준영속
  * 상태라, 그대로 상태를 바꿔도 반영되지 않는다.
+ *
+ * <p>첫 구문은 사용자 행 잠금이다. 바깥의 권한 재검증은 GitHub 왕복 때문에 몇 초가 걸리는데,
+ * 그 사이에 연결이 끊기면 취소 쿼리가 이 작업보다 먼저 지나가 "취소된 뒤에 만들어진" 작업이
+ * 남는다. 연결 해제도 같은 잠금을 먼저 잡으므로 둘은 순서대로 줄을 선다.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class AnalysisRunCreator {
 
+    private final UserRepository userRepository;
     private final ProjectRepository projectRepository;
     private final GithubRepositoryRepository repositoryRepository;
     private final AnalysisRunRepository runRepository;
@@ -48,6 +58,8 @@ public class AnalysisRunCreator {
     @Transactional
     public Long create(Long userId, Long projectId, List<TargetSpec> targets,
                        Map<Long, Long> installationSnapshot) {
+        requireConnected(userId);
+
         Project project = projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(projectId, userId)
                 .orElseThrow(() -> new NotFoundException(ErrorCode.PROJECT_NOT_FOUND));
 
@@ -92,6 +104,21 @@ public class AnalysisRunCreator {
     public void markInaccessible(List<Long> repositoryIds) {
         repositoryRepository.findAllById(repositoryIds)
                 .forEach(GithubRepository::markInaccessible);
+    }
+
+    /**
+     * 사용자 행을 잠그고 연결 상태를 확인한다. 반드시 이 트랜잭션의 첫 구문이어야 한다.
+     *
+     * <p>잠금과 확인이 한 몸이다. 잠그지 않고 읽으면 읽은 직후에 해제가 끼어들 수 있고,
+     * 읽지 않고 잠그기만 하면 이미 끊긴 연결로 작업을 만든다.
+     */
+    private void requireConnected(Long userId) {
+        User owner = userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new UnauthorizedException(ErrorCode.UNAUTHORIZED));
+        if (owner.getGithubConnectionStatus() != GithubConnectionStatus.CONNECTED) {
+            log.info("[분석] 연결이 끊긴 상태에서 분석 생성을 시도 userId={}", userId);
+            throw new GithubReauthRequiredException();
+        }
     }
 
     public record TargetSpec(Long repositoryId, RepositorySnapshot snapshot) {

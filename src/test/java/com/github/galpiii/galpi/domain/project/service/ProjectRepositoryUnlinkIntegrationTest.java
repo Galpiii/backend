@@ -6,6 +6,7 @@ import com.github.galpiii.galpi.domain.collection.repository.PullRequestReposito
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.entity.GithubRepository;
 import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
+import com.github.galpiii.galpi.domain.github.service.GithubUserTokenService;
 import com.github.galpiii.galpi.domain.project.dto.ProjectListResponse;
 import com.github.galpiii.galpi.domain.project.dto.ProjectSummaryResponse;
 import com.github.galpiii.galpi.domain.project.entity.Project;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -58,6 +60,8 @@ class ProjectRepositoryUnlinkIntegrationTest extends IntegrationTestSupport {
     private PullRequestWriter pullRequestWriter;
     @Autowired
     private UserRepository userRepository;
+    @Autowired
+    private GithubUserTokenService userTokenService;
 
     private Long userId;
     private Long projectId;
@@ -70,6 +74,11 @@ class ProjectRepositoryUnlinkIntegrationTest extends IntegrationTestSupport {
         Project project = projectRepository.save(Project.create(user, "갈피"));
         userId = user.getId();
         projectId = project.getId();
+        // 연결 해제는 저장소 구성을 바꾸는 경로라 GitHub 연결이 살아 있어야 한다. 연결이 끊긴
+        // 동안 허용되는 것은 조회뿐이므로, 끊는 것을 보려면 연결된 상태에서 시작해야 한다.
+        userTokenService.save(user, "ghu_unlink_test_token_0123456789", Duration.ofHours(8));
+        user.connectGithub();
+        userRepository.saveAndFlush(user);
         repositoryId = linkWriter
                 .link(userId, projectId, List.of(GITHUB_REPOSITORY_ID), accessible())
                 .getFirst()

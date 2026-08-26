@@ -60,4 +60,17 @@ public interface GithubRepositoryRepository extends JpaRepository<GithubReposito
     List<GithubRepository> findAllForRelink(
             @Param("projectId") Long projectId,
             @Param("githubRepositoryIds") Collection<Long> githubRepositoryIds);
+
+    /**
+     * 이 사용자가 살아 있는 프로젝트에 지금 연결해 둔 저장소 전부.
+     *
+     * <p>재연결 후 접근 상태를 다시 맞추는 데 쓴다. 삭제한 프로젝트의 저장소까지 GitHub에
+     * 물으면 화면에 보이지도 않는 것 때문에 API 호출만 늘어난다. 끊어 둔 저장소도 마찬가지다 —
+     * 사용자가 이미 뺀 저장소를 "접근할 수 없다"고 되돌려 주면 안 된다.
+     */
+    @Query("select repository from GithubRepository repository "
+            + "join repository.project project "
+            + "where project.owner.id = :ownerId and project.deletedAt is null "
+            + "and repository.unlinkedAt is null")
+    List<GithubRepository> findAllByProjectOwnerId(@Param("ownerId") Long ownerId);
 }

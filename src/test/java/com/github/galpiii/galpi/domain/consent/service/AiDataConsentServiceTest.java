@@ -1,0 +1,223 @@
+package com.github.galpiii.galpi.domain.consent.service;
+
+import com.github.galpiii.galpi.domain.consent.AiDataNotice;
+import com.github.galpiii.galpi.domain.consent.config.ConsentProperties;
+import com.github.galpiii.galpi.domain.consent.dto.AiDataConsentStatusResponse;
+import com.github.galpiii.galpi.domain.consent.entity.AiDataConsent;
+import com.github.galpiii.galpi.domain.consent.repository.AiDataConsentRepository;
+import com.github.galpiii.galpi.domain.user.entity.User;
+import com.github.galpiii.galpi.global.error.ErrorCode;
+import com.github.galpiii.galpi.global.error.exception.ConflictException;
+import com.github.galpiii.galpi.global.error.exception.ForbiddenException;
+import com.github.galpiii.galpi.global.error.exception.GlobalException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import org.springframework.dao.DataIntegrityViolationException;
+
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+@DisplayName("AiDataConsentService — 외부 AI 전송 동의")
+class AiDataConsentServiceTest {
+
+    private static final long USER_ID = 7L;
+    private static final String CURRENT = "2026-08-23";
+    private static final String HASH = AiDataNotice.hash(CURRENT);
+    private static final String OLD = "2025-01-01";
+
+    @Mock
+    private AiDataConsentRepository consentRepository;
+    @Mock
+    private AiDataConsentWriter writer;
+
+    private AiDataConsentService service;
+
+    @BeforeEach
+    void setUp() {
+        service = new AiDataConsentService(consentRepository, writer,
+                new ConsentProperties(CURRENT));
+    }
+
+    @Test
+    @DisplayName("현재 버전에 동의하지 않았으면 분석을 막는다")
+    void blocksAnalysisWithoutConsent() {
+        given(consentRepository.existsByUserIdAndConsentVersionAndNoticeHash(USER_ID, CURRENT, HASH))
+                .willReturn(false);
+
+        assertThatThrownBy(() -> service.requireAgreed(USER_ID))
+                .isInstanceOf(ForbiddenException.class)
+                .extracting(e -> ((GlobalException) e).getErrorCode())
+                .isEqualTo(ErrorCode.AI_DATA_CONSENT_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("현재 버전에 동의했으면 통과한다")
+    void allowsAnalysisWithConsent() {
+        given(consentRepository.existsByUserIdAndConsentVersionAndNoticeHash(USER_ID, CURRENT, HASH))
+                .willReturn(true);
+
+        service.requireAgreed(USER_ID);
+    }
+
+    @Test
+    @DisplayName("정책 버전이 올라가면 이전 버전에만 동의한 사용자도 막힌다 — 재동의")
+    void requiresReconsentAfterVersionBump() {
+        given(consentRepository.existsByUserIdAndConsentVersionAndNoticeHash(USER_ID, CURRENT, HASH))
+                .willReturn(false);
+        given(consentRepository.findAllByUserIdOrderByAgreedAtDescIdDesc(USER_ID))
+                .willReturn(List.of(consentOf(OLD)));
+
+        assertThatThrownBy(() -> service.requireAgreed(USER_ID))
+                .isInstanceOf(ForbiddenException.class);
+
+        AiDataConsentStatusResponse status = service.status(USER_ID);
+        assertThat(status.agreed()).isFalse();
+        // 처음 동의가 아니라 재동의라는 것을 화면이 구분할 수 있어야 한다.
+        assertThat(status.agreedVersion()).isEqualTo(OLD);
+        assertThat(status.currentVersion()).isEqualTo(CURRENT);
+    }
+
+    @Test
+    @DisplayName("현재 버전이 아닌 고지에 동의하면 거부한다 — 읽지 않은 내용에 동의시킬 수 없다")
+    void rejectsStaleVersion() {
+        assertThatThrownBy(() -> service.agree(USER_ID, OLD))
+                .isInstanceOf(ConflictException.class)
+                .extracting(e -> ((GlobalException) e).getErrorCode())
+                .isEqualTo(ErrorCode.AI_DATA_CONSENT_VERSION_MISMATCH);
+
+        verify(writer, never()).save(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("같은 버전에 두 번 동의해도 행을 더 만들지 않는다")
+    void isIdempotent() {
+        given(consentRepository.existsByUserIdAndConsentVersionAndNoticeHash(USER_ID, CURRENT, HASH))
+                .willReturn(true);
+        given(consentRepository.findAllByUserIdOrderByAgreedAtDescIdDesc(USER_ID))
+                .willReturn(List.of(consentOf(CURRENT)));
+
+        AiDataConsentStatusResponse status = service.agree(USER_ID, CURRENT);
+
+        verify(writer, never()).save(any(), any(), any());
+        assertThat(status.agreed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("동시에 눌린 동의 요청이 겹쳐도 실패로 만들지 않는다")
+    void survivesConcurrentAgreement() {
+        given(consentRepository.existsByUserIdAndConsentVersionAndNoticeHash(USER_ID, CURRENT, HASH))
+                .willReturn(false, true);
+        willThrow(new DataIntegrityViolationException("duplicate key"))
+                .given(writer).save(any(), any(), any());
+        given(consentRepository.findByUserIdAndConsentVersion(USER_ID, CURRENT))
+                .willReturn(Optional.of(consentOf(CURRENT)));
+        given(consentRepository.findAllByUserIdOrderByAgreedAtDescIdDesc(USER_ID))
+                .willReturn(List.of(consentOf(CURRENT)));
+
+        AiDataConsentStatusResponse status = service.agree(USER_ID, CURRENT);
+
+        assertThat(status.agreed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("중복이 아닌 무결성 위반은 삼키지 않는다 — 고장을 agreed=false인 200으로 감출 수 없다")
+    void rethrowsIntegrityViolationWhenRowIsMissing() {
+        given(consentRepository.existsByUserIdAndConsentVersionAndNoticeHash(USER_ID, CURRENT, HASH))
+                .willReturn(false);
+        willThrow(new DataIntegrityViolationException("fk violation"))
+                .given(writer).save(any(), any(), any());
+        // 유니크 충돌이었다면 있어야 할 행이 없다.
+        given(consentRepository.findByUserIdAndConsentVersion(USER_ID, CURRENT))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.agree(USER_ID, CURRENT))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @DisplayName("동의 행에 문구 해시를 함께 남긴다 — 버전만으로는 무엇에 동의했는지 증명되지 않는다")
+    void recordsNoticeHash() {
+        given(consentRepository.existsByUserIdAndConsentVersionAndNoticeHash(USER_ID, CURRENT, HASH))
+                .willReturn(false);
+
+        service.agree(USER_ID, CURRENT);
+
+        verify(writer).save(USER_ID, CURRENT, HASH);
+    }
+
+    @Test
+    @DisplayName("버전이 같아도 문구가 다르면 동의로 치지 않는다 — 읽은 적 없는 내용이다")
+    void doesNotAcceptADifferentNoticeUnderTheSameVersion() {
+        given(consentRepository.findAllByUserIdOrderByAgreedAtDescIdDesc(USER_ID))
+                .willReturn(List.of(consentOf(CURRENT, "다른-문구-해시")));
+
+        assertThat(service.status(USER_ID).agreed()).isFalse();
+    }
+
+    @Test
+    @DisplayName("같은 버전에 다른 문구가 이미 기록돼 있으면 크게 실패한다 — 버전을 올리지 않은 배포다")
+    void failsLoudlyWhenTheSameVersionCarriesADifferentNotice() {
+        given(consentRepository.existsByUserIdAndConsentVersionAndNoticeHash(USER_ID, CURRENT, HASH))
+                .willReturn(false);
+        willThrow(new DataIntegrityViolationException("duplicate key"))
+                .given(writer).save(any(), any(), any());
+        given(consentRepository.findByUserIdAndConsentVersion(USER_ID, CURRENT))
+                .willReturn(Optional.of(consentOf(CURRENT, "옛-문구-해시")));
+
+        assertThatThrownBy(() -> service.agree(USER_ID, CURRENT))
+                .isInstanceOf(GlobalException.class)
+                .extracting(e -> ((GlobalException) e).getErrorCode())
+                .isEqualTo(ErrorCode.AI_DATA_CONSENT_NOTICE_CONFLICT);
+    }
+
+    @Test
+    @DisplayName("상태는 한 번의 조회로 답한다 — 두 질문 사이에 동의가 커밋되면 모순된 응답이 나온다")
+    void readsHistoryOnce() {
+        given(consentRepository.findAllByUserIdOrderByAgreedAtDescIdDesc(USER_ID))
+                .willReturn(List.of(consentOf(CURRENT)));
+
+        AiDataConsentStatusResponse status = service.status(USER_ID);
+
+        assertThat(status.agreed()).isTrue();
+        assertThat(status.agreedVersion()).isEqualTo(CURRENT);
+        verify(consentRepository).findAllByUserIdOrderByAgreedAtDescIdDesc(USER_ID);
+        verifyNoMoreInteractions(consentRepository);
+    }
+
+    @Test
+    @DisplayName("고지 문구를 함께 내린다 — 버전과 문구가 어긋나면 동의 기록이 근거를 잃는다")
+    void servesNoticeText() {
+        AiDataConsentStatusResponse status = service.status(USER_ID);
+
+        assertThat(status.notice())
+                .contains("외부 AI 서비스로 전송")
+                // 완전한 보호를 약속하지 않는다는 한계 고지가 빠지면 안 된다.
+                .contains("모든 민감정보 탐지를 보장하지는 않습니다");
+    }
+
+    private static AiDataConsent consentOf(String version) {
+        return consentOf(version, version.equals(CURRENT) ? HASH : "hash-" + version);
+    }
+
+    private static AiDataConsent consentOf(String version, String noticeHash) {
+        return AiDataConsent.agree(
+                User.ofGithub(999L, "wb", "wb", null, "https://avatar"), version, noticeHash);
+    }
+}

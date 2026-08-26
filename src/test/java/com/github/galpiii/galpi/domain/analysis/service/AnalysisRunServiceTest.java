@@ -4,6 +4,7 @@ import com.github.galpiii.galpi.domain.analysis.dto.AnalysisRunCreatedResponse;
 import com.github.galpiii.galpi.domain.analysis.entity.AnalysisRunStatus;
 import com.github.galpiii.galpi.domain.analysis.repository.AnalysisRunRepository;
 import com.github.galpiii.galpi.domain.analysis.repository.AnalysisRunTargetRepository;
+import com.github.galpiii.galpi.domain.consent.service.AiDataConsentService;
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.entity.GithubRepository;
 import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
@@ -15,6 +16,7 @@ import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.BadRequestException;
 import com.github.galpiii.galpi.global.error.exception.ConflictException;
 import com.github.galpiii.galpi.global.error.exception.ForbiddenException;
+import com.github.galpiii.galpi.global.error.exception.GlobalException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -41,6 +43,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -66,6 +69,8 @@ class AnalysisRunServiceTest {
     private AnalysisRunTargetRepository targetRepository;
     @Mock
     private AnalysisRunCreator creator;
+    @Mock
+    private AiDataConsentService consentService;
 
     @InjectMocks
     private AnalysisRunService service;
@@ -242,5 +247,37 @@ class AnalysisRunServiceTest {
             map.put(snapshot.githubRepositoryId(), snapshot);
         }
         return map;
+    }
+
+    @Nested
+    @DisplayName("외부 AI 전송 동의")
+    class Consent {
+
+        @Test
+        @DisplayName("동의가 없으면 GitHub을 부르지도 않고 작업을 만들지 않는다")
+        void blocksWithoutConsent() {
+            willThrow(new ForbiddenException(ErrorCode.AI_DATA_CONSENT_REQUIRED))
+                    .given(consentService).requireAgreed(USER_ID);
+
+            assertThatThrownBy(() -> service.create(USER_ID, PROJECT_ID))
+                    .isInstanceOf(ForbiddenException.class)
+                    .extracting(e -> ((GlobalException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.AI_DATA_CONSENT_REQUIRED);
+
+            verify(installationService, never()).accessibleSnapshots(anyLong(), any());
+            verify(creator, never()).create(anyLong(), anyLong(), anyList(), any());
+        }
+
+        @Test
+        @DisplayName("남의 프로젝트면 동의 여부를 따지기 전에 막는다 — 존재를 알려주지 않는다")
+        void checksOwnershipFirst() {
+            given(projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(PROJECT_ID, USER_ID))
+                    .willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.create(USER_ID, PROJECT_ID))
+                    .isInstanceOf(NotFoundException.class);
+
+            verify(consentService, never()).requireAgreed(anyLong());
+        }
     }
 }

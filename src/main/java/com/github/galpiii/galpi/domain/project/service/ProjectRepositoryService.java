@@ -4,8 +4,10 @@ import com.github.galpiii.galpi.domain.github.client.dto.GithubRepositoryRespons
 import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.dto.SelectableRepositoryResponse;
 import com.github.galpiii.galpi.domain.github.entity.GithubRepository;
+import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
 import com.github.galpiii.galpi.domain.github.service.GithubInstallationService;
+import com.github.galpiii.galpi.domain.github.service.GithubUserTokenService;
 import com.github.galpiii.galpi.domain.github.support.GithubRepositoryUrlParser;
 import com.github.galpiii.galpi.domain.github.support.GithubRepositoryUrlParser.RepositoryUrl;
 import com.github.galpiii.galpi.domain.project.dto.LinkedRepositoryResponse;
@@ -42,6 +44,7 @@ public class ProjectRepositoryService {
     private final GithubInstallationService installationService;
     private final ProjectRepositoryLinkWriter linkWriter;
     private final GithubRepositoryUrlParser urlParser;
+    private final GithubUserTokenService userTokenService;
 
     @Transactional(readOnly = true)
     public List<LinkedRepositoryResponse> list(Long userId, Long projectId) {
@@ -137,9 +140,18 @@ public class ProjectRepositoryService {
      *
      * <p>이미 끊긴 저장소를 다시 끊으면 404다. 조회가 살아 있는 것만 보기 때문인데, 그게 맞다 —
      * 목록에 없는 저장소를 끊으라는 요청은 화면이 낡았다는 뜻이고, 404가 그것을 알려 준다.
+     *
+     * <p>GitHub 연결이 끊긴 상태에서는 거부한다. 이 경로는 GitHub을 부르지 않아 토큰 없이도
+     * 동작하지만, 저장소 구성을 바꾸는 것은 연결이 살아 있을 때만 할 수 있는 일이다 —
+     * 연결이 끊긴 동안 허용되는 것은 조회뿐이다.
      */
     @Transactional
     public void unlink(Long userId, Long projectId, Long repositoryId) {
+        if (!userTokenService.isValid(userId)) {
+            log.info("[GitHub] 연결이 끊긴 상태에서 저장소 삭제를 시도 userId={} projectId={}",
+                    userId, projectId);
+            throw new GithubReauthRequiredException();
+        }
         Project project = ownedProject(userId, projectId);
         GithubRepository repository = repositoryRepository
                 .findByIdAndProjectId(repositoryId, project.getId())

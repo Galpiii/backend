@@ -64,10 +64,40 @@ public class GithubApiClient {
         return get("/user", userAccessToken, GithubUserResponse.class).getBody();
     }
 
+    /**
+     * 토큰 하나만 폐기한다. 나머지 authorization은 그대로 살아 있다.
+     *
+     * <p>재로그인으로 밀려난 이전 토큰을 정리하는 경로가 쓴다. 여기에 grant 폐기를 쓰면 방금
+     * 발급받은 새 토큰까지 함께 죽어 로그인 직후 재인증을 요구받는다.
+     */
     public void revokeUserToken(String userAccessToken) {
+        revoke("/applications/{clientId}/token", userAccessToken);
+    }
+
+    /**
+     * 이 사용자의 App authorization <b>전체</b>를 폐기한다. 발급된 토큰이 모두 무효가 되고,
+     * 다시 연결하려면 OAuth 동의 화면을 한 번 더 거쳐야 한다.
+     *
+     * <p>사용자가 직접 연결을 해제한 경로가 쓴다. 토큰 하나만 지우면 GitHub 쪽에는 authorization이
+     * 남아 "연결을 끊었다"는 사용자의 기대와 어긋난다.
+     *
+     * <p>App 설치(installation)는 이 호출로 사라지지 않는다. 조직 설치는 다른 갈피 사용자와
+     * 공유될 수 있어 자동으로 지우지 않는다 — 안내만 한다.
+     */
+    public void revokeUserGrant(String userAccessToken) {
+        revoke("/applications/{clientId}/grant", userAccessToken);
+    }
+
+    /**
+     * 폐기 호출은 Basic Auth(client_id:client_secret) + body의 access token 조합을 요구한다.
+     * 유효한 user access token이 없으면 애초에 부를 수 없는 API다.
+     *
+     * <p>404는 실패가 아니다. 이미 폐기됐거나 만료된 토큰이라 목적은 달성된 상태다.
+     */
+    private void revoke(String uriTemplate, String userAccessToken) {
         try {
             restClient.method(HttpMethod.DELETE)
-                    .uri("/applications/{clientId}/token", properties.clientId())
+                    .uri(uriTemplate, properties.clientId())
                     .header(HttpHeaders.AUTHORIZATION, basicCredentials())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of("access_token", userAccessToken))
