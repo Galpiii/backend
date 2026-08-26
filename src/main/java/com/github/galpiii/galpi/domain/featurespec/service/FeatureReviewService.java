@@ -674,10 +674,6 @@ public class FeatureReviewService {
 
     /**
      * 기능을 실제로 지운다.
-     *
-     * <p>지운 행 수를 확인하는 것이 동시성 가드다. 같은 병합 요청이 두 번 들어오면 늦은 쪽은
-     * 이미 사라진 기능을 지우려 해 0을 받는다. 이 확인이 없으면 늦은 쪽도 새 기능을 만든 뒤
-     * 아무것도 지우지 못한 채 커밋해 병합 결과가 두 개 남는다.
      */
     private void deleteFeatures(Long specDocumentId, List<Long> featureIds) {
         featureRepository.deleteByIds(featureIds, specDocumentId);
