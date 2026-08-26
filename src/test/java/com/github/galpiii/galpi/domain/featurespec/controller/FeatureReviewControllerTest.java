@@ -312,13 +312,18 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
         }
 
         @Test
-        @DisplayName("같은 요청이 겹치면 409 FEATURE-REVIEW-006이다")
+        @DisplayName("분류가 동시에 만들어지면 409 FEATURE-REVIEW-006이다")
         void returnsConflict() throws Exception {
             willThrow(new ConflictException(ErrorCode.FEATURE_REVIEW_CONFLICT))
-                    .given(featureReviewService).delete(SPEC_DOCUMENT_ID, USER_ID, FEATURE_ID);
+                    .given(featureReviewService).merge(eq(SPEC_DOCUMENT_ID),
+                            eq(USER_ID), eq(FEATURE_ID), any());
 
-            mockMvc.perform(delete(FEATURE_PATH, SPEC_DOCUMENT_ID, FEATURE_ID)
-                            .header(HttpHeaders.AUTHORIZATION, bearer()))
+            mockMvc.perform(post(FEATURE_PATH + "/merge", SPEC_DOCUMENT_ID, FEATURE_ID)
+                            .header(HttpHeaders.AUTHORIZATION, bearer())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"targetFeatureId": 19, "name": "게시글 관리"}
+                                    """))
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.code").value(ErrorCode.FEATURE_REVIEW_CONFLICT.getCode()));
         }

@@ -364,15 +364,22 @@ public interface FeatureReviewApi {
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
-                            description = "FEATURE-REVIEW-001: 기능을 찾을 수 없거나 접근할 수 없음"
+                            description = """
+                                    FEATURE-REVIEW-001: 기능을 찾을 수 없거나 접근할 수 없음
+
+                                    같은 요청을 두 번 보내 앞선 요청이 이미 기능을 처리한 경우도
+                                    여기에 해당합니다. 아무것도 저장되지 않으므로 목록을 다시
+                                    불러오면 됩니다.
+                                    """
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "409",
                             description = """
-                                    FEATURE-REVIEW-006: 다른 요청이 먼저 처리되어 대상이 변경됨
+                                    FEATURE-REVIEW-006: 같은 분류가 동시에 만들어짐
 
-                                    같은 병합이 두 번 접수된 경우입니다. 아무것도 저장되지 않으므로
-                                    목록을 다시 불러오면 됩니다.
+                                    다른 요청과 같은 시점에 같은 이름의 분류를 새로 만들려다 갈린
+                                    경우입니다. 아무것도 저장되지 않으므로 다시 시도하면 먼저
+                                    만들어진 분류를 찾아 성공합니다.
                                     """
                     )
             }
@@ -425,11 +432,22 @@ public interface FeatureReviewApi {
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
-                            description = "FEATURE-REVIEW-001: 기능을 찾을 수 없거나 접근할 수 없음"
+                            description = """
+                                    FEATURE-REVIEW-001: 기능을 찾을 수 없거나 접근할 수 없음
+
+                                    같은 요청을 두 번 보내 앞선 요청이 이미 기능을 처리한 경우도
+                                    여기에 해당합니다. 아무것도 저장되지 않으므로 목록을 다시
+                                    불러오면 됩니다.
+                                    """
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "409",
-                            description = "FEATURE-REVIEW-006: 다른 요청이 먼저 처리되어 대상이 변경됨"
+                            description = """
+                                    FEATURE-REVIEW-006: 같은 분류가 동시에 만들어짐
+
+                                    다른 요청과 같은 시점에 같은 이름의 분류를 새로 만들려다 갈린
+                                    경우입니다. 아무것도 저장되지 않으므로 다시 시도하면 됩니다.
+                                    """
                     )
             }
     )
@@ -464,11 +482,12 @@ public interface FeatureReviewApi {
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
-                            description = "FEATURE-REVIEW-001: 기능을 찾을 수 없거나 접근할 수 없음"
-                    ),
-                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                            responseCode = "409",
-                            description = "FEATURE-REVIEW-006: 다른 요청이 먼저 처리되어 대상이 변경됨"
+                            description = """
+                                    FEATURE-REVIEW-001: 기능을 찾을 수 없거나 접근할 수 없음
+
+                                    같은 요청을 두 번 보내 앞선 요청이 이미 기능을 지운 경우도 여기에
+                                    해당합니다. 아무것도 저장되지 않으므로 목록을 다시 불러오면 됩니다.
+                                    """
                     )
             }
     )

@@ -68,10 +68,6 @@ public interface FeatureRepository extends JpaRepository<Feature, Long> {
     /**
      * 병합·분리·삭제가 기존 기능을 지운다.
      *
-     * <p>지운 행 수를 돌려주는 것이 동시성 가드다. 같은 요청이 두 번 들어오면 늦은 쪽은
-     * 이미 사라진 행을 지우려 해 0을 받고, 호출부가 그것을 보고 트랜잭션을 되돌린다.
-     * 이 확인이 없으면 병합 결과가 두 개 생긴다.
-     *
      * <p>{@code spec_document_id}를 조건에 함께 넣어 다른 문서의 기능이 섞여 들어와도
      * 지워지지 않게 한다.
      */
@@ -81,8 +77,8 @@ public interface FeatureRepository extends JpaRepository<Feature, Long> {
              where feature.id in :featureIds
                and feature.specDocument.id = :specDocumentId
             """)
-    int deleteByIds(@Param("featureIds") Collection<Long> featureIds,
-                    @Param("specDocumentId") Long specDocumentId);
+    void deleteByIds(@Param("featureIds") Collection<Long> featureIds,
+                     @Param("specDocumentId") Long specDocumentId);
 
     /**
      * 아직 확인하지 않은 기능을 한 번에 승인한다.

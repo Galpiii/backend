@@ -680,15 +680,7 @@ public class FeatureReviewService {
      * 아무것도 지우지 못한 채 커밋해 병합 결과가 두 개 남는다.
      */
     private void deleteFeatures(Long specDocumentId, List<Long> featureIds) {
-        if (featureRepository.deleteByIds(featureIds, specDocumentId) != featureIds.size()) {
-            log.warn(
-                    "[기능 검토] 대상 기능이 이미 바뀌어 되돌립니다. specDocumentId: {}, featureIds: {}",
-                    specDocumentId,
-                    featureIds
-            );
-            throw new ConflictException(ErrorCode.FEATURE_REVIEW_CONFLICT);
-        }
-
+        featureRepository.deleteByIds(featureIds, specDocumentId);
         featureIssueRepository.deleteOrphanDuplicateIssues(
                 specDocumentId, FeatureIssueType.DUPLICATE_SUSPECTED);
     }
