@@ -9,6 +9,7 @@ import com.github.galpiii.galpi.domain.auth.jwt.JwtTokenProvider;
 import com.github.galpiii.galpi.domain.auth.service.AuthService;
 import com.github.galpiii.galpi.domain.auth.support.RefreshCookieFactory;
 import com.github.galpiii.galpi.domain.consent.service.AiDataConsentService;
+import com.github.galpiii.galpi.domain.featurespec.service.FeatureReviewService;
 import com.github.galpiii.galpi.domain.featurespec.service.FeatureSpecService;
 import com.github.galpiii.galpi.domain.github.service.GithubConnectionService;
 import com.github.galpiii.galpi.domain.github.service.GithubInstallationService;
@@ -66,6 +67,8 @@ public abstract class WebMvcTestSupport {
     // 여기 추가해야 하며, 빠뜨리면 이 클래스를 쓰는 모든 테스트가 함께 죽는다.
     @MockitoBean
     protected FeatureSpecService featureSpecService;
+    @MockitoBean
+    protected FeatureReviewService featureReviewService;
     @MockitoBean
     protected AnalysisRunService analysisRunService;
     @MockitoBean

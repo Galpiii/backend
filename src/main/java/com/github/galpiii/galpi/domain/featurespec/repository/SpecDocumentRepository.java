@@ -16,8 +16,15 @@ public interface SpecDocumentRepository extends JpaRepository<SpecDocument, Long
 
     boolean existsByProjectId(Long projectId);
 
-    // 프로젝트 접근 권한을 확인한 뒤 호출한다. 다른 프로젝트의 문서를 id만으로 열람하지 못하게 막는다.
-    Optional<SpecDocument> findByIdAndProjectId(Long id, Long projectId);
+    @Query("""
+            select specDocument
+              from SpecDocument specDocument
+             where specDocument.id = :specDocumentId
+               and specDocument.project.owner.id = :userId
+               and specDocument.project.deletedAt is null
+            """)
+    Optional<SpecDocument> findOwned(@Param("specDocumentId") Long specDocumentId,
+                                     @Param("userId") Long userId);
 
     /**
      * 살아있는 서버가 처리 중일 수 없을 만큼 오래된 것만 실패로 바꾼다.

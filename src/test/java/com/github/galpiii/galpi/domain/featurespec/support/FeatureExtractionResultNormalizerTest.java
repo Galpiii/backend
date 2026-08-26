@@ -104,6 +104,17 @@ class FeatureExtractionResultNormalizerTest {
         }
 
         @Test
+        @DisplayName("공백뿐인 섹션명은 버린다")
+        void dropsBlankSectionTitle() {
+            FeatureSpecExtractionResult result =
+                    normalize(List.of(section("   "), section("회원")), List.of());
+
+            assertThat(result.sections())
+                    .extracting(Section::title)
+                    .containsExactly("회원");
+        }
+
+        @Test
         @DisplayName("섹션명이 255자를 넘으면 자른다")
         void truncatesSectionTitle() {
             FeatureSpecExtractionResult result =
@@ -265,6 +276,100 @@ class FeatureExtractionResultNormalizerTest {
             DuplicateCandidate candidate = result.features().getFirst().duplicateCandidates().getFirst();
             assertThat(candidate.suggestedMergedName()).hasSize(255);
             assertThat(candidate.suggestedSection()).hasSize(255);
+        }
+
+        @Test
+        @DisplayName("제안 섹션명의 앞뒤 공백을 뗀다")
+        void stripsSuggestedSection() {
+            Feature target = feature("f2", null, List.of());
+            Feature source = new Feature("f1", "기능", null, List.of(),
+                    new Source(1, 1),
+                    List.of(new Issue("DUPLICATE_SUSPECTED", "겹친다.")),
+                    List.of(new DuplicateCandidate("f2", "같다.", " 게시글 관리 ", "  게시글  ")),
+                    null);
+
+            FeatureSpecExtractionResult result = normalize(List.of(), List.of(source, target));
+
+            // 이 값들은 이름이 아니라 분류를 찾는 키로 쓰인다. 공백이 붙은 채 저장되면
+            // 검토 단계의 병합·분리가 기존 분류를 찾지 못한다.
+            DuplicateCandidate candidate = result.features().getFirst().duplicateCandidates().getFirst();
+            assertThat(candidate.suggestedSection()).isEqualTo("게시글");
+            assertThat(candidate.suggestedMergedName()).isEqualTo("게시글 관리");
+        }
+
+        @Test
+        @DisplayName("같은 중복 관계가 양방향으로 오면 먼저 온 방향만 남기고 반대쪽 배지도 버린다")
+        void foldsSymmetricPair() {
+            Feature first = duplicateOf("f1", "f2");
+            Feature second = duplicateOf("f2", "f1");
+
+            FeatureSpecExtractionResult result = normalize(List.of(), List.of(first, second));
+
+            assertThat(result.features().getFirst().duplicateCandidates())
+                    .extracting(DuplicateCandidate::targetExtractionId)
+                    .containsExactly("f2");
+            assertThat(result.features().getLast().duplicateCandidates()).isEmpty();
+
+            // 후보가 사라진 쪽은 배지도 남으면 안 된다. 화면에 "중복 의심"이 뜨는데 합칠
+            // 상대를 보여 줄 수 없게 된다.
+            assertThat(result.features().getLast().issues()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("배지 없는 기능이 먼저 와도 배지 있는 반대 방향은 살린다")
+        void keepsWellFormedDirectionWhenBadgelessComesFirst() {
+            Feature badgeless = new Feature("f1", "기능 f1", null, List.of(),
+                    new Source(1, 1),
+                    List.of(),
+                    List.of(new DuplicateCandidate("f2", "같다.", "병합", "섹션")),
+                    null);
+            Feature wellFormed = duplicateOf("f2", "f1");
+
+            FeatureSpecExtractionResult result = normalize(List.of(), List.of(badgeless, wellFormed));
+
+            assertThat(result.features().getFirst().duplicateCandidates()).isEmpty();
+            assertThat(result.features().getLast().duplicateCandidates())
+                    .extracting(DuplicateCandidate::targetExtractionId)
+                    .containsExactly("f1");
+            assertThat(result.features().getLast().issues())
+                    .extracting(Issue::type)
+                    .containsExactly("DUPLICATE_SUSPECTED");
+        }
+
+        @Test
+        @DisplayName("서로 다른 쌍은 접지 않는다")
+        void keepsDistinctPairs() {
+            Feature first = duplicateOf("f1", "f2");
+            Feature second = duplicateOf("f2", "f3");
+            Feature third = feature("f3", null, List.of());
+
+            FeatureSpecExtractionResult result = normalize(List.of(), List.of(first, second, third));
+
+            assertThat(result.features().get(0).duplicateCandidates()).hasSize(1);
+            assertThat(result.features().get(1).duplicateCandidates()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("extractionId가 없어도 대칭 검사에서 죽지 않는다")
+        void survivesMissingExtractionId() {
+            Feature nameless = new Feature(null, "기능", null, List.of(),
+                    new Source(1, 1),
+                    List.of(new Issue("DUPLICATE_SUSPECTED", "겹친다.")),
+                    List.of(new DuplicateCandidate("f2", "같다.", "병합", "섹션")),
+                    null);
+            Feature target = feature("f2", null, List.of());
+
+            FeatureSpecExtractionResult result = normalize(List.of(), List.of(nameless, target));
+
+            assertThat(result.features().getFirst().duplicateCandidates()).hasSize(1);
+        }
+
+        private Feature duplicateOf(String extractionId, String targetExtractionId) {
+            return new Feature(extractionId, "기능 " + extractionId, null, List.of(),
+                    new Source(1, 1),
+                    List.of(new Issue("DUPLICATE_SUSPECTED", "겹친다.")),
+                    List.of(new DuplicateCandidate(targetExtractionId, "같다.", "병합", "섹션")),
+                    null);
         }
     }
 

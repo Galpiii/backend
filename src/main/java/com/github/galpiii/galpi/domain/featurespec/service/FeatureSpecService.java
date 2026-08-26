@@ -96,16 +96,14 @@ public class FeatureSpecService {
 
     // 기능명세서 분석 상태 조회
     @Transactional(readOnly = true)
-    public FeatureSpecStatusResponse getStatus(Long projectId, Long specDocumentId, Long userId) {
-        verifyProjectOwner(projectId, userId);
-
+    public FeatureSpecStatusResponse getStatus(Long specDocumentId, Long userId) {
         SpecDocument specDocument = specDocumentRepository
-                .findByIdAndProjectId(specDocumentId, projectId)
+                .findOwned(specDocumentId, userId)
                 .orElseThrow(() -> {
                     log.warn(
-                            "[기능명세서 상태 조회] 기능명세서를 찾을 수 없습니다. projectId: {}, specDocumentId: {}",
-                            projectId,
-                            specDocumentId
+                            "[기능명세서 상태 조회] 기능명세서가 없거나 접근 권한이 없습니다. specDocumentId: {}, userId: {}",
+                            specDocumentId,
+                            userId
                     );
                     return new NotFoundException(ErrorCode.FEATURE_SPEC_NOT_ACCESSIBLE);
                 });

@@ -151,9 +151,11 @@
 * `suggestedSection`은 기존 section을 우선 사용하고, 기존 section이 명백히 부적절한 경우에만 새 section을 제안합니다.
 * `suggestedMergedName`과 `suggestedSection`은 각각 **100자를 넘지 않습니다.**
 
-동일한 중복 관계를 반드시 양방향으로 반복할 필요는 없습니다.
+동일한 중복 관계는 **한 방향으로만** 반환합니다.
 
-예를 들어 A와 B가 동일한 중복 관계라면 A → B 한 방향만 반환해도 됩니다.
+예를 들어 A와 B가 동일한 중복 관계라면 A → B만 반환하고 B → A는 반환하지 않습니다.
+
+양방향으로 반환하면 사용자가 같은 중복을 두 기능에서 두 번 확인해야 합니다.
 
 중복이 없으면 `duplicateCandidates`는 빈 배열입니다.
 
@@ -221,6 +223,7 @@
 * `MISSING_REQUIREMENTS`가 있으면 `requirements`는 빈 배열
 * 동일한 issue type을 하나의 feature에 중복 반환하지 않음
 * duplicate target은 자기 자신이 아니며 실제 `features[].extractionId` 중 하나임
+* 동일한 중복 관계를 양방향으로 반환하지 않음
 * `extractionId`는 응답 전체에서 서로 중복되지 않음
 * Split 시 모든 requirements를 누락·중복 없이 정확히 한 suggested feature에 배정함
 * `feature.section`이 null이 아니라면 `sections[].title` 중 하나와 정확히 일치함

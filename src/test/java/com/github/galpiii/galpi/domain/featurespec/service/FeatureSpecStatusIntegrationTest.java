@@ -53,7 +53,7 @@ class FeatureSpecStatusIntegrationTest extends IntegrationTestSupport {
     @DisplayName("업로드 직후에는 PENDING이고 failureCode는 비어 있다")
     void returnsPendingRightAfterUpload() {
         FeatureSpecStatusResponse response =
-                service.getStatus(project.getId(), specDocument.getId(), owner.getId());
+                service.getStatus(specDocument.getId(), owner.getId());
 
         assertThat(response.specDocumentId()).isEqualTo(specDocument.getId());
         assertThat(response.extractionStatus()).isEqualTo(ExtractionStatus.PENDING);
@@ -69,7 +69,7 @@ class FeatureSpecStatusIntegrationTest extends IntegrationTestSupport {
         specDocumentRepository.saveAndFlush(specDocument);
 
         FeatureSpecStatusResponse response =
-                service.getStatus(project.getId(), specDocument.getId(), owner.getId());
+                service.getStatus(specDocument.getId(), owner.getId());
 
         assertThat(response.extractionStatus()).isEqualTo(ExtractionStatus.FAILED);
         assertThat(response.failureCode()).isEqualTo(ExtractionFailureCode.NO_FEATURE_EXTRACTED);
@@ -82,21 +82,7 @@ class FeatureSpecStatusIntegrationTest extends IntegrationTestSupport {
                 User.ofGithub(System.nanoTime(), "other", "다른 사람", null, null));
 
         assertThatThrownBy(() ->
-                service.getStatus(project.getId(), specDocument.getId(), other.getId()))
-                .isInstanceOf(NotFoundException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_FOUND);
-    }
-
-    @Test
-    @DisplayName("내 프로젝트 경로로 다른 프로젝트의 문서 id를 넣으면 거절한다")
-    void rejectsSpecDocumentOfAnotherProject() {
-        Project otherProject = projectRepository.save(
-                Project.create(owner, "다른 프로젝트"));
-        SpecDocument otherSpecDocument = specDocumentRepository.save(
-                SpecDocument.builder().project(otherProject).user(owner).fileName(FILE_NAME).build());
-
-        assertThatThrownBy(() ->
-                service.getStatus(project.getId(), otherSpecDocument.getId(), owner.getId()))
+                service.getStatus(specDocument.getId(), other.getId()))
                 .isInstanceOf(NotFoundException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_SPEC_NOT_ACCESSIBLE);
     }
@@ -105,7 +91,7 @@ class FeatureSpecStatusIntegrationTest extends IntegrationTestSupport {
     @DisplayName("없는 기능명세서는 거절한다")
     void rejectsMissingSpecDocument() {
         assertThatThrownBy(() ->
-                service.getStatus(project.getId(), specDocument.getId() + 1000, owner.getId()))
+                service.getStatus(specDocument.getId() + 1000, owner.getId()))
                 .isInstanceOf(NotFoundException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_SPEC_NOT_ACCESSIBLE);
     }
