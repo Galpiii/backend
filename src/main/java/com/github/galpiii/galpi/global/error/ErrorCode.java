@@ -104,6 +104,12 @@ public enum ErrorCode {
             "저장소를 찾을 수 없거나 갈피에 접근 권한이 없습니다. "
                     + "GitHub에서 이 저장소를 갈피 앱에 허용했는지 확인해 주세요."),
 
+    // Pull request
+    // 소유권 실패도 이 코드다(404). 403으로 구분하면 id를 훑어 남의 PR 존재 여부를 알 수 있다.
+    // 프로젝트·저장소 관련 실패는 PROJECT-001/PROJECT-002를, 동의 미승인은 CONSENT-001을
+    // 그대로 쓴다 -- 프론트가 다르게 처리해야 하는 경우에만 코드를 나눈다.
+    PULL_REQUEST_NOT_FOUND("PULL-REQUEST-001", HttpStatus.NOT_FOUND, "PR을 찾을 수 없습니다."),
+
     // Feature Spec File
     FEATURE_SPEC_FILE_EMPTY("FEATURE-SPEC-FILE-001", HttpStatus.BAD_REQUEST, "업로드된 파일이 비어 있습니다."),
     FEATURE_SPEC_FILE_NAME_MISSING("FEATURE-SPEC-FILE-002", HttpStatus.BAD_REQUEST, "원본 파일명이 존재하지 않습니다."),
