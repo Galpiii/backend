@@ -1,0 +1,20 @@
+{
+  "name": "pull_request_summary",
+  "strict": true,
+  "schema": {
+    "type": "object",
+    "properties": {
+      "summary": {
+        "type": "string",
+        "description": "이 PR이 무엇을 했는지 2~3문장으로 정리한다. 300자를 넘지 않는다. 코드·식별자·파일 경로를 인용하지 않고 자연어로만 쓴다. 구현이 완료되었다거나 정상 동작한다는 판단을 쓰지 않는다."
+      },
+      "changeType": {
+        "type": "string",
+        "enum": ["FEATURE", "BUGFIX", "REFACTOR", "TEST", "DOCS", "INFRA", "STYLE", "REVERT", "CHORE", "OTHER"],
+        "description": "PR의 주된 변경 유형 하나. 여러 성격이 섞이면 변경량이 가장 큰 쪽을 고른다."
+      }
+    },
+    "required": ["summary", "changeType"],
+    "additionalProperties": false
+  }
+}

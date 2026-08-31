@@ -7,12 +7,9 @@ import com.github.galpiii.galpi.ai.config.OpenAiProperties;
 import com.github.galpiii.galpi.ai.dto.FeatureSpecExtractionResult;
 import com.github.galpiii.galpi.ai.exception.FeatureSpecAiException;
 import com.github.galpiii.galpi.ai.exception.RetryableAiException;
+import com.github.galpiii.galpi.ai.support.AiRetryTemplate;
 import com.openai.client.OpenAIClient;
 import com.openai.core.JsonValue;
-import com.openai.errors.InternalServerException;
-import com.openai.errors.OpenAIIoException;
-import com.openai.errors.OpenAIRetryableException;
-import com.openai.errors.RateLimitException;
 import com.openai.models.files.FileCreateParams;
 import com.openai.models.files.FilePurpose;
 import com.openai.models.responses.Response;
@@ -23,18 +20,15 @@ import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.responses.ResponseInputText;
 import com.openai.models.responses.ResponseStatus;
 import com.openai.models.responses.ResponseTextConfig;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.time.Instant;
 import java.util.List;
-import java.util.function.Supplier;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class FeatureSpecAiService {
 
     private static final long FILE_EXPIRES_AFTER_SECONDS = 3600L;
@@ -45,9 +39,24 @@ public class FeatureSpecAiService {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
             .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
+    private static final String LOG_TAG = "[기능명세서 분석]";
+
     private final OpenAIClient openAIClient;
     private final OpenAiProperties properties;
     private final FeatureSpecPrompt prompt;
+    private final AiRetryTemplate retries;
+
+    public FeatureSpecAiService(OpenAIClient openAIClient, OpenAiProperties properties,
+                                FeatureSpecPrompt prompt) {
+        this.openAIClient = openAIClient;
+        this.properties = properties;
+        this.prompt = prompt;
+        // 실패 갈래는 여기서 쓰지 않는다. 업로드 화면은 "분석에 실패했다" 하나로 처리하고
+        // 갈래를 나눌 자리가 없다 -- 워커가 받는 PR 요약 쪽과 다른 점이다.
+        this.retries = new AiRetryTemplate(LOG_TAG, properties.maxAttempts(),
+                properties.retryBackoff(),
+                (kind, message, cause) -> new FeatureSpecAiException(message, cause));
+    }
 
     public FeatureSpecExtractionResult analyze(File pdf) {
         Instant deadline = Instant.now().plus(properties.analysisBudget());
@@ -62,24 +71,24 @@ public class FeatureSpecAiService {
 
     // pdf를 OpenAI에 업로드
     private String uploadPdf(File pdf, Instant deadline) {
-        return withRetry("Files API 업로드", deadline, () -> {
+        return retries.execute("Files API 업로드", deadline, () -> {
             try {
                 return openAIClient.files().create(fileCreateParams(pdf)).id();
             } catch (RuntimeException e) {
-                throw classify(e);
+                throw retries.classify(e);
             }
         });
     }
 
     // 분석 요청 및 결과 반환
     private FeatureSpecExtractionResult extract(String fileId, Instant deadline) {
-        return withRetry("Responses API 호출", deadline, () -> {
+        return retries.execute("Responses API 호출", deadline, () -> {
             Response response;
 
             try {
                 response = openAIClient.responses().create(responseCreateParams(fileId));
             } catch (RuntimeException e) {
-                throw classify(e);
+                throw retries.classify(e);
             }
 
             // 잘린 응답이 토큰을 가장 많이 쓰므로 완결 여부를 따지기 전에 남긴다.
@@ -182,77 +191,6 @@ public class FeatureSpecAiService {
             return OBJECT_MAPPER.readValue(json, FeatureSpecExtractionResult.class);
         } catch (JsonProcessingException e) {
             throw new RetryableAiException("응답을 스키마대로 해석하지 못했습니다.", e);
-        }
-    }
-
-    private RuntimeException classify(RuntimeException e) {
-        if (e instanceof RateLimitException
-                || e instanceof InternalServerException
-                || e instanceof OpenAIIoException
-                || e instanceof OpenAIRetryableException) {
-            return new RetryableAiException("OpenAI 호출에 실패했습니다.", e);
-        }
-
-        return new FeatureSpecAiException("OpenAI 호출에 실패했습니다.", e);
-    }
-
-    private <T> T withRetry(String operation, Instant deadline, Supplier<T> action) {
-        RuntimeException lastFailure = null;
-
-        for (int attempt = 1; attempt <= properties.maxAttempts(); attempt++) {
-            if (Instant.now().isAfter(deadline)) {
-                log.warn(
-                        "[기능명세서 분석] 분석 예산이 끝나 {}를 더 시도하지 않습니다. attempt: {}/{}",
-                        operation,
-                        attempt,
-                        properties.maxAttempts()
-                );
-                throw new FeatureSpecAiException(operation + "가 분석 예산 안에 끝나지 않았습니다.", lastFailure);
-            }
-
-            try {
-                return action.get();
-            } catch (RetryableAiException e) {
-                lastFailure = e;
-                log.warn(
-                        "[기능명세서 분석] {} 실패. attempt: {}/{}, reason: {}",
-                        operation,
-                        attempt,
-                        properties.maxAttempts(),
-                        reasonOf(e)
-                );
-
-                if (attempt < properties.maxAttempts()) {
-                    sleepBeforeRetry(attempt);
-                }
-            }
-        }
-
-        throw new FeatureSpecAiException(operation + "에 최종 실패했습니다.", lastFailure);
-    }
-
-    /**
-     * 재시도 로그에 남길 실패 사유.
-     *
-     * <p>classify가 감싸면서 붙인 메시지는 모든 실패에 대해 같은 문구라 그것만 남기면 타임아웃인지
-     * 429인지 알 수 없다. 재시도했다는 사실보다 무엇 때문이었는지가 원인 추적에 필요하다.
-     */
-    private static String reasonOf(RetryableAiException e) {
-        Throwable cause = e.getCause();
-
-        if (cause == null) {
-            return e.getMessage();
-        }
-
-        return cause.getClass().getSimpleName() + ": " + cause.getMessage();
-    }
-
-    private void sleepBeforeRetry(int attempt) {
-        try {
-            Thread.sleep(properties.retryBackoff().toMillis() << (attempt - 1));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new FeatureSpecAiException("분석 대기 중 인터럽트되었습니다.", e);
         }
     }
 }
