@@ -266,16 +266,20 @@ public class PullRequestCollector {
         List<IncompleteReason> distinctReasons =
                 List.copyOf(new LinkedHashSet<>(reasons));
 
-        writer.save(repositoryId, new PullRequestWriter.CollectedPullRequestData(
-                detail.id(), detail.number(), maskedTitle.text(), maskedBody.text(), detail.baseRef(),
-                detail.headRef(), detail.baseSha(), detail.headSha(), detail.mergeCommitSha(),
-                detail.mergedAt(), detail.createdAt(), nullSafe(detail.changedFiles()),
-                nullSafe(detail.additions()), nullSafe(detail.deletions()), detail.htmlUrl(),
-                authorGithubId(detail), authorLogin(detail), authorAvatarUrl(detail),
-                distinctReasons, fileData, commitData));
+        // 저장이 돌려준 id를 그대로 인계에 싣는다. 파이프라인은 GitHub의 number가 아니라
+        // 이 값으로 결과를 붙인다.
+        Long pullRequestId = writer.save(repositoryId,
+                new PullRequestWriter.CollectedPullRequestData(
+                        detail.id(), detail.number(), maskedTitle.text(), maskedBody.text(),
+                        detail.baseRef(), detail.headRef(), detail.baseSha(), detail.headSha(),
+                        detail.mergeCommitSha(), detail.mergedAt(), detail.createdAt(),
+                        nullSafe(detail.changedFiles()), nullSafe(detail.additions()),
+                        nullSafe(detail.deletions()), detail.htmlUrl(), authorGithubId(detail),
+                        authorLogin(detail), authorAvatarUrl(detail), distinctReasons, fileData,
+                        commitData));
 
-        return new CollectedPullRequest(detail.number(),
-                pipelineTitle == null ? "" : pipelineTitle, pipelineBody,
+        return new CollectedPullRequest(pullRequestId, detail.number(),
+                pipelineTitle == null ? "" : pipelineTitle, pipelineBody, detail.headSha(),
                 detail.mergedAt(), List.copyOf(pipelineFiles), List.copyOf(pipelineCommits),
                 distinctReasons.isEmpty() ? DataCompleteness.COMPLETE : DataCompleteness.PARTIAL,
                 distinctReasons);

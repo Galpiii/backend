@@ -133,7 +133,7 @@ class RepositoryCollectorTest {
 
     private static RepositoryCollector.CollectionRequest request(HandoffGuard handoffGuard) {
         return new RepositoryCollector.CollectionRequest(TOKEN, "galpiii", "backend",
-                1L, 555L, 10, null, List.of(), List.of(), handoffGuard);
+                1L, 555L, 77L, 9L, 10, null, List.of(), List.of(), handoffGuard);
     }
 
     private static GithubRepositoryResponse repository() {

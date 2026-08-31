@@ -97,7 +97,7 @@ public class AnalysisRunExecutor {
         }
 
         // 관문은 실행 한 번에 하나. 저장소마다 인계 직전에 다시 묻는다.
-        HandoffGuard handoffGuard = handoffGuard(runId, writer.requesterIdOf(runId));
+        Handoff handoff = handoff(runId, writer.requesterIdOf(runId));
 
         Progress progress = Progress.from(allTargets);
         List<AnalysisRunTarget> targets = allTargets.stream()
@@ -113,7 +113,7 @@ public class AnalysisRunExecutor {
                 markRemainingSkipped(group.getValue(), progress);
                 continue;
             }
-            processGroup(run, group.getKey(), group.getValue(), progress, handoffGuard);
+            processGroup(run, group.getKey(), group.getValue(), progress, handoff);
         }
 
         finish(runId, progress);
@@ -125,18 +125,31 @@ public class AnalysisRunExecutor {
      * <p>취소와 동의 상실을 하나로 뭉뚱그리지 않는다. 앞은 이미 결론이 난 작업이라 조용히
      * 접으면 되고, 뒤는 작업을 실패로 끝내 사용자가 재동의 후 다시 시작하게 해야 한다.
      */
-    private HandoffGuard handoffGuard(Long runId, Long requesterId) {
-        return () -> {
+    private Handoff handoff(Long runId, Long requesterId) {
+        return new Handoff(requesterId, () -> {
             if (writer.isAbandoned(runId)) {
                 throw new CollectionAbandonedException();
             }
             consentService.requireAgreed(requesterId);
-        };
+        });
+    }
+
+    /**
+     * 인계에 함께 실려 나가는 것.
+     *
+     * <p>관문과 요청자를 한 묶음으로 두는 이유는 출처가 같기 때문이다. 둘 다 "이 작업을 누가
+     * 왜 시작했는가"에서 나오고, 관문이 동의를 물을 때 쓰는 사용자가 곧 파이프라인이 나중에
+     * 다시 물어야 할 사용자다. {@code AnalysisRun}에서 그때그때 꺼내 쓰지 않는 것은 그 엔티티가
+     * 짧은 트랜잭션 밖으로 나와 준영속 상태이기 때문이다 -- {@code getRequestedBy()}는 프록시다.
+     *
+     * @param requesterId 인계 스냅샷에 담겨 파이프라인까지 간다
+     */
+    private record Handoff(Long requesterId, HandoffGuard guard) {
     }
 
     private void processGroup(AnalysisRun run, Long installationId,
                               List<AnalysisRunTarget> targets, Progress progress,
-                              HandoffGuard handoffGuard) {
+                              Handoff handoff) {
         List<Long> githubRepositoryIds = targets.stream()
                 .map(target -> target.getRepository().getGithubRepositoryId())
                 .toList();
@@ -196,7 +209,7 @@ public class AnalysisRunExecutor {
                 continue;
             }
             try {
-                collectOne(run, target, token, installationId, progress, handoffGuard);
+                collectOne(run, target, token, installationId, progress, handoff);
                 index++;
             } catch (GithubInstallationUnavailableException e) {
                 if (tokenRefreshed) {
@@ -245,7 +258,7 @@ public class AnalysisRunExecutor {
     }
 
     private void collectOne(AnalysisRun run, AnalysisRunTarget target, String token,
-                            Long installationId, Progress progress, HandoffGuard handoffGuard) {
+                            Long installationId, Progress progress, Handoff handoff) {
         GithubRepository repository = target.getRepository();
         writer.startTarget(target.getId());
 
@@ -258,11 +271,13 @@ public class AnalysisRunExecutor {
                             repository.getName(),
                             repository.getId(),
                             repository.getGithubRepositoryId(),
+                            installationId,
+                            handoff.requesterId(),
                             config == null ? AnalysisConfig.DEFAULT_PR_LIMIT : config.getPrLimit(),
                             config == null ? null : config.getPrSince(),
                             config == null ? List.of() : config.getIncludePaths(),
                             config == null ? List.of() : config.getExcludePaths(),
-                            handoffGuard));
+                            handoff.guard()));
 
             writer.refreshRepositorySnapshot(repository.getId(),
                     toSnapshot(result.repository(), installationId));

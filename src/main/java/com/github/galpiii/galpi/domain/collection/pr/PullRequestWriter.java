@@ -47,9 +47,18 @@ public class PullRequestWriter {
 
     /**
      * @param collected 마스킹까지 끝난 값. 이 메서드는 마스킹하지 않는다
+     * @return 저장된 PR의 갈피 안 id
+     *
+     * <p>엔티티가 아니라 id를 돌려주는 것이 중요하다. 이 메서드는 {@code REQUIRES_NEW}라
+     * 반환 시점에 트랜잭션이 이미 끝나 있고, 엔티티를 내보내면 호출부가 받는 것은 준영속
+     * 객체다. {@code repository}와 {@code contributor}가 {@code LAZY}라 그 객체를 건드리는
+     * 순간 터진다. id는 그런 위험이 없다.
+     *
+     * <p>호출부가 {@code repository_id + number}로 다시 조회하지 않게 하려고 돌려준다.
+     * 방금 쓴 값을 같은 흐름에서 다시 읽는 것은 PR 하나마다 SELECT를 한 번 더 하는 일이다.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void save(Long repositoryId, CollectedPullRequestData collected) {
+    public Long save(Long repositoryId, CollectedPullRequestData collected) {
         GithubRepository repository = repositoryRepository.findById(repositoryId)
                 .orElseThrow(() -> new NotFoundException(ErrorCode.PROJECT_REPOSITORY_NOT_FOUND));
 
@@ -58,6 +67,8 @@ public class PullRequestWriter {
 
         replaceFiles(pullRequest, collected.files());
         replaceCommits(pullRequest, collected.commits());
+
+        return pullRequest.getId();
     }
 
     /**
