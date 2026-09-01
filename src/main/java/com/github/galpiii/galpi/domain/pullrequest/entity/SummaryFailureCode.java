@@ -6,6 +6,10 @@ package com.github.galpiii.galpi.domain.pullrequest.entity;
  * <p>사용자에게 나가는 {@code ErrorCode}와 별개다. 저쪽은 HTTP 상태로 번역되는 값이고,
  * 이쪽은 목록·상세 응답에 실려 화면이 "왜 이 PR만 분석하지 못했는지"를 설명하는 데 쓴다.
  * 요약 실패는 요청 실패가 아니므로 두 체계를 섞지 않는다.
+ *
+ * <p>rate limit에는 코드가 없다. 그건 실행 실패가 아니라 "아직 시작하지 못했다"이고,
+ * 해제 시각까지 미루면서 시도 횟수도 되돌리므로 종료 상태에 닿지 않는다. 화면에는 실패가
+ * 아니라 대기로 남는 것이 맞다.
  */
 public enum SummaryFailureCode {
 
@@ -23,9 +27,6 @@ public enum SummaryFailureCode {
 
     /** 저장소가 삭제됐거나 권한이 회수됐다. */
     REPOSITORY_INACCESSIBLE,
-
-    /** rate limit에 걸렸다. 기다리지 않고 접으므로 이 코드로 끝나는 것은 상한을 다 쓴 뒤다. */
-    GITHUB_RATE_LIMITED,
 
     /**
      * 큐에 들어간 뒤 외부 전송 동의가 사라졌다.

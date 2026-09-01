@@ -75,9 +75,14 @@ public class PullRequestSummaryExecutor {
     /**
      * 남은 호출 수가 이 값 이하면 다음 요약을 시작하지 않는다.
      *
-     * <p>수집 쪽(기본 1,000)보다 훨씬 작다. 요약 하나가 쓰는 호출은 원칙적으로 한 번이라,
-     * 수집처럼 "절반쯤 하다 버리는" 낭비가 없다. 여유를 크게 잡으면 아직 돌 수 있는 요약을
-     * 괜히 미루게 된다.
+     * <p>수집 쪽(기본 1,000)보다 훨씬 작다. 요약 하나가 쓰는 호출은 변경 파일 페이지 수
+     * ({@code galpi.summary.max-file-pages}, 기본 2)만큼이라 수집처럼 "절반쯤 하다 버리는"
+     * 낭비가 없다. 여유를 크게 잡으면 아직 돌 수 있는 요약을 괜히 미루게 된다.
+     *
+     * <p>정확한 가드는 아니다. 검사는 PR 하나를 시작하기 <b>전에</b> 한 번만 돌고 페이지를
+     * 넘기는 중에는 보지 않으므로, 동시 처리 수만큼의 PR이 이 여유를 함께 쓴다. 넘어서면
+     * 429가 오고 {@link GithubRateLimitedException}으로 defer되므로 망가지지는 않는다 --
+     * 이 값은 "429를 되도록 만나지 않게 하는 선"이지 "429를 만나지 않게 하는 선"이 아니다.
      */
     private static final int RATE_LIMIT_THRESHOLD = 50;
 
@@ -199,7 +204,8 @@ public class PullRequestSummaryExecutor {
             }
 
             // diff는 저장하지 않으므로 여기서 다시 받는다. 이 값은 메모리에서 LLM으로만 가고
-            // 어떤 테이블에도 들어가지 않는다.
+            // 어떤 테이블에도 들어가지 않는다. 수집과 달리 앞쪽 몇 페이지만 받는다 --
+            // 뒷부분은 입력 상한에서 어차피 잘린다.
             List<GithubPullRequestFileResponse> files = listFiles(
                     token, repository, pullRequest.getNumber());
             List<PullRequestCommit> commits =
@@ -264,15 +270,16 @@ public class PullRequestSummaryExecutor {
                                                           GithubRepository repository,
                                                           int pullRequestNumber) {
         String attempted = token.current();
+        int maxPages = properties.maxFilePages();
         try {
             return client.listFiles(attempted, repository.getOwner(), repository.getName(),
-                    pullRequestNumber).items();
+                    pullRequestNumber, maxPages).items();
         } catch (GithubInstallationUnavailableException first) {
             // 캐시된 installation token이 폐기됐을 수 있다. 그룹에서 정확히 한 번만 캐시를
             // 비우고 재발급하며, 병렬 task들은 그 결과를 공유한다.
             String refreshed = token.refreshAfterRejection(attempted);
             return client.listFiles(refreshed, repository.getOwner(), repository.getName(),
-                    pullRequestNumber).items();
+                    pullRequestNumber, maxPages).items();
         }
     }
 

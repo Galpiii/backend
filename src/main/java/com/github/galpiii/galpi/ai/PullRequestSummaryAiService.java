@@ -10,6 +10,7 @@ import com.github.galpiii.galpi.ai.exception.PullRequestSummaryInvalidResponseEx
 import com.github.galpiii.galpi.ai.exception.RetryableAiException;
 import com.github.galpiii.galpi.ai.support.AiRetryTemplate;
 import com.openai.client.OpenAIClient;
+import com.openai.core.RequestOptions;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseStatus;
@@ -40,7 +41,11 @@ public class PullRequestSummaryAiService {
 
     /**
      * 내부에서 재시도하지 않는다. 요약은 DB 큐의 {@code attempts}가 전체 시도 횟수와
-     * backoff를 관리하므로, 여기서도 재시도하면 실제 LLM 호출이 두 상한의 고로 곱해진다.
+     * backoff를 관리하므로, 여기서도 재시도하면 실제 LLM 호출이 두 상한의 곱으로 늘어난다.
+     *
+     * <p>그래서 예산도 {@link AiRetryTemplate}에 맡기지 않는다 -- 저쪽 검사는 시도와 시도
+     * 사이에 도는데, 시도가 한 번뿐이면 그 사이가 없다. 예산은 {@link #callOptions()}로
+     * 호출 자체에 건다.
      */
     private static final int SINGLE_ATTEMPT = 1;
 
@@ -75,7 +80,8 @@ public class PullRequestSummaryAiService {
         PullRequestSummaryResult result = retries.execute(OPERATION, deadline, () -> {
             Response response;
             try {
-                response = openAIClient.responses().create(responseCreateParams(input));
+                response = openAIClient.responses()
+                        .create(responseCreateParams(input), callOptions());
             } catch (RuntimeException e) {
                 throw retries.classify(e);
             }
@@ -94,6 +100,20 @@ public class PullRequestSummaryAiService {
     /** 요약에 쓴 모델. 어떤 모델이 만든 결과인지 행에 남긴다. */
     public String model() {
         return properties.summaryModel();
+    }
+
+    /**
+     * 요약 한 건의 예산을 호출 타임아웃으로 건다.
+     *
+     * <p>클라이언트 기본 타임아웃({@code galpi.openai.timeout})은 명세서 추출과 공유하는
+     * 값이라 요약에는 너무 길다. 그대로 두면 막힌 PR 하나가 그 시간만큼 워커 자리와 배치
+     * {@code join()}을 붙잡고, 선점 유효 기간({@code galpi.summary.worker.lease})과도
+     * 맞지 않는다.
+     */
+    private RequestOptions callOptions() {
+        return RequestOptions.builder()
+                .timeout(properties.summaryBudget())
+                .build();
     }
 
     private ResponseCreateParams responseCreateParams(String input) {

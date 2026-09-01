@@ -67,6 +67,7 @@ class PullRequestSummaryExecutorTest {
     private static final Long INSTALLATION_ID = 5000L;
     private static final Long USER_ID = 7L;
     private static final int MAX_ATTEMPTS = 3;
+    private static final int MAX_FILE_PAGES = 2;
 
     private final PullRequestAnalysisRepository analysisRepository =
             mock(PullRequestAnalysisRepository.class);
@@ -95,7 +96,7 @@ class PullRequestSummaryExecutorTest {
                 List.of(ANALYSIS_ID), WORKER_ID, PullRequestAnalysisStatus.RUNNING))
                 .willReturn(List.of(analysis));
         given(tokenService.issue(eq(INSTALLATION_ID), any())).willReturn(TOKEN);
-        given(client.listFiles(anyString(), anyString(), anyString(), anyInt()))
+        given(client.listFiles(anyString(), anyString(), anyString(), anyInt(), anyInt()))
                 .willReturn(new GithubCollectionClient.PagedResult<>(List.of(), false));
         given(commitRepository.findAllByPullRequestId(anyLong())).willReturn(List.of());
         given(inputAssembler.assemble(anyString(), any(), any(), any())).willReturn("입력");
@@ -112,6 +113,19 @@ class PullRequestSummaryExecutorTest {
 
         verify(writer).complete(ANALYSIS_ID, WORKER_ID, "회원가입 처리를 추가했습니다.",
                 ChangeType.FEATURE, "gpt-5-mini");
+    }
+
+    @Test
+    @DisplayName("변경 파일은 요약 전용 페이지 상한까지만 받는다 — 뒷부분은 입력 상한에서 잘린다")
+    void limitsFilePagesForSummary() {
+        // 페이지 하나가 GitHub 호출 하나다. 수집 쪽 상한(30페이지)을 그대로 쓰면 큰 PR
+        // 몇 건이 rate limit 여유를 버려질 내용으로 깎는다.
+        given(aiService.summarize("입력"))
+                .willReturn(new PullRequestSummaryResult("요약입니다.", "FEATURE"));
+
+        executor.execute(List.of(ANALYSIS_ID), WORKER_ID);
+
+        verify(client).listFiles(TOKEN, "sample-org", "backend", 42, MAX_FILE_PAGES);
     }
 
     @Test
@@ -263,7 +277,7 @@ class PullRequestSummaryExecutorTest {
         @Test
         @DisplayName("저장소에 접근할 수 없으면 재시도하지 않는다")
         void failsOnInaccessibleRepository() {
-            given(client.listFiles(anyString(), anyString(), anyString(), anyInt()))
+            given(client.listFiles(anyString(), anyString(), anyString(), anyInt(), anyInt()))
                     .willThrow(new GithubRepositoryUnavailableException());
 
             executor.execute(List.of(ANALYSIS_ID), WORKER_ID);
@@ -314,7 +328,7 @@ class PullRequestSummaryExecutorTest {
             String refreshed = "ghs_refreshed";
             given(tokenService.issue(eq(INSTALLATION_ID), any()))
                     .willReturn(TOKEN, refreshed);
-            given(client.listFiles(anyString(), anyString(), anyString(), anyInt()))
+            given(client.listFiles(anyString(), anyString(), anyString(), anyInt(), anyInt()))
                     .willThrow(new GithubInstallationUnavailableException())
                     .willReturn(new GithubCollectionClient.PagedResult<>(List.of(), false));
             given(aiService.summarize("입력"))
@@ -337,7 +351,7 @@ class PullRequestSummaryExecutorTest {
         @Test
         @DisplayName("걸리면 기다리지 않고 PENDING으로 되돌린다")
         void releasesToPendingOnRateLimit() {
-            given(client.listFiles(anyString(), anyString(), anyString(), anyInt()))
+            given(client.listFiles(anyString(), anyString(), anyString(), anyInt(), anyInt()))
                     .willThrow(new GithubRateLimitedException(60));
 
             executor.execute(List.of(ANALYSIS_ID), WORKER_ID);
@@ -356,7 +370,7 @@ class PullRequestSummaryExecutorTest {
             executor.execute(List.of(ANALYSIS_ID), WORKER_ID);
 
             verify(writer).deferForRateLimit(eq(ANALYSIS_ID), eq(WORKER_ID), any());
-            verify(client, never()).listFiles(anyString(), anyString(), anyString(), anyInt());
+            verify(client, never()).listFiles(anyString(), anyString(), anyString(), anyInt(), anyInt());
         }
 
         @Test
@@ -369,7 +383,7 @@ class PullRequestSummaryExecutorTest {
                     PullRequestAnalysisStatus.RUNNING)).willReturn(List.of(first, second));
             given(tokenService.issue(eq(INSTALLATION_ID), any())).willReturn("token-one");
             given(tokenService.issue(eq(6000L), any())).willReturn("token-two");
-            given(client.listFiles(anyString(), anyString(), anyString(), anyInt()))
+            given(client.listFiles(anyString(), anyString(), anyString(), anyInt(), anyInt()))
                     .willAnswer(invocation -> {
                         if ("token-one".equals(invocation.getArgument(0))) {
                             throw new GithubRateLimitedException(60);
@@ -420,7 +434,7 @@ class PullRequestSummaryExecutorTest {
         return new SummaryProperties(
                 new SummaryProperties.Worker(true, Duration.ofSeconds(5), Duration.ofMinutes(10),
                         Duration.ofSeconds(5), MAX_ATTEMPTS, 10, 2),
-                60000, 8000, 90000);
+                60000, 8000, 90000, MAX_FILE_PAGES);
     }
 
     /** 실제 풀을 쓴다. 배치가 끝날 때까지 기다리는 동작까지 함께 확인하려는 것이다. */

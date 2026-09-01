@@ -28,10 +28,13 @@ import java.time.Duration;
  *                              여유를 크게 두는 이유는 gpt-5 계열이 reasoning 토큰을 출력에
  *                              함께 세기 때문이고, 그래도 상한을 두는 이유는 폭주한 응답
  *                              하나가 요약 수백 건 값을 태우지 않게 하기 위해서다
- * @param summaryBudget         PR 요약 한 건의 예산.
+ * @param summaryBudget         PR 요약 한 건의 예산. 호출 타임아웃으로 그대로 걸리므로
+ *                              요약 한 건의 실제 상한이다.
  *                              <p>{@code analysisBudget}을 쓰지 않는다. 저쪽은 PDF 한 건에
  *                              15분을 허용하는 값이라, 그대로 쓰면 막힌 PR 하나가 워커 자리를
- *                              15분씩 붙잡는다
+ *                              15분씩 붙잡는다.
+ *                              <p>{@code timeout}도 쓰지 않는다. 저쪽은 명세서 추출과 공유하는
+ *                              클라이언트 기본값이라 요약에는 길고, 요약 워커의 lease와 맞지 않는다
  */
 @Validated
 @ConfigurationProperties(prefix = "galpi.openai")

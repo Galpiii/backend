@@ -176,6 +176,9 @@ galpi:
     max-patch-chars-per-file: ${PR_SUMMARY_MAX_PATCH_CHARS_PER_FILE:8000}
     # diff뿐 아니라 본문·커밋·파일 목록까지 포함한 최종 LLM 입력 상한.
     max-input-chars: ${PR_SUMMARY_MAX_INPUT_CHARS:90000}
+    # 요약 입력을 만들 때 받아 올 변경 파일 페이지 수(페이지당 100개). 수집(30페이지)과 나눈다.
+    # 뒤쪽 페이지는 입력 상한에서 어차피 잘려, 받아 봐야 GitHub 호출만 쓴다.
+    max-file-pages: ${PR_SUMMARY_MAX_FILE_PAGES:2}
 
   analysis:
     worker:

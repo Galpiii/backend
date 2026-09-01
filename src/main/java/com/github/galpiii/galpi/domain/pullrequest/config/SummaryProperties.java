@@ -25,6 +25,12 @@ import java.time.Duration;
  * @param maxInputChars       제목·본문·커밋·파일 목록·diff를 모두 합친 최종 입력 상한.
  *                            {@code maxPatchChars}만으로는 긴 PR 본문이나 수천 개의 커밋이
  *                            모델 컨텍스트와 비용 상한을 우회할 수 있어 별도로 둔다
+ * @param maxFilePages        요약 입력을 만들 때 받아 올 변경 파일 페이지 수(페이지당 100개).
+ *                            <p>수집 쪽(기본 30페이지 = 3,000개)과 나눈다. 저쪽은 모든 파일을
+ *                            행으로 남겨야 하지만, 요약은 파일 목록이 {@code maxInputChars / 6},
+ *                            diff가 {@code maxPatchChars}에서 어차피 잘린다. 뒤쪽 페이지는
+ *                            버려질 내용을 받으려고 GitHub 호출만 쓰는 셈이라, 큰 PR 몇 건이
+ *                            동시에 돌면 rate limit 여유를 그만큼 빨리 깎는다
  */
 @Validated
 @ConfigurationProperties(prefix = "galpi.summary")
@@ -32,7 +38,8 @@ public record SummaryProperties(
         @DefaultValue @NotNull Worker worker,
         @DefaultValue("60000") @Min(0) int maxPatchChars,
         @DefaultValue("8000") @Min(0) int maxPatchCharsPerFile,
-        @DefaultValue("90000") @Min(1) int maxInputChars
+        @DefaultValue("90000") @Min(1) int maxInputChars,
+        @DefaultValue("2") @Min(1) @Max(30) int maxFilePages
 ) {
 
     /**

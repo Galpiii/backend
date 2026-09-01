@@ -175,7 +175,7 @@ class SummaryInputAssemblerTest {
         return new SummaryInputAssembler(scanner, new SecretPathRules(), new SummaryProperties(
                 new SummaryProperties.Worker(true, Duration.ofSeconds(5), Duration.ofMinutes(10),
                         Duration.ofSeconds(5), 3, 10, 4),
-                maxPatchChars, maxPatchCharsPerFile, maxInputChars));
+                maxPatchChars, maxPatchCharsPerFile, maxInputChars, 2));
     }
 
     private static PullRequest pullRequest(int number, String title, String body) {

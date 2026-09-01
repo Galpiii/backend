@@ -158,7 +158,14 @@ public class PullRequestAnalysisWriter {
         return appliedOrLogStale(updated, analysisId, workerId, "defer-retry");
     }
 
-    /** rate limit 해제 시각까지 미루고, 선점하며 증가시킨 시도 횟수는 되돌린다. */
+    /**
+     * rate limit 해제 시각까지 미루고, 선점하며 증가시킨 시도 횟수는 되돌린다.
+     *
+     * <p>시도 횟수를 되돌리므로 이 경로만 반복되는 PR은 시도 상한에 닿지 않는다. 의도한
+     * 것이다 -- 한도는 시간이 지나면 회복되고, 그때까지 못 돌린 것을 "분석 실패"로 굳히면
+     * 사용자가 다시 눌러야 할 이유가 없는 것을 다시 누르게 된다. 대신 {@code next_attempt_at}
+     * 덕분에 그 사이 폴링 비용은 들지 않는다.
+     */
     @Transactional
     public boolean deferForRateLimit(Long analysisId, String workerId,
                                      OffsetDateTime retryAt) {

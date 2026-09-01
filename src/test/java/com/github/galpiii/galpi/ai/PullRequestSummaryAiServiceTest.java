@@ -4,8 +4,12 @@ import com.github.galpiii.galpi.ai.config.OpenAiProperties;
 import com.github.galpiii.galpi.ai.dto.PullRequestSummaryResult;
 import com.github.galpiii.galpi.ai.exception.PullRequestSummaryAiException;
 import com.github.galpiii.galpi.ai.exception.PullRequestSummaryInvalidResponseException;
+import com.github.galpiii.galpi.ai.support.AiFailureKind;
 import com.openai.client.OpenAIClient;
+import com.openai.core.RequestOptions;
+import com.openai.core.Timeout;
 import com.openai.errors.BadRequestException;
+import com.openai.errors.OpenAIIoException;
 import com.openai.errors.RateLimitException;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
@@ -18,7 +22,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
+import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -42,6 +48,7 @@ import static org.mockito.Mockito.verify;
 class PullRequestSummaryAiServiceTest {
 
     private static final String INPUT = "저장소: sample-org/backend\nPR #42: feat: 회원가입";
+    private static final Duration SUMMARY_BUDGET = Duration.ofMinutes(3);
 
     private final OpenAIClient openAIClient = mock(OpenAIClient.class);
     private final ResponseService responseService = mock(ResponseService.class);
@@ -55,7 +62,7 @@ class PullRequestSummaryAiServiceTest {
         PullRequestSummaryPrompt prompt = new PullRequestSummaryPrompt();
         prompt.load();
 
-        service = new PullRequestSummaryAiService(openAIClient, properties(Duration.ofMinutes(3)),
+        service = new PullRequestSummaryAiService(openAIClient, properties(SUMMARY_BUDGET),
                 prompt);
     }
 
@@ -164,7 +171,8 @@ class PullRequestSummaryAiServiceTest {
             assertThatThrownBy(() -> service.summarize(INPUT))
                     .isInstanceOf(PullRequestSummaryInvalidResponseException.class);
 
-            verify(responseService, times(1)).create(any(ResponseCreateParams.class));
+            verify(responseService, times(1))
+                    .create(any(ResponseCreateParams.class), any(RequestOptions.class));
         }
     }
 
@@ -175,56 +183,82 @@ class PullRequestSummaryAiServiceTest {
         @Test
         @DisplayName("429는 한 번만 호출하고 durable worker에 재시도를 넘긴다")
         void delegatesRateLimitRetryToWorker() {
-            given(responseService.create(any(ResponseCreateParams.class)))
+            given(responseService.create(any(ResponseCreateParams.class), any(RequestOptions.class)))
                     .willThrow(mock(RateLimitException.class));
 
             assertThatThrownBy(() -> service.summarize(INPUT))
-                    .isInstanceOf(PullRequestSummaryAiException.class);
+                    .isInstanceOf(PullRequestSummaryAiException.class)
+                    .extracting(e -> ((PullRequestSummaryAiException) e).getKind())
+                    .isEqualTo(AiFailureKind.RETRIES_EXHAUSTED);
 
-            verify(responseService, times(1)).create(any(ResponseCreateParams.class));
+            verify(responseService, times(1))
+                    .create(any(ResponseCreateParams.class), any(RequestOptions.class));
         }
 
         @Test
         @DisplayName("400은 재시도하지 않는다 — 같은 요청은 항상 같은 답이 온다")
         void doesNotRetryBadRequest() {
-            given(responseService.create(any(ResponseCreateParams.class)))
+            given(responseService.create(any(ResponseCreateParams.class), any(RequestOptions.class)))
                     .willThrow(mock(BadRequestException.class));
 
             assertThatThrownBy(() -> service.summarize(INPUT))
                     .isInstanceOf(PullRequestSummaryAiException.class);
 
-            verify(responseService, times(1)).create(any(ResponseCreateParams.class));
+            verify(responseService, times(1))
+                    .create(any(ResponseCreateParams.class), any(RequestOptions.class));
         }
 
         @Test
         @DisplayName("응답이 잘리면 재시도하지 않는다")
         void doesNotRetryTruncated() {
             Response truncated = incompleteResponse();
-            given(responseService.create(any(ResponseCreateParams.class))).willReturn(truncated);
+            given(responseService.create(any(ResponseCreateParams.class), any(RequestOptions.class)))
+                    .willReturn(truncated);
 
             assertThatThrownBy(() -> service.summarize(INPUT))
                     .isInstanceOf(PullRequestSummaryInvalidResponseException.class);
 
-            verify(responseService, times(1)).create(any(ResponseCreateParams.class));
+            verify(responseService, times(1))
+                    .create(any(ResponseCreateParams.class), any(RequestOptions.class));
         }
 
         @Test
-        @DisplayName("예산이 끝나면 더 시도하지 않는다 — 막힌 PR 하나가 워커 자리를 붙잡지 않게 한다")
-        void stopsWhenBudgetIsSpent() {
+        @DisplayName("예산을 호출 타임아웃으로 건다 — 막힌 PR 하나가 워커 자리를 붙잡지 않게 한다")
+        void appliesBudgetAsCallTimeout() {
+            // 시도가 한 번뿐이라 재시도 사이에 도는 예산 검사로는 아무 상한도 걸리지 않는다.
+            // 예산이 실제 상한이 되려면 호출 자체에 걸려야 한다.
+            givenResponse(json("회원가입 처리를 추가했습니다.", "FEATURE"));
+
+            service.summarize(INPUT);
+
+            ArgumentCaptor<RequestOptions> options = ArgumentCaptor.forClass(RequestOptions.class);
+            verify(responseService)
+                    .create(any(ResponseCreateParams.class), options.capture());
+            assertThat(options.getValue().getTimeout())
+                    .isEqualTo(Timeout.builder().request(SUMMARY_BUDGET).build());
+        }
+
+        @Test
+        @DisplayName("예산을 넘겨 끝난 실패는 시간 초과로 구분한다 — 운영에서 예산·모델을 손볼 신호다")
+        void marksBudgetExhaustionWhenCallOverrunsBudget() {
             PullRequestSummaryPrompt prompt = new PullRequestSummaryPrompt();
             prompt.load();
             service = new PullRequestSummaryAiService(
                     openAIClient, properties(Duration.ofMillis(20)), prompt);
-            given(responseService.create(any(ResponseCreateParams.class)))
+            given(responseService.create(any(ResponseCreateParams.class), any(RequestOptions.class)))
                     .willAnswer(invocation -> {
+                        // SDK는 호출 타임아웃을 IOException 계열로 올린다.
                         Thread.sleep(40);
-                        throw mock(RateLimitException.class);
+                        throw new OpenAIIoException("timeout", new SocketTimeoutException());
                     });
 
             assertThatThrownBy(() -> service.summarize(INPUT))
-                    .isInstanceOf(PullRequestSummaryAiException.class);
+                    .isInstanceOf(PullRequestSummaryAiException.class)
+                    .extracting(e -> ((PullRequestSummaryAiException) e).getKind())
+                    .isEqualTo(AiFailureKind.BUDGET_EXHAUSTED);
 
-            verify(responseService, times(1)).create(any(ResponseCreateParams.class));
+            verify(responseService, times(1))
+                    .create(any(ResponseCreateParams.class), any(RequestOptions.class));
         }
     }
 
@@ -244,7 +278,8 @@ class PullRequestSummaryAiServiceTest {
         // 응답 mock을 먼저 다 만들고 나서 스텁을 건다. given(...) 안에서 다른 given(...)을
         // 부르면 Mockito가 앞의 스텁을 미완성으로 보고 UnfinishedStubbingException을 던진다.
         Response response = completedResponse(json);
-        given(responseService.create(any(ResponseCreateParams.class))).willReturn(response);
+        given(responseService.create(any(ResponseCreateParams.class), any(RequestOptions.class)))
+                .willReturn(response);
     }
 
     private static Response completedResponse(String json) {

@@ -71,11 +71,12 @@ App 설정은 `Settings → Developer settings → GitHub Apps → {App}`에서 
 | `PR_MAX_DETAIL_FILES` / `PR_MAX_DETAIL_COMMITS` | PR 상세에 실을 변경 파일·커밋 수. 기본 200 / 200. 넘으면 각각의 `*Truncated` 값으로 알린다 |
 | `OPENAI_SUMMARY_MODEL` | PR 요약 모델. 기본 `gpt-5-mini`. 명세서 추출(`OPENAI_MODEL`)과 나눈 이유는 요약이 저장소당 수백 건이라 모델 선택이 곧 비용이기 때문이다 |
 | `OPENAI_SUMMARY_MAX_OUTPUT_TOKENS` | PR 요약의 출력 상한. 기본 2000. gpt-5 계열은 reasoning 토큰이 출력에 함께 과금된다 |
-| `OPENAI_SUMMARY_BUDGET` | 요약 한 건이 재시도까지 포함해 쓸 수 있는 시간. 기본 3분 |
+| `OPENAI_SUMMARY_BUDGET` | 요약 한 건의 예산. 기본 3분. OpenAI 호출 타임아웃으로 그대로 걸리므로 요약 한 건의 실제 상한이다. `PR_SUMMARY_LEASE`보다 짧게 둔다 |
 | `PR_SUMMARY_WORKER_ENABLED` | PR 요약 워커를 띄울지. 기본 true. API만 서비스하는 인스턴스에서 false |
 | `PR_SUMMARY_POLL_INTERVAL` / `PR_SUMMARY_LEASE` / `PR_SUMMARY_RETRY_BACKOFF` | 큐 폴링 주기, 선점 유효 기간, 일시 실패 재시도 간격. 기본 5초 / 10분 / 5초 |
 | `PR_SUMMARY_MAX_ATTEMPTS` | 이 횟수를 넘게 시도된 요약은 `FAILED`가 된다. 기본 3. 사용자가 재요약을 누르면 0으로 돌아간다 |
 | `PR_SUMMARY_BATCH_SIZE` / `PR_SUMMARY_MAX_CONCURRENCY` | 한 번에 선점할 요약 수와 그중 동시 처리 수. 기본 10 / 4 |
 | `PR_SUMMARY_MAX_PATCH_CHARS` / `PR_SUMMARY_MAX_PATCH_CHARS_PER_FILE` | LLM 입력에 담을 diff 상한(문자 수). 기본 60000 / 8000 |
 | `PR_SUMMARY_MAX_INPUT_CHARS` | 제목·본문·커밋·파일 목록·diff를 합친 최종 LLM 입력 상한. 기본 90000 |
+| `PR_SUMMARY_MAX_FILE_PAGES` | 요약 입력을 만들 때 받아 올 변경 파일 페이지 수(페이지당 100개). 기본 2. 수집(`COLLECTION_MAX_PR_FILE_PAGES`)과 나눈 이유는 뒤쪽 페이지가 입력 상한에서 어차피 잘리기 때문이다 |
 | `TASK_SCHEDULING_POOL_SIZE` | `@Scheduled` 워커 수. 기본 3(분석 워커·PR 요약 워커·토큰 폐기 배치) |

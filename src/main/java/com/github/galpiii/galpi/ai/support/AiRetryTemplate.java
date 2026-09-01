@@ -57,6 +57,11 @@ public final class AiRetryTemplate {
      * <p>시도 전에 예산을 먼저 본다. 남은 시간이 없는데 한 번 더 걸면, 타임아웃이 긴 호출
      * 하나가 예산을 몇 배로 넘긴다.
      *
+     * <p>마지막 시도가 끝난 뒤에도 한 번 더 본다. 앞의 검사는 시도와 시도 <b>사이</b>에만
+     * 도는데, 시도를 한 번만 하는 호출부에서는 그 사이가 아예 없다. 그러면 예산을 넘겨서
+     * 끝난 실패까지 전부 {@link AiFailureKind#RETRIES_EXHAUSTED}로 뭉개져, 운영에서 시간
+     * 초과와 그 밖의 실패를 나눌 수 없다.
+     *
      * <p>{@code action}은 실패를 {@link RetryableAiException}으로 던져 재시도를 요청한다.
      * 그 밖의 예외는 그대로 밖으로 나간다 -- 다시 걸어도 결과가 같은 실패이기 때문이다.
      */
@@ -67,8 +72,7 @@ public final class AiRetryTemplate {
             if (Instant.now().isAfter(deadline)) {
                 log.warn("{} 분석 예산이 끝나 {}를 더 시도하지 않습니다. attempt: {}/{}",
                         logTag, operation, attempt, maxAttempts);
-                throw terminalFailure.create(AiFailureKind.BUDGET_EXHAUSTED,
-                        operation + "가 분석 예산 안에 끝나지 않았습니다.", lastFailure);
+                throw budgetExhausted(operation, lastFailure);
             }
 
             try {
@@ -84,8 +88,18 @@ public final class AiRetryTemplate {
             }
         }
 
+        if (Instant.now().isAfter(deadline)) {
+            log.warn("{} {}가 분석 예산을 넘겨 끝났습니다. attempts: {}", logTag, operation, maxAttempts);
+            throw budgetExhausted(operation, lastFailure);
+        }
+
         throw terminalFailure.create(AiFailureKind.RETRIES_EXHAUSTED,
                 operation + "에 최종 실패했습니다.", lastFailure);
+    }
+
+    private RuntimeException budgetExhausted(String operation, RuntimeException lastFailure) {
+        return terminalFailure.create(AiFailureKind.BUDGET_EXHAUSTED,
+                operation + "가 분석 예산 안에 끝나지 않았습니다.", lastFailure);
     }
 
     /**
