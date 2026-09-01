@@ -122,6 +122,10 @@ public enum ErrorCode {
     FEATURE_SPEC_ALREADY_EXISTS("FEATURE-SPEC-EXISTS-001", HttpStatus.CONFLICT, "이미 등록된 기능명세서가 있습니다."),
     FEATURE_SPEC_NOT_ACCESSIBLE("FEATURE-SPEC-ACCESS-001", HttpStatus.NOT_FOUND, "기능명세서를 찾을 수 없거나 접근할 수 없습니다."),
     FEATURE_SPEC_EXTRACTION_BUSY("FEATURE-SPEC-EXTRACTION-001", HttpStatus.SERVICE_UNAVAILABLE, "분석 요청이 많아 지금은 처리할 수 없습니다. 잠시 후 다시 시도해 주세요."),
+    FEATURE_SPEC_EXTRACTION_IN_PROGRESS("FEATURE-SPEC-EXTRACTION-002", HttpStatus.CONFLICT,
+            "분석이 진행 중인 기능명세서는 교체할 수 없습니다. 분석이 끝난 뒤 다시 시도해 주세요."),
+    FEATURE_SPEC_REPLACE_BUSY("FEATURE-SPEC-EXTRACTION-003", HttpStatus.SERVICE_UNAVAILABLE,
+            "분석 요청이 많아 지금은 처리할 수 없습니다. 기존 기능명세서는 삭제되었으니 잠시 후 다시 업로드해 주세요."),
 
     // Feature Review
     FEATURE_NOT_ACCESSIBLE("FEATURE-REVIEW-001", HttpStatus.NOT_FOUND, "기능을 찾을 수 없거나 접근할 수 없습니다."),

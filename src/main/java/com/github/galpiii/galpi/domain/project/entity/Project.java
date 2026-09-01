@@ -103,9 +103,12 @@ public class Project extends BaseEntity {
     /**
      * 활성 명세서를 가리킨다. 프로젝트당 문서는 하나다.
      *
-     * <p>{@code spec_documents}의 UNIQUE(project_id)가 두 번째 업로드를 409로 막으므로
-     * 실제로 교체가 일어나지는 않는다. 재업로드를 열게 되면 그 제약을 푸는 변경과 함께
-     * 이 자리의 교체 의미도 같이 정해야 한다.
+     * <p>교체 API가 열려 있어 실제로 이 자리의 문서가 바뀐다. UNIQUE(project_id)는 그대로 두고,
+     * 교체는 한 트랜잭션 안에서 기존 문서를 지운 뒤 새로 넣는다. 제약을 풀지 않았으므로 두
+     * 문서가 공존하는 순간은 없다.
+     *
+     * <p>{@code advanceOnboardingStep}이 앞으로만 움직이므로 교체가 위저드를 되감지 않는다.
+     * 이미 ② 이후 단계에 있던 사용자는 그 자리에 남는다.
      */
     public void attachSpecDocument(Long specDocumentId) {
         this.activeSpecDocumentId = specDocumentId;
