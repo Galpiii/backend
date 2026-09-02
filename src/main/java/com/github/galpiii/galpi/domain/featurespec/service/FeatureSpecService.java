@@ -84,6 +84,7 @@ public class FeatureSpecService {
         verifyExtractionCapacity(projectId);
 
         ValidatedFeatureSpec validatedFeatureSpec = featureSpecFileValidator.validate(file);
+        verifyExtractionCapacityBeforeDeleting(projectId, validatedFeatureSpec);
 
         SpecDocument savedSpecDocument =
                 replaceOrDeleteTempFile(projectId, userId, current.getId(), validatedFeatureSpec);
@@ -138,6 +139,18 @@ public class FeatureSpecService {
         }
 
         return current;
+    }
+
+    private void verifyExtractionCapacityBeforeDeleting(
+            Long projectId,
+            ValidatedFeatureSpec validatedFeatureSpec
+    ) {
+        try {
+            verifyExtractionCapacity(projectId);
+        } catch (RuntimeException e) {
+            tempFileStore.delete(validatedFeatureSpec.tempFile());
+            throw e;
+        }
     }
 
     private SpecDocument replaceOrDeleteTempFile(

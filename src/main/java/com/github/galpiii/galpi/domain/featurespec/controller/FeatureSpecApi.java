@@ -200,6 +200,36 @@ public interface FeatureSpecApi {
                             )
                     ),
                     @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "400",
+                            description = """
+                                    파일 검증 실패. 업로드와 같은 조건을 적용합니다.
+                                    - FEATURE-SPEC-FILE-001: 비어 있음
+                                    - FEATURE-SPEC-FILE-002: 원본 파일명 없음
+                                    - FEATURE-SPEC-FILE-003: PDF 확장자가 아님
+                                    - FEATURE-SPEC-FILE-004: Content-Type이 application/pdf가 아님
+                                    - FEATURE-SPEC-FILE-005: 파일 크기가 20MB를 초과함
+                                    - FEATURE-SPEC-FILE-006: 파일명이 255자를 초과함
+                                    - FEATURE-SPEC-PDF-001: 정상적으로 열 수 없는 PDF
+                                    - FEATURE-SPEC-PDF-002: 암호화 또는 비밀번호 보호된 PDF
+                                    - FEATURE-SPEC-PDF-003: PDF 페이지가 없음
+                                    - FEATURE-SPEC-PDF-004: PDF가 100페이지를 초과함
+
+                                    검증은 기존 명세서를 지우기 전에 끝나므로, 400이면 기존 명세서가 그대로 남습니다.
+                                    """,
+                            content = @Content(
+                                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                    examples = @ExampleObject(
+                                            name = "파일 검증 실패",
+                                            value = """
+                                                    {
+                                                      "code": "FEATURE-SPEC-PDF-001",
+                                                      "message": "정상적으로 열 수 있는 PDF 파일이 아닙니다."
+                                                    }
+                                                    """
+                                    )
+                            )
+                    ),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
                             responseCode = "404",
                             description = """
                                     - PROJECT-001: 프로젝트를 찾을 수 없거나 접근할 수 없음

@@ -327,6 +327,25 @@ class FeatureSpecServiceTest {
             verify(featureSpecFileValidator, never()).validate(any());
         }
 
+        /**
+         * PDF 파싱이 수백 ms를 쓰는 사이 큐가 찰 수 있다. 지우기 전에 걸러내면 기존 명세서가
+         * 그대로 남고, 안내도 삭제되지 않았다는 001이 나간다.
+         */
+        @Test
+        @DisplayName("파싱 도중 큐가 차면 지우기 전에 막는다 — 기존 명세서가 남는다")
+        void rejectsBeforeDeletingWhenQueueFillsDuringParsing() {
+            givenReplaceableProject(ExtractionStatus.COMPLETED);
+            given(featureSpecFileValidator.validate(file)).willReturn(validatedFeatureSpec);
+            given(featureExtractionService.isBusy()).willReturn(false, true);
+
+            assertThatThrownBy(() -> service.replace(PROJECT_ID, USER_ID, file))
+                    .isInstanceOf(GlobalException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_SPEC_EXTRACTION_BUSY);
+
+            verify(specDocumentWriter, never()).replace(anyLong(), anyLong(), anyLong(), anyString());
+            verify(tempFileStore).delete(tempFile);
+        }
+
         @Test
         @DisplayName("교체 저장이 실패하면 임시 파일을 지운다")
         void deletesTempFileWhenReplaceFails() {
