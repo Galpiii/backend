@@ -17,6 +17,7 @@ import com.github.galpiii.galpi.domain.project.dto.ProjectUpdateRequest;
 import com.github.galpiii.galpi.domain.project.dto.SpecDocumentSummaryResponse;
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.entity.ProjectStatus;
+import com.github.galpiii.galpi.domain.project.event.ProjectDeletedEvent;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.domain.user.entity.User;
 import com.github.galpiii.galpi.domain.user.repository.UserRepository;
@@ -28,6 +29,7 @@ import com.github.galpiii.galpi.global.error.exception.UnauthorizedException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,6 +63,7 @@ public class ProjectService {
     // 프로젝트를 지우면 진행 중인 분석도 함께 멈춰야 한다. 두 가지가 한 트랜잭션에 있어야
     // 삭제만 되고 작업은 계속 도는 상태가 생기지 않는다.
     private final AnalysisRunRepository analysisRunRepository;
+    private final ApplicationEventPublisher eventPublisher;
     private final ProjectProperties properties;
 
     @Transactional(readOnly = true)
@@ -162,6 +165,7 @@ public class ProjectService {
         project.softDelete();
 
         int cancelled = analysisRunRepository.cancelInFlight(projectId, OffsetDateTime.now());
+        eventPublisher.publishEvent(new ProjectDeletedEvent(projectId));
         log.info("[프로젝트] 삭제 projectId={} userId={} cancelledRuns={}",
                 projectId, userId, cancelled);
     }

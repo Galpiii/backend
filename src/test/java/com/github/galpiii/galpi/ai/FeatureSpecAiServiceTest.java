@@ -95,7 +95,8 @@ class FeatureSpecAiServiceTest {
     private OpenAiProperties properties(Duration analysisBudget) {
         return new OpenAiProperties(
                 "test-api-key", "gpt-5", 64000L, Duration.ofMinutes(5), 3,
-                Duration.ofMillis(1), analysisBudget);
+                Duration.ofMillis(1), analysisBudget,
+                "gpt-5-mini", 2000L, Duration.ofMinutes(3));
     }
 
     private void givenUploadSucceeds() {

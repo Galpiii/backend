@@ -21,10 +21,22 @@ import java.util.List;
  * <p>청킹 전략·토큰 예산·프롬프트 구성·기능 대조 로직은 이 계약의 범위 밖이다. 수집기는
  * "무엇을 모았고 무엇이 빠졌는지"까지만 책임진다.
  *
+ * @param repositoryId    갈피 안의 저장소 id. 파이프라인이 결과를 어디에 붙일지 정하는 데 쓴다.
+ *                        GitHub id만으로는 어느 프로젝트의 행인지 알 수 없다
+ * @param installationId  이 수집이 근거로 삼은 설치. <b>여기 담아 넘기는 것이 중요하다.</b>
+ *                        파이프라인이 나중에 GitHub을 다시 부를 때
+ *                        {@code repositories.installation_id}를 읽으면 안 된다 -- 그 컬럼은
+ *                        캐시라 인계 시점의 근거와 다를 수 있다
+ * @param requestedBy     이 수집을 요청한 사용자. 파이프라인이 외부 전송 동의를 다시 물어야
+ *                        할 때 필요하다. 수집기는 이 값을 들여다보지 않고 그대로 흘려보낸다 --
+ *                        {@code HandoffGuard}와 같은 태도다
  * @param fileTree 제외된 파일까지 포함한 전체 경로 목록. 파이프라인이 저장소 구조를 보는 창이다
  */
 public record CollectedRepositorySnapshot(
+        Long repositoryId,
         Long githubRepositoryId,
+        Long installationId,
+        Long requestedBy,
         String fullName,
         String commitSha,
         List<String> fileTree,
@@ -51,11 +63,18 @@ public record CollectedRepositorySnapshot(
     }
 
     /**
-     * @param body 마스킹을 거친 본문. 원문이 아니다
+     * @param pullRequestId 저장을 마친 뒤의 갈피 안 PR id. 파이프라인이 이 PR에 결과를 붙이려면
+     *                      GitHub의 {@code number}가 아니라 이 값이 필요하고, 그것을 다시
+     *                      조회하지 않도록 쓰기 경로가 돌려준 값을 그대로 담는다
+     * @param headSha       이 PR을 수집한 시점의 head 커밋. 나중에 만든 분석 결과가 어느 커밋의
+     *                      것인지 남겨야 재수집 뒤에 낡았는지 판단할 수 있다
+     * @param body          마스킹을 거친 본문. 원문이 아니다
      */
-    public record CollectedPullRequest(int number,
+    public record CollectedPullRequest(Long pullRequestId,
+                                       int number,
                                        String title,
                                        String body,
+                                       String headSha,
                                        OffsetDateTime mergedAt,
                                        List<CollectedPullRequestFile> files,
                                        List<CollectedCommit> commits,

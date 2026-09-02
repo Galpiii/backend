@@ -7,9 +7,12 @@ spring:
       mode: force
     # 분석 워커의 poll()이 수집 전체를 동기로 실행해 스레드를 수십 분씩 잡는다. 기본값 1이면
     # 그동안 토큰 폐기 배치가 한 번도 돌지 못한다. @Scheduled를 더 붙이면 이 값도 함께 올린다.
+    #
+    # PR 요약 워커가 세 번째다. 이쪽도 배치 하나가 끝날 때까지 폴링 스레드를 붙잡는다 --
+    # 그래야 배치가 도는 동안 lease 연장이 계속된다.
     scheduling:
       pool:
-        size: ${TASK_SCHEDULING_POOL_SIZE:2}
+        size: ${TASK_SCHEDULING_POOL_SIZE:3}
 
   servlet:
     multipart:
@@ -57,6 +60,11 @@ galpi:
     timeout: ${OPENAI_TIMEOUT}
     max-attempts: ${OPENAI_MAX_ATTEMPTS}
     analysis-budget: ${OPENAI_ANALYSIS_BUDGET}
+    # PR 요약은 모델과 상한을 따로 둔다. 명세서 추출은 문서 한 건에 한 번이지만 요약은
+    # 저장소 하나에 수백 건이라, 같은 값을 쓰면 비용이 그대로 곱해진다.
+    summary-model: ${OPENAI_SUMMARY_MODEL:gpt-5-mini}
+    summary-max-output-tokens: ${OPENAI_SUMMARY_MAX_OUTPUT_TOKENS:2000}
+    summary-budget: ${OPENAI_SUMMARY_BUDGET:3m}
 
   feature-extraction:
     core-pool-size: ${FEATURE_EXTRACTION_CORE_POOL_SIZE}
@@ -139,6 +147,38 @@ galpi:
     max-per-user: ${PROJECT_MAX_PER_USER:50}
     default-page-size: ${PROJECT_DEFAULT_PAGE_SIZE:20}
     max-page-size: ${PROJECT_MAX_PAGE_SIZE:100}
+
+  pull-request:
+    default-page-size: ${PR_DEFAULT_PAGE_SIZE:20}
+    max-page-size: ${PR_MAX_PAGE_SIZE:100}
+    # 상세 응답에 실을 변경 파일·커밋 수. PR 하나의 파일은 GitHub 상한인 3,000개까지 갈 수 있어
+    # 전부 내리면 응답이 수 MB가 된다. 자른 사실은 각각의 *Truncated로 알린다.
+    max-detail-files: ${PR_MAX_DETAIL_FILES:200}
+    max-detail-commits: ${PR_MAX_DETAIL_COMMITS:200}
+
+  summary:
+    worker:
+      # 분석 워커와 같은 이유로 끌 수 있게 둔다. API만 서비스하는 인스턴스에서 false.
+      enabled: ${PR_SUMMARY_WORKER_ENABLED:true}
+      poll-interval: ${PR_SUMMARY_POLL_INTERVAL:5s}
+      # 분석 작업(30분)보다 짧다. 요약 하나는 GitHub 호출 한 번과 LLM 호출 한 번이라
+      # 10분을 넘길 이유가 없고, 길게 잡으면 죽은 워커가 물고 있던 PR이 그만큼 늦게 풀린다.
+      lease: ${PR_SUMMARY_LEASE:10m}
+      retry-backoff: ${PR_SUMMARY_RETRY_BACKOFF:5s}
+      max-attempts: ${PR_SUMMARY_MAX_ATTEMPTS:3}
+      # 한 번에 여럿을 집는다. 요약 하나가 몇 초라 하나씩 집으면 폴링 주기가 그대로
+      # 처리량 상한이 된다 -- 5초 주기면 PR 300개에 25분이 걸린다.
+      batch-size: ${PR_SUMMARY_BATCH_SIZE:10}
+      max-concurrency: ${PR_SUMMARY_MAX_CONCURRENCY:4}
+    # LLM 입력에 담을 diff 상한. 파일당 상한이 따로 있는 이유는 거대한 lock 파일 하나가
+    # 예산을 다 먹고 구현 파일의 diff가 한 줄도 못 들어가는 것을 막기 위해서다.
+    max-patch-chars: ${PR_SUMMARY_MAX_PATCH_CHARS:60000}
+    max-patch-chars-per-file: ${PR_SUMMARY_MAX_PATCH_CHARS_PER_FILE:8000}
+    # diff뿐 아니라 본문·커밋·파일 목록까지 포함한 최종 LLM 입력 상한.
+    max-input-chars: ${PR_SUMMARY_MAX_INPUT_CHARS:90000}
+    # 요약 입력을 만들 때 받아 올 변경 파일 페이지 수(페이지당 100개). 수집(30페이지)과 나눈다.
+    # 뒤쪽 페이지는 입력 상한에서 어차피 잘려, 받아 봐야 GitHub 호출만 쓴다.
+    max-file-pages: ${PR_SUMMARY_MAX_FILE_PAGES:2}
 
   analysis:
     worker:

@@ -12,6 +12,7 @@ import com.github.galpiii.galpi.domain.github.support.GithubRepositoryUrlParser;
 import com.github.galpiii.galpi.domain.github.support.GithubRepositoryUrlParser.RepositoryUrl;
 import com.github.galpiii.galpi.domain.project.dto.LinkedRepositoryResponse;
 import com.github.galpiii.galpi.domain.project.entity.Project;
+import com.github.galpiii.galpi.domain.project.event.ProjectRepositoryUnlinkedEvent;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.BadRequestException;
@@ -21,6 +22,7 @@ import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashSet;
@@ -45,6 +47,7 @@ public class ProjectRepositoryService {
     private final ProjectRepositoryLinkWriter linkWriter;
     private final GithubRepositoryUrlParser urlParser;
     private final GithubUserTokenService userTokenService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(readOnly = true)
     public List<LinkedRepositoryResponse> list(Long userId, Long projectId) {
@@ -158,6 +161,7 @@ public class ProjectRepositoryService {
                 .orElseThrow(() -> new NotFoundException(ErrorCode.PROJECT_REPOSITORY_NOT_FOUND));
 
         repository.unlink();
+        eventPublisher.publishEvent(new ProjectRepositoryUnlinkedEvent(repositoryId));
         log.info("[GitHub] 저장소 연결을 끊었다 projectId={} repositoryId={}", projectId, repositoryId);
     }
 

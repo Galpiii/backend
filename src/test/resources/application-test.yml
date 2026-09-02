@@ -43,6 +43,9 @@ galpi:
     max-attempts: 3
     retry-backoff: 1ms
     analysis-budget: 15m
+    summary-model: gpt-5-mini
+    summary-max-output-tokens: 2000
+    summary-budget: 3m
 
   feature-extraction:
     core-pool-size: 1
@@ -122,6 +125,27 @@ galpi:
       lease: 30m
       max-attempts: 3
       rate-limit-threshold: 1000
+
+  pull-request:
+    default-page-size: 20
+    max-page-size: 100
+    max-detail-files: 200
+    max-detail-commits: 200
+
+  summary:
+    worker:
+      # 위와 같다. 스케줄러가 꺼져 있어 저절로 돌지 않고, 필요한 테스트가 runOnce()를 부른다.
+      enabled: true
+      poll-interval: 5s
+      lease: 10m
+      retry-backoff: 5s
+      max-attempts: 3
+      batch-size: 10
+      # 테스트 JVM에 스레드를 넉넉히 띄울 이유가 없다. 동시성 자체를 보는 테스트가 아니다.
+      max-concurrency: 2
+    max-patch-chars: 60000
+    max-patch-chars-per-file: 8000
+    max-input-chars: 90000
 
 logging:
   level:

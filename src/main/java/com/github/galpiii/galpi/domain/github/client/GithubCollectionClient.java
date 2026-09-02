@@ -147,6 +147,18 @@ public class GithubCollectionClient {
                 + PER_PAGE, token, FILE_LIST, collectionProperties.maxPullRequestFilePages(), budget);
     }
 
+    /**
+     * 변경 파일을 {@code maxPages}까지만.
+     *
+     * <p>파일 목록을 끝까지 쓰지 않는 호출부를 위한 갈래다. 페이지 하나가 호출 하나라,
+     * 어차피 버릴 뒤쪽 페이지를 받으면 rate limit 여유만 깎인다.
+     */
+    public PagedResult<GithubPullRequestFileResponse> listFiles(
+            String token, String owner, String repo, int number, int maxPages) {
+        return collect(repositoryPath(owner, repo) + "/pulls/" + number + "/files?per_page="
+                + PER_PAGE, token, FILE_LIST, maxPages, null);
+    }
+
     public PagedResult<GithubCommitResponse> listCommits(String token, String owner, String repo,
                                                          int number) {
         return listCommits(token, owner, repo, number, null);

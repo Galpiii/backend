@@ -12,6 +12,7 @@ import com.github.galpiii.galpi.domain.github.service.GithubUserTokenService;
 import com.github.galpiii.galpi.domain.github.support.GithubRepositoryUrlParser;
 import com.github.galpiii.galpi.domain.project.dto.LinkedRepositoryResponse;
 import com.github.galpiii.galpi.domain.project.entity.Project;
+import com.github.galpiii.galpi.domain.project.event.ProjectRepositoryUnlinkedEvent;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.domain.user.entity.User;
 import com.github.galpiii.galpi.global.error.ErrorCode;
@@ -30,6 +31,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.sql.SQLException;
@@ -70,6 +72,8 @@ class ProjectRepositoryServiceTest {
     private GithubInstallationService installationService;
     @Mock
     private GithubUserTokenService userTokenService;
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     private ProjectRepositoryService service;
     private Project project;
@@ -82,7 +86,7 @@ class ProjectRepositoryServiceTest {
                 projectRepository, repositoryRepository, installationService,
                 new ProjectRepositoryLinkWriter(projectRepository, repositoryRepository),
                 new GithubRepositoryUrlParser(githubProperties()),
-                userTokenService);
+                userTokenService, eventPublisher);
         project = Project.create(mock(User.class), "갈피");
         given(projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(PROJECT_ID, USER_ID)).willReturn(Optional.of(project));
         given(repositoryRepository.findAllForRelink(any(), any()))
@@ -329,6 +333,7 @@ class ProjectRepositoryServiceTest {
             service.unlink(USER_ID, PROJECT_ID, 55L);
 
             assertThat(repository.isUnlinked()).isTrue();
+            verify(eventPublisher).publishEvent(new ProjectRepositoryUnlinkedEvent(55L));
         }
 
         @Test

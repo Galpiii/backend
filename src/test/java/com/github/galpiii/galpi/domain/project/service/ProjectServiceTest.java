@@ -11,6 +11,7 @@ import com.github.galpiii.galpi.domain.project.dto.ProjectUpdateRequest;
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.entity.ProjectOnboardingStep;
 import com.github.galpiii.galpi.domain.project.entity.ProjectStatus;
+import com.github.galpiii.galpi.domain.project.event.ProjectDeletedEvent;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.domain.user.entity.User;
 import com.github.galpiii.galpi.domain.user.repository.UserRepository;
@@ -28,6 +29,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -65,6 +67,8 @@ class ProjectServiceTest {
     private SpecDocumentRepository specDocumentRepository;
     @Mock
     private AnalysisRunRepository analysisRunRepository;
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     private ProjectService service;
     private User owner;
@@ -72,7 +76,7 @@ class ProjectServiceTest {
     @BeforeEach
     void setUp() {
         service = new ProjectService(projectRepository, userRepository, repositoryRepository,
-                specDocumentRepository, analysisRunRepository,
+                specDocumentRepository, analysisRunRepository, eventPublisher,
                 new ProjectProperties(50, 100, 20));
         owner = mock(User.class);
 
@@ -310,6 +314,7 @@ class ProjectServiceTest {
             service.delete(USER_ID, PROJECT_ID);
 
             verify(analysisRunRepository).cancelInFlight(eq(PROJECT_ID), any());
+            verify(eventPublisher).publishEvent(new ProjectDeletedEvent(PROJECT_ID));
         }
     }
 }

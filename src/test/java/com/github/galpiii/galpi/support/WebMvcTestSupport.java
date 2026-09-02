@@ -18,6 +18,8 @@ import com.github.galpiii.galpi.domain.github.service.GithubRepositoryAccessServ
 import com.github.galpiii.galpi.domain.github.service.GithubSetupService;
 import com.github.galpiii.galpi.domain.project.service.ProjectRepositoryService;
 import com.github.galpiii.galpi.domain.project.service.ProjectService;
+import com.github.galpiii.galpi.domain.pullrequest.service.PullRequestAnalysisRetryService;
+import com.github.galpiii.galpi.domain.pullrequest.service.PullRequestQueryService;
 import com.github.galpiii.galpi.domain.github.support.OAuthStateCookieFactory;
 import com.github.galpiii.galpi.global.config.ApiDocsProperties;
 import com.github.galpiii.galpi.global.config.CorsProperties;
@@ -73,4 +75,8 @@ public abstract class WebMvcTestSupport {
     protected AnalysisRunService analysisRunService;
     @MockitoBean
     protected AiDataConsentService aiDataConsentService;
+    @MockitoBean
+    protected PullRequestQueryService pullRequestQueryService;
+    @MockitoBean
+    protected PullRequestAnalysisRetryService pullRequestAnalysisRetryService;
 }

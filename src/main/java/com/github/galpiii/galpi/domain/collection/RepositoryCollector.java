@@ -73,7 +73,10 @@ public class RepositoryCollector {
             List<IncompleteReason> distinct = List.copyOf(new LinkedHashSet<>(reasons));
 
             CollectedRepositorySnapshot snapshot = new CollectedRepositorySnapshot(
+                    request.repositoryId(),
                     request.githubRepositoryId(),
+                    request.installationId(),
+                    request.requestedBy(),
                     repository.fullName(),
                     commitSha,
                     selection.fileTree(),
@@ -114,8 +117,12 @@ public class RepositoryCollector {
 
     /**
      * @param excludePaths {@code analysis_configs.exclude_paths}. 없으면 빈 목록
-     */
-    /**
+     * @param installationId 토큰을 발급받은 설치. 토큰과 달리 이 값은 인계 스냅샷에 실려
+     *                       나간다 — 파이프라인이 나중에 GitHub을 다시 부를 때 필요하고,
+     *                       그때 캐시된 {@code repositories.installation_id}를 읽으면
+     *                       인계 시점의 근거와 어긋날 수 있다
+     * @param requestedBy    수집을 요청한 사용자. 수집기는 이 값을 쓰지 않고 스냅샷으로
+     *                       흘려보내기만 한다. 파이프라인이 외부 전송 동의를 다시 물을 대상이다
      * @param handoffGuard 파이프라인 인계 직전에 통과해야 할 관문. 판단은 호출자에 남긴다 —
      *                     수집은 작업이나 동의라는 개념을 몰라야 하고, 여기서
      *                     {@code analysisRunId}를 받으면 그 상태를 조회할 방법까지 알아야 한다
@@ -125,6 +132,8 @@ public class RepositoryCollector {
                                     String repo,
                                     Long repositoryId,
                                     Long githubRepositoryId,
+                                    Long installationId,
+                                    Long requestedBy,
                                     int prLimit,
                                     OffsetDateTime prSince,
                                     List<String> includePaths,
