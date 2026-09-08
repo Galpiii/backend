@@ -13,6 +13,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -39,6 +40,22 @@ public class FeatureSpecController implements FeatureSpecApi {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response));
+    }
+
+    @Override
+    @PutMapping(path = "/projects/{projectId}/feature-specs", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<FeatureSpecUploadResponse>> replaceFeatureSpec(
+            @PathVariable Long projectId,
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestPart("file") MultipartFile file
+    ) {
+        FeatureSpecUploadResponse response = featureSpecService.replace(
+                projectId,
+                principal.userId(),
+                file
+        );
+
+        return ResponseEntity.ok(ApiResponse.success(response));
     }
 
     @Override

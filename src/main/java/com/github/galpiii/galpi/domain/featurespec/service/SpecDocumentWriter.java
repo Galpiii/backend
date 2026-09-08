@@ -68,6 +68,25 @@ public class SpecDocumentWriter {
     }
 
     /**
+     * 기존 명세서를 지우고 새 명세서로 갈아 끼운다.
+     */
+    @Transactional
+    public SpecDocument replace(Long projectId, Long userId, Long currentSpecDocumentId, String fileName) {
+        if (specDocumentRepository.deleteByIdReturningCount(currentSpecDocumentId) == 0) {
+            log.info(
+                    "[기능명세서 교체] 교체가 동시에 들어와 지울 문서가 이미 사라졌습니다. specDocumentId: {}",
+                    currentSpecDocumentId
+            );
+            throw new ConflictException(ErrorCode.FEATURE_SPEC_EXTRACTION_IN_PROGRESS);
+        }
+
+        SpecDocument saved = save(projectId, userId, fileName);
+        projectRepository.getReferenceById(projectId).attachSpecDocument(saved.getId());
+
+        return saved;
+    }
+
+    /**
      * 업로드 접수를 되돌린다.
      *
      * <p>분석 제출이 거부되면 분석을 시작조차 못 한 것이므로 행을 남기지 않는다. FAILED로 두면

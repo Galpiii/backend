@@ -17,7 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Tag(
         name = "기능명세서",
-        description = "기능명세서 PDF 업로드 및 분석 상태 조회 API"
+        description = "기능명세서 PDF 업로드·교체 및 분석 상태 조회 API"
 )
 public interface FeatureSpecApi {
 
@@ -162,6 +162,154 @@ public interface FeatureSpecApi {
             @Parameter(
                     name = "file",
                     description = "업로드할 기능명세서 PDF 파일",
+                    required = true,
+                    schema = @Schema(type = "string", format = "binary")
+            )
+            MultipartFile file
+    );
+
+    @Operation(
+            summary = "기능명세서 교체",
+            description = """
+                    등록된 기능명세서를 새 PDF로 바꾸고 다시 분석합니다.
+
+                    기존 추출 결과와 사용자의 검토 기록(병합·분리·확인)은 모두 삭제됩니다.
+                    되돌릴 수 없으므로 호출 전에 사용자에게 확인을 받으세요.
+
+                    분석이 진행 중(PENDING·PROCESSING)이면 409로 거절합니다.
+                    허용 파일 조건은 업로드와 같습니다.
+                    """,
+            responses = {
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "200",
+                            description = "기능명세서 교체 접수 성공. 새 문서가 PENDING 상태로 생성됩니다.",
+                            content = @Content(
+                                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                    examples = @ExampleObject(
+                                            name = "교체 성공",
+                                            value = """
+                                                    {
+                                                      "data": {
+                                                        "specDocumentId": 2,
+                                                        "fileName": "feature-spec-v2.pdf",
+                                                        "extractionStatus": "PENDING"
+                                                      }
+                                                    }
+                                                    """
+                                    )
+                            )
+                    ),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "400",
+                            description = """
+                                    파일 검증 실패. 업로드와 같은 조건을 적용합니다.
+                                    - FEATURE-SPEC-FILE-001: 비어 있음
+                                    - FEATURE-SPEC-FILE-002: 원본 파일명 없음
+                                    - FEATURE-SPEC-FILE-003: PDF 확장자가 아님
+                                    - FEATURE-SPEC-FILE-004: Content-Type이 application/pdf가 아님
+                                    - FEATURE-SPEC-FILE-005: 파일 크기가 20MB를 초과함
+                                    - FEATURE-SPEC-FILE-006: 파일명이 255자를 초과함
+                                    - FEATURE-SPEC-PDF-001: 정상적으로 열 수 없는 PDF
+                                    - FEATURE-SPEC-PDF-002: 암호화 또는 비밀번호 보호된 PDF
+                                    - FEATURE-SPEC-PDF-003: PDF 페이지가 없음
+                                    - FEATURE-SPEC-PDF-004: PDF가 100페이지를 초과함
+
+                                    검증은 기존 명세서를 지우기 전에 끝나므로, 400이면 기존 명세서가 그대로 남습니다.
+                                    """,
+                            content = @Content(
+                                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                    examples = @ExampleObject(
+                                            name = "파일 검증 실패",
+                                            value = """
+                                                    {
+                                                      "code": "FEATURE-SPEC-PDF-001",
+                                                      "message": "정상적으로 열 수 있는 PDF 파일이 아닙니다."
+                                                    }
+                                                    """
+                                    )
+                            )
+                    ),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "404",
+                            description = """
+                                    - PROJECT-001: 프로젝트를 찾을 수 없거나 접근할 수 없음
+                                    - FEATURE-SPEC-ACCESS-001: 교체할 기능명세서가 없음
+
+                                    등록된 명세서가 없으면 교체가 아니라 업로드를 사용해야 합니다.
+                                    """,
+                            content = @Content(
+                                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                    examples = @ExampleObject(
+                                            name = "교체할 명세서 없음",
+                                            value = """
+                                                    {
+                                                      "code": "FEATURE-SPEC-ACCESS-001",
+                                                      "message": "기능명세서를 찾을 수 없거나 접근할 수 없습니다."
+                                                    }
+                                                    """
+                                    )
+                            )
+                    ),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "409",
+                            description = """
+                                    FEATURE-SPEC-EXTRACTION-002: 분석이 진행 중이라 교체할 수 없음
+
+                                    분석 중인 문서를 지우면 결과를 저장할 자리가 사라집니다.
+                                    상태 조회로 COMPLETED 또는 FAILED가 된 뒤에 다시 시도하세요.
+                                    """,
+                            content = @Content(
+                                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                    examples = @ExampleObject(
+                                            name = "분석 진행 중",
+                                            value = """
+                                                    {
+                                                      "code": "FEATURE-SPEC-EXTRACTION-002",
+                                                      "message": "분석이 진행 중인 기능명세서는 교체할 수 없습니다. 분석이 끝난 뒤 다시 시도해 주세요."
+                                                    }
+                                                    """
+                                    )
+                            )
+                    ),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "503",
+                            description = """
+                                    분석 요청이 몰려 접수할 수 없음. 기존 명세서가 남았는지가 코드로 갈립니다.
+
+                                    - FEATURE-SPEC-EXTRACTION-001: 삭제 전에 걸렀습니다. 기존 명세서는 그대로 남아 있으므로 잠시 후 교체를 다시 시도하면 됩니다.
+                                    - FEATURE-SPEC-EXTRACTION-003: 기존 명세서를 지운 뒤 제출이 거부됐습니다. 되돌릴 원본이 없어 삭제된 상태로 남으므로, 업로드로 다시 등록해야 합니다.
+                                    """,
+                            content = @Content(
+                                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                    examples = @ExampleObject(
+                                            name = "분석 대기열 포화",
+                                            value = """
+                                                    {
+                                                      "code": "FEATURE-SPEC-EXTRACTION-003",
+                                                      "message": "분석 요청이 많아 지금은 처리할 수 없습니다. 기존 기능명세서는 삭제되었으니 잠시 후 다시 업로드해 주세요."
+                                                    }
+                                                    """
+                                    )
+                            )
+                    )
+            }
+    )
+    ResponseEntity<ApiResponse<FeatureSpecUploadResponse>> replaceFeatureSpec(
+            @Parameter(
+                    name = "projectId",
+                    description = "기능명세서를 교체할 프로젝트 ID",
+                    in = ParameterIn.PATH,
+                    required = true,
+                    example = "1"
+            )
+            Long projectId,
+
+            @Parameter(hidden = true)
+            AuthPrincipal principal,
+
+            @Parameter(
+                    name = "file",
+                    description = "새로 등록할 기능명세서 PDF 파일",
                     required = true,
                     schema = @Schema(type = "string", format = "binary")
             )
