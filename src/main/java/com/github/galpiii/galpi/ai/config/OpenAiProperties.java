@@ -3,6 +3,9 @@ package com.github.galpiii.galpi.ai.config;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.AssertTrue;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
@@ -48,6 +51,17 @@ public record OpenAiProperties(
         @DefaultValue("15m") Duration analysisBudget,
         @DefaultValue("gpt-5-mini") @NotBlank String summaryModel,
         @DefaultValue("2000") @Min(1) long summaryMaxOutputTokens,
-        @DefaultValue("3m") Duration summaryBudget
+        @DefaultValue("3m") Duration summaryBudget,
+        @DefaultValue @Valid Matching matching
 ) {
+    /** 기능대조 역시 공통 OpenAI 설정 아래에서 모델·출력·호출 예산을 관리한다. */
+    public record Matching(
+            @DefaultValue("gpt-5-mini") @NotBlank String model,
+            @DefaultValue("12000") @Min(1) long maxOutputTokens,
+            @DefaultValue("3m") @NotNull Duration budget) {
+        @AssertTrue
+        public boolean isBudgetPositive() {
+            return budget != null && !budget.isZero() && !budget.isNegative();
+        }
+    }
 }

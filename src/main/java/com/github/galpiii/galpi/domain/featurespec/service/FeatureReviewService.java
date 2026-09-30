@@ -300,6 +300,7 @@ public class FeatureReviewService {
     @Transactional
     public void confirmAll(Long specDocumentId, Long userId) {
         requireSpecDocument(specDocumentId, userId);
+        specDocumentRepository.lockForReview(specDocumentId);
 
         List<Long> unreviewedIds = featureRepository.findIdsByReviewStatus(
                 specDocumentId, FeatureReviewStatus.UNREVIEWED);
@@ -696,6 +697,9 @@ public class FeatureReviewService {
     }
 
     private Feature requireOwnedFeature(Long specDocumentId, Long userId, Long featureId) {
+        requireSpecDocument(specDocumentId, userId);
+        // 대조 스냅샷을 읽고 저장하는 동안 요구사항이 교체되지 않게 문서부터 잠근다.
+        specDocumentRepository.lockForReview(specDocumentId);
         return featureRepository.findOwned(featureId, specDocumentId, userId)
                 .orElseThrow(() -> {
                     log.warn(

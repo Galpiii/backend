@@ -6,6 +6,8 @@ import com.github.galpiii.galpi.domain.project.entity.ProjectStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -13,6 +15,15 @@ import java.util.Collection;
 import java.util.Optional;
 
 public interface ProjectRepository extends JpaRepository<Project, Long> {
+
+    /** 명세서 교체도 기능대조와 같은 project → document 순서로 잠근다. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select project from Project project
+             where project.id = :id and project.owner.id = :ownerId
+               and project.deletedAt is null
+            """)
+    Optional<Project> findOwnedForUpdate(@Param("id") Long id, @Param("ownerId") Long ownerId);
 
     /**
      * 소유자 확인과 삭제 여부를 한 번에 본다.

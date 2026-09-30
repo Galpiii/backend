@@ -96,7 +96,8 @@ class FeatureSpecAiServiceTest {
         return new OpenAiProperties(
                 "test-api-key", "gpt-5", 64000L, Duration.ofMinutes(5), 3,
                 Duration.ofMillis(1), analysisBudget,
-                "gpt-5-mini", 2000L, Duration.ofMinutes(3));
+                "gpt-5-mini", 2000L, Duration.ofMinutes(3),
+                new OpenAiProperties.Matching("gpt-5-mini", 12000, Duration.ofMinutes(3)));
     }
 
     private void givenUploadSucceeds() {

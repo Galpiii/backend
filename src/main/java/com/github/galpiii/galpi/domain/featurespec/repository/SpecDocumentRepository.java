@@ -14,6 +14,9 @@ import java.util.Optional;
 
 public interface SpecDocumentRepository extends JpaRepository<SpecDocument, Long> {
 
+    @Query(value = "SELECT id FROM spec_documents WHERE id = :id FOR UPDATE", nativeQuery = true)
+    Long lockForReview(@Param("id") Long id);
+
     boolean existsByProjectId(Long projectId);
 
     // 교체 대상을 찾는다. 프로젝트당 문서는 하나이므로 UNIQUE 제약이 결과가 둘일 수 없음을 보장한다.

@@ -110,6 +110,19 @@ public enum ErrorCode {
     // 그대로 쓴다 -- 프론트가 다르게 처리해야 하는 경우에만 코드를 나눈다.
     PULL_REQUEST_NOT_FOUND("PULL-REQUEST-001", HttpStatus.NOT_FOUND, "PR을 찾을 수 없습니다."),
 
+    // Feature matching
+    FEATURE_MATCH_RUN_NOT_FOUND("FEATURE-MATCH-001", HttpStatus.NOT_FOUND, "기능대조 작업을 찾을 수 없습니다."),
+    FEATURE_MATCH_PR_NOT_READY("FEATURE-MATCH-002", HttpStatus.CONFLICT, "PR 수집과 분석이 끝난 뒤 대조할 수 있습니다."),
+    FEATURE_MATCH_ALREADY_RUNNING("FEATURE-MATCH-003", HttpStatus.CONFLICT, "기능대조가 이미 진행 중입니다."),
+    FEATURE_MATCH_NO_TARGET("FEATURE-MATCH-004", HttpStatus.CONFLICT, "대조할 기능 또는 분석 완료 PR이 없습니다."),
+    FEATURE_MATCH_RESULT_RUNNING("FEATURE-MATCH-005", HttpStatus.CONFLICT, "기능대조가 끝난 뒤 결과를 조회할 수 있습니다."),
+    FEATURE_MATCH_RESULT_NOT_FOUND("FEATURE-MATCH-006", HttpStatus.NOT_FOUND, "기능대조 결과가 없습니다."),
+    FEATURE_MATCH_RESULT_UNAVAILABLE("FEATURE-MATCH-007", HttpStatus.CONFLICT, "실패하거나 취소된 대조입니다. 다시 실행해 주세요."),
+    FEATURE_MATCH_DUPLICATED("FEATURE-MATCH-008", HttpStatus.CONFLICT, "이미 연결된 PR이거나 중복된 PR 요청입니다."),
+    FEATURE_MATCH_NOT_FOUND("FEATURE-MATCH-009", HttpStatus.NOT_FOUND, "기능과 PR의 연결을 찾을 수 없습니다."),
+    FEATURE_MATCH_RESULT_STALE("FEATURE-MATCH-010", HttpStatus.CONFLICT, "대조 기준이 변경되었습니다. 기능대조를 다시 실행해 주세요."),
+    FEATURE_MATCH_INPUT_TOO_LARGE("FEATURE-MATCH-011", HttpStatus.BAD_REQUEST, "기능 목록이 대조 입력 상한을 초과했습니다."),
+
     // Feature Spec File
     FEATURE_SPEC_FILE_EMPTY("FEATURE-SPEC-FILE-001", HttpStatus.BAD_REQUEST, "업로드된 파일이 비어 있습니다."),
     FEATURE_SPEC_FILE_NAME_MISSING("FEATURE-SPEC-FILE-002", HttpStatus.BAD_REQUEST, "원본 파일명이 존재하지 않습니다."),

@@ -11,6 +11,9 @@ import com.github.galpiii.galpi.domain.auth.support.RefreshCookieFactory;
 import com.github.galpiii.galpi.domain.consent.service.AiDataConsentService;
 import com.github.galpiii.galpi.domain.featurespec.service.FeatureReviewService;
 import com.github.galpiii.galpi.domain.featurespec.service.FeatureSpecService;
+import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchRunService;
+import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchQueryService;
+import com.github.galpiii.galpi.domain.featurematch.service.FeaturePrMatchService;
 import com.github.galpiii.galpi.domain.github.service.GithubConnectionService;
 import com.github.galpiii.galpi.domain.github.service.GithubInstallationService;
 import com.github.galpiii.galpi.domain.github.service.GithubOAuthService;
@@ -79,4 +82,10 @@ public abstract class WebMvcTestSupport {
     protected PullRequestQueryService pullRequestQueryService;
     @MockitoBean
     protected PullRequestAnalysisRetryService pullRequestAnalysisRetryService;
+    @MockitoBean
+    protected FeatureMatchRunService featureMatchRunService;
+    @MockitoBean
+    protected FeatureMatchQueryService featureMatchQueryService;
+    @MockitoBean
+    protected FeaturePrMatchService featurePrMatchService;
 }
