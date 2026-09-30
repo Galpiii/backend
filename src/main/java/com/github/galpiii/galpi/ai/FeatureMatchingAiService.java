@@ -12,6 +12,7 @@ import com.github.galpiii.galpi.ai.support.AiFailureKind;
 import com.github.galpiii.galpi.ai.support.AiRetryTemplate;
 import com.openai.client.OpenAIClient;
 import com.openai.core.RequestOptions;
+import com.openai.errors.OpenAIServiceException;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseOutputItem;
@@ -65,7 +66,8 @@ public class FeatureMatchingAiService {
                     RequestOptions.builder().timeout(properties.budget()).build());
         } catch (RuntimeException exception) {
             RuntimeException classified = failures.classify(exception);
-            log.warn("[기능대조 AI] SDK 호출 실패 type={}", exception.getClass().getSimpleName());
+            String code = exception instanceof OpenAIServiceException service ? service.code().orElse(null) : null;
+            log.warn("[기능대조 AI] SDK 호출 실패 type={} code={}", exception.getClass().getSimpleName(), code);
             if (classified instanceof RetryableAiException && Instant.now().isAfter(deadline)) {
                 throw new FeatureMatchingAiException(AiFailureKind.BUDGET_EXHAUSTED,
                         "기능대조 호출 예산을 초과했습니다.", exception);
