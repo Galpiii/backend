@@ -1,21 +1,19 @@
 package com.github.galpiii.galpi.domain.featurematch.worker;
 
-import org.junit.jupiter.api.DisplayName;
 import com.github.galpiii.galpi.domain.featurematch.config.FeatureMatchProperties;
-
-import java.util.Optional;
-
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;

@@ -1,6 +1,5 @@
 package com.github.galpiii.galpi.domain.featurematch.dto;
 
-
 public enum FeatureEvidenceStatus {
     /**
      * 관련 PR 근거를 찾음. 구현 완료를 의미하지 않음.

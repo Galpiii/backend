@@ -1,6 +1,5 @@
 package com.github.galpiii.galpi.domain.featurematch.entity;
 
-
 public enum FeatureMatchFailureCode {
     /**
      * AI 제공자 호출 실패.
@@ -34,10 +33,6 @@ public enum FeatureMatchFailureCode {
      * 프로젝트가 삭제됨.
      */
     PROJECT_DELETED,
-    /**
-     * 저장소 연결이 해제됨.
-     */
-    REPOSITORY_UNLINKED,
     /**
      * GitHub 연결이 해제됨.
      */

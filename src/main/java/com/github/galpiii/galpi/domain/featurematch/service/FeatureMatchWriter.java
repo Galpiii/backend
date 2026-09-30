@@ -1,17 +1,17 @@
 package com.github.galpiii.galpi.domain.featurematch.service;
 
-import com.github.galpiii.galpi.domain.featurematch.dto.FeaturePrMatchRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchCounts;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchProjectRow;
 import com.github.galpiii.galpi.ai.dto.FeatureMatchingResult;
 import com.github.galpiii.galpi.domain.collection.repository.PullRequestRepository;
 import com.github.galpiii.galpi.domain.consent.service.AiDataConsentService;
 import com.github.galpiii.galpi.domain.featurematch.config.FeatureMatchProperties;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFeatureRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchPullRequestRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRequirementRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRunRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchTargetRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.Counts;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FeatureRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.ProjectRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.PrRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RequirementRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RunRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.TargetRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.MatchRow;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchFailureCode;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRun;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRunStatus;
@@ -28,8 +28,9 @@ import com.github.galpiii.galpi.domain.featurematch.support.FeatureMatchResultVa
 import com.github.galpiii.galpi.domain.featurematch.support.FeatureMatchSnapshot;
 import com.github.galpiii.galpi.domain.featurespec.repository.FeatureRepository;
 import com.github.galpiii.galpi.domain.featurespec.repository.FeatureRequirementRepository;
-import lombok.RequiredArgsConstructor;
+import com.github.galpiii.galpi.domain.featurespec.repository.SpecDocumentRepository;
 import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -58,13 +59,14 @@ public class FeatureMatchWriter {
     private final FeatureRepository featureRepository;
     private final FeatureRequirementRepository requirementRepository;
     private final PullRequestRepository pullRequestRepository;
+    private final SpecDocumentRepository documentRepository;
 
     public record Prepared(String input) {
     }
 
-    private record Context(FeatureMatchRunRow run, FeatureMatchTargetRow target, List<FeatureMatchFeatureRow> features,
-                           List<FeatureMatchRequirementRow> requirements,
-                           FeatureMatchPullRequestRow pr) {
+    private record Context(RunRow run, TargetRow target, List<FeatureRow> features,
+                           List<RequirementRow> requirements,
+                           PrRow pr) {
     }
 
     @Transactional
@@ -91,7 +93,7 @@ public class FeatureMatchWriter {
             return;
         }
         result = validator.validate(result, context.features(), context.requirements());
-        List<FeaturePrMatchRow> existing = queryRepository.matches(context.run().id(), context.run().specDocumentId());
+        List<MatchRow> existing = queryRepository.matches(context.run().id(), context.run().specDocumentId());
         for (FeatureMatchingResult.Match match : result.matches()) {
             if (existing.stream().anyMatch(m -> m.featureId() == match.featureId() && m.pullRequestId() == context.pr().id())) {
                 continue;
@@ -111,13 +113,13 @@ public class FeatureMatchWriter {
 
     @Transactional
     public void fail(long id, String token, FeatureMatchFailureCode code, boolean retryable) {
-        FeatureMatchTargetRow initial = queryRepository.target(id);
+        TargetRow initial = queryRepository.target(id);
         if (initial == null) {
             return;
         }
         queryRepository.lockRun(initial.featureMatchRunId());
         queryRepository.lockTarget(id);
-        FeatureMatchTargetRow target = queryRepository.target(id);
+        TargetRow target = queryRepository.target(id);
         if (!owned(target, token)) {
             return;
         }
@@ -134,21 +136,21 @@ public class FeatureMatchWriter {
      * 모든 저장/전송 직전에 권한·동의·스냅샷·선점 토큰을 다시 확인한다.
      */
     private Context context(long id, String token) {
-        FeatureMatchTargetRow initial = queryRepository.target(id);
+        TargetRow initial = queryRepository.target(id);
         if (initial == null) {
             return null;
         }
-        FeatureMatchRunRow run = queryRepository.run(initial.featureMatchRunId());
+        RunRow run = queryRepository.run(initial.featureMatchRunId());
         if (run == null) {
             return null;
         }
-        FeatureMatchProjectRow project = queryRepository.project(run.projectId(), run.userId(), true);
+        ProjectRow project = queryRepository.project(run.projectId(), run.userId(), true);
         if (project != null) {
-            queryRepository.lockDocument(run.specDocumentId());
+            documentRepository.lockById(run.specDocumentId());
         }
         queryRepository.lockRun(run.id());
         queryRepository.lockTarget(id);
-        FeatureMatchTargetRow target = queryRepository.target(id);
+        TargetRow target = queryRepository.target(id);
         if (!owned(target, token)) {
             return null;
         }
@@ -168,15 +170,15 @@ public class FeatureMatchWriter {
         if (!Objects.equals(project.activeSpecDocumentId(), run.specDocumentId())) {
             return cancel(run, FeatureMatchFailureCode.SOURCE_CHANGED);
         }
-        List<FeatureMatchFeatureRow> features = queryRepository.features(run.specDocumentId());
-        List<FeatureMatchRequirementRow> requirements = queryRepository.requirements(run.specDocumentId());
+        List<FeatureRow> features = queryRepository.features(run.specDocumentId());
+        List<RequirementRow> requirements = queryRepository.requirements(run.specDocumentId());
         if (!run.featureSnapshotHash().equals(FeatureMatchSnapshot.featureHash(features, requirements))
                 || queryRepository.targetCount(run.id()) != run.eligiblePrCount()) {
             return cancel(run, FeatureMatchFailureCode.SOURCE_CHANGED);
         }
         // 요약 완료와 결과 저장이 같은 트랜잭션에서 경쟁하지 않도록 요약 행도 잠근다.
         queryRepository.lockAnalysis(target.pullRequestAnalysisId());
-        FeatureMatchPullRequestRow pr = queryRepository.pullRequestForAnalysis(
+        PrRow pr = queryRepository.pullRequestForAnalysis(
                 target.pullRequestAnalysisId(), run.projectId());
         if (!scope.current(target, pr)) {
             return cancel(run, FeatureMatchFailureCode.SOURCE_CHANGED);
@@ -184,21 +186,21 @@ public class FeatureMatchWriter {
         return new Context(run, target, features, requirements, pr);
     }
 
-    private Context cancel(FeatureMatchRunRow run, FeatureMatchFailureCode reason) {
+    private Context cancel(RunRow run, FeatureMatchFailureCode reason) {
         log.info("[기능대조] 실행 취소 projectId={} runId={} reason={}", run.projectId(), run.id(), reason);
         targetRepository.findAllByFeatureMatchRunId(run.id()).forEach(target -> target.cancel(reason));
         runRepository.findById(run.id()).ifPresent(entity -> entity.finish(FeatureMatchRunStatus.CANCELLED, reason));
         return null;
     }
 
-    private static boolean owned(FeatureMatchTargetRow target, String token) {
+    private static boolean owned(TargetRow target, String token) {
         return target != null && target.status() == FeatureMatchTargetStatus.RUNNING && Objects.equals(target.claimedBy(), token);
     }
 
     private void aggregate(long runId) {
         // 같은 실행의 완료 처리는 run 행 잠금으로 직렬화한다. 마지막 두 워커가 모두
         // 상대를 RUNNING으로 보고 실행을 영원히 남겨 두는 것을 막는다.
-        FeatureMatchCounts context = queryRepository.counts(runId);
+        Counts context = queryRepository.counts(runId);
         if (context.pendingCount() + context.runningCount() > 0) {
             return;
         }
@@ -230,7 +232,7 @@ public class FeatureMatchWriter {
     @Transactional
     public void reconcile(long runId) {
         queryRepository.lockRun(runId);
-        FeatureMatchRunRow run = queryRepository.run(runId);
+        RunRow run = queryRepository.run(runId);
         if (run == null || (run.status() != FeatureMatchRunStatus.QUEUED
                 && run.status() != FeatureMatchRunStatus.RUNNING)) {
             return;

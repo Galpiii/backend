@@ -1,32 +1,32 @@
 package com.github.galpiii.galpi.domain.featurematch.service;
 
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchCounts;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRepositoryRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRequirementRow;
-import com.github.galpiii.galpi.domain.featurespec.entity.FeatureReviewStatus;
-
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFeatureRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeaturePrMatchRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchPullRequestRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRequirementLinkRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchTargetRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureEvidenceStatus;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.Counts;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FeatureRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFilter;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.PrRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RepositoryRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RequirementLinkRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RequirementRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.TargetRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.MatchRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchDetailResponse;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchPullRequestResponse;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchResultsResponse;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.UnmatchedPullRequestListResponse;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureEvidenceStatus;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFilter;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchSource;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchTargetStatus;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchQueryRepository;
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchScope.View;
+import com.github.galpiii.galpi.domain.featurespec.entity.FeatureReviewStatus;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.BadRequestException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
+import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +40,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 public class FeatureMatchQueryService {
@@ -55,14 +56,14 @@ public class FeatureMatchQueryService {
             FeatureMatchFilter filter) {
         View view = scope.result(projectId, userId, false);
         scope.repositoryScope(view, repositoryId);
-        List<FeaturePrMatchRow> scoped = scopeMatches(view, repositoryId);
+        List<MatchRow> scoped = scopeMatches(view, repositoryId);
         Set<Long> matched = matchedPrIds(view.matches());
         FeatureMatchResultsResponse.Summary summary = summary(view, matched);
         String normalizedQuery = normalize(query);
         FeatureMatchFilter actualFilter = filter == null ? FeatureMatchFilter.ALL : filter;
         Map<Long, List<FeatureMatchResultsResponse.Feature>> grouped = new LinkedHashMap<>();
-        for (FeatureMatchFeatureRow feature : view.features()) {
-            List<FeaturePrMatchRow> links = scoped.stream().filter(m -> m.featureId() == feature.id()).toList();
+        for (FeatureRow feature : view.features()) {
+            List<MatchRow> links = scoped.stream().filter(m -> m.featureId() == feature.id()).toList();
             boolean found = !links.isEmpty();
             if (!feature.name().toLowerCase(Locale.ROOT).contains(normalizedQuery)) {
                 continue;
@@ -83,13 +84,13 @@ public class FeatureMatchQueryService {
             grouped.computeIfAbsent(feature.sectionId(), ignored -> new ArrayList<>()).add(item);
         }
         List<FeatureMatchResultsResponse.Section> sections = grouped.entrySet().stream().map(e -> {
-            FeatureMatchFeatureRow first = view.features().stream()
+            FeatureRow first = view.features().stream()
                     .filter(feature -> Objects.equals(feature.sectionId(), e.getKey())).findFirst().orElseThrow();
             return new FeatureMatchResultsResponse.Section(
                     e.getKey(), first.sectionTitle(), first.sectionOrder(), e.getValue());
         }).toList();
         List<FeatureMatchResultsResponse.RepositorySummary> repositories = new ArrayList<>();
-        for (FeatureMatchRepositoryRow repository : view.repositories()) {
+        for (RepositoryRow repository : view.repositories()) {
             long count = view.prs().stream()
                     .filter(pr -> pr.repositoryId() == repository.id() && matched.contains(pr.id())).count();
             repositories.add(new FeatureMatchResultsResponse.RepositorySummary(
@@ -103,32 +104,35 @@ public class FeatureMatchQueryService {
         long projectId = scope.featureProject(featureId, userId);
         View view = scope.result(projectId, userId, false);
         scope.repositoryScope(view, repositoryId);
-        FeatureMatchFeatureRow feature = view.features().stream().filter(item -> item.id() == featureId).findFirst()
-                .orElseThrow(() -> new NotFoundException(ErrorCode.FEATURE_NOT_ACCESSIBLE));
-        List<FeaturePrMatchRow> matches = scopeMatches(view, repositoryId).stream()
+        FeatureRow feature = view.features().stream().filter(item -> item.id() == featureId).findFirst()
+                .orElseThrow(() -> {
+                    log.warn("[기능대조] 상세 기능 접근 거절 featureId={} userId={}", featureId, userId);
+                    return new NotFoundException(ErrorCode.FEATURE_NOT_ACCESSIBLE);
+                });
+        List<MatchRow> matches = scopeMatches(view, repositoryId).stream()
                 .filter(match -> match.featureId() == featureId).toList();
-        Set<Long> matchIds = matches.stream().map(FeaturePrMatchRow::id).collect(Collectors.toSet());
-        List<FeatureMatchRequirementLinkRow> links = queryRepository.requirementLinks(view.run().id()).stream()
+        Set<Long> matchIds = matches.stream().map(MatchRow::id).collect(Collectors.toSet());
+        List<RequirementLinkRow> links = queryRepository.requirementLinks(view.run().id()).stream()
                 .filter(link -> matchIds.contains(link.featurePrMatchId())).toList();
         List<FeatureMatchDetailResponse.Requirement> requirements = new ArrayList<>();
-        for (FeatureMatchRequirementRow requirement : view.requirements()) {
+        for (RequirementRow requirement : view.requirements()) {
             if (requirement.featureId() == featureId) {
                 long count = links.stream().filter(link -> link.featureRequirementId() == requirement.id())
-                        .map(FeatureMatchRequirementLinkRow::featurePrMatchId).distinct().count();
+                        .map(RequirementLinkRow::featurePrMatchId).distinct().count();
                 requirements.add(new FeatureMatchDetailResponse.Requirement(
                         requirement.id(), requirement.content(), count));
             }
         }
-        Map<Long, FeatureMatchPullRequestRow> prs = view.prs().stream()
-                .collect(Collectors.toMap(FeatureMatchPullRequestRow::id, pr -> pr));
+        Map<Long, PrRow> prs = view.prs().stream()
+                .collect(Collectors.toMap(PrRow::id, pr -> pr));
         List<FeatureMatchDetailResponse.RepositoryGroup> groups = new ArrayList<>();
-        for (FeatureMatchRepositoryRow repository : view.repositories()) {
+        for (RepositoryRow repository : view.repositories()) {
             if (repositoryId != null && repository.id() != repositoryId) {
                 continue;
             }
             List<FeatureMatchDetailResponse.Match> items = new ArrayList<>();
-            for (FeaturePrMatchRow match : matches) {
-                FeatureMatchPullRequestRow pr = prs.get(match.pullRequestId());
+            for (MatchRow match : matches) {
+                PrRow pr = prs.get(match.pullRequestId());
                 if (pr.repositoryId() == repository.id()) {
                     items.add(detailMatch(match, pr, view.requirements(), links));
                 }
@@ -152,12 +156,14 @@ public class FeatureMatchQueryService {
             int page,
             int size) {
         if (page < 0 || size < 1 || size > 100) {
+            log.warn("[기능대조] 페이지 요청 거절 projectId={} userId={} page={} size={}",
+                    projectId, userId, page, size);
             throw new BadRequestException(ErrorCode.INVALID_INPUT_VALUE);
         }
         View view = scope.result(projectId, userId, false);
         scope.repositoryScope(view, repositoryId);
         String normalizedQuery = normalize(query);
-        Page<FeatureMatchPullRequestRow> rows = queryRepository.unmatched(projectId, view.run().id(),
+        Page<PrRow> rows = queryRepository.unmatched(projectId, view.run().id(),
                 view.run().specDocumentId(), repositoryId, normalizedQuery, PageRequest.of(page, size));
         List<FeatureMatchPullRequestResponse> items = rows.getContent().stream()
                 .map(FeatureMatchPullRequestResponse::from).toList();
@@ -167,7 +173,7 @@ public class FeatureMatchQueryService {
 
     private FeatureMatchResultsResponse.Summary summary(View view, Set<Long> matched) {
         Set<Long> featuresWithEvidence = view.matches().stream()
-                .map(FeaturePrMatchRow::featureId).collect(Collectors.toSet());
+                .map(MatchRow::featureId).collect(Collectors.toSet());
         long evidence = view.features().stream()
                 .filter(feature -> featuresWithEvidence.contains(feature.id())).count();
         long attention = view.features().stream()
@@ -177,11 +183,11 @@ public class FeatureMatchQueryService {
         Set<Long> completed = eligiblePrIds(view, FeatureMatchTargetStatus.COMPLETED);
         long matchedCount = matched.stream().filter(eligible::contains).count();
         long unmatchedCount = completed.stream().filter(id -> !matched.contains(id)).count();
-        List<FeaturePrMatchRow> manual = view.matches().stream()
+        List<MatchRow> manual = view.matches().stream()
                 .filter(match -> match.source() == FeatureMatchSource.USER).toList();
-        long manualOnlyCount = manual.stream().map(FeaturePrMatchRow::pullRequestId)
+        long manualOnlyCount = manual.stream().map(MatchRow::pullRequestId)
                 .distinct().filter(id -> !eligible.contains(id)).count();
-        FeatureMatchCounts counts = queryRepository.counts(view.run().id());
+        Counts counts = queryRepository.counts(view.run().id());
         return new FeatureMatchResultsResponse.Summary(
                 view.run().featureCount(), evidence, attention, view.features().size() - evidence,
                 unreviewed, view.run().eligiblePrCount(), matchedCount, unmatchedCount,
@@ -190,10 +196,10 @@ public class FeatureMatchQueryService {
     }
 
     private static FeatureMatchDetailResponse.Match detailMatch(
-            FeaturePrMatchRow match, FeatureMatchPullRequestRow pr,
-            List<FeatureMatchRequirementRow> requirements, List<FeatureMatchRequirementLinkRow> links) {
+            MatchRow match, PrRow pr,
+            List<RequirementRow> requirements, List<RequirementLinkRow> links) {
         Set<Long> ids = links.stream().filter(link -> link.featurePrMatchId() == match.id())
-                .map(FeatureMatchRequirementLinkRow::featureRequirementId).collect(Collectors.toSet());
+                .map(RequirementLinkRow::featureRequirementId).collect(Collectors.toSet());
         List<FeatureMatchDetailResponse.MatchedRequirement> related = requirements.stream()
                 .filter(requirement -> ids.contains(requirement.id()))
                 .map(requirement -> new FeatureMatchDetailResponse.MatchedRequirement(
@@ -202,24 +208,24 @@ public class FeatureMatchQueryService {
                 FeatureMatchPullRequestResponse.from(pr));
     }
 
-    private static List<FeaturePrMatchRow> scopeMatches(View view, Long repositoryId) {
+    private static List<MatchRow> scopeMatches(View view, Long repositoryId) {
         Set<Long> prs = view.prs().stream().filter(pr -> repositoryId == null || pr.repositoryId() == repositoryId)
-                .map(FeatureMatchPullRequestRow::id).collect(Collectors.toSet());
+                .map(PrRow::id).collect(Collectors.toSet());
         return view.matches().stream().filter(m -> prs.contains(m.pullRequestId())).toList();
     }
 
     private static Set<Long> eligiblePrIds(View view, FeatureMatchTargetStatus status) {
         Set<Long> analyses = view.targets().stream().filter(t -> status == null || t.status() == status)
-                .map(FeatureMatchTargetRow::pullRequestAnalysisId).collect(Collectors.toSet());
+                .map(TargetRow::pullRequestAnalysisId).collect(Collectors.toSet());
         return view.prs().stream().filter(pr -> pr.analysisId() != null && analyses.contains(pr.analysisId()))
-                .map(FeatureMatchPullRequestRow::id).collect(Collectors.toSet());
+                .map(PrRow::id).collect(Collectors.toSet());
     }
 
-    private static Set<Long> matchedPrIds(List<FeaturePrMatchRow> matches) {
-        return matches.stream().map(FeaturePrMatchRow::pullRequestId).collect(Collectors.toSet());
+    private static Set<Long> matchedPrIds(List<MatchRow> matches) {
+        return matches.stream().map(MatchRow::pullRequestId).collect(Collectors.toSet());
     }
 
-    private static boolean unreviewed(FeatureMatchFeatureRow feature) {
+    private static boolean unreviewed(FeatureRow feature) {
         return feature.reviewStatus() == FeatureReviewStatus.UNREVIEWED;
     }
 
@@ -229,6 +235,7 @@ public class FeatureMatchQueryService {
 
     private static String normalize(String value) {
         if (value != null && value.length() > 200) {
+            log.warn("[기능대조] 검색어 길이 초과 length={}", value.length());
             throw new BadRequestException(ErrorCode.INVALID_INPUT_VALUE);
         }
         return value == null ? "" : value.strip().toLowerCase(Locale.ROOT);

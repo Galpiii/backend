@@ -1,6 +1,5 @@
 package com.github.galpiii.galpi.domain.featurematch.entity;
 
-
 public enum FeatureMatchTargetStatus {
     /**
      * 대조 대기 또는 재시도 대기.

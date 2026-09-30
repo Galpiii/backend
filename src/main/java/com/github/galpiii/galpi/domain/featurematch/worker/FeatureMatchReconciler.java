@@ -2,8 +2,8 @@ package com.github.galpiii.galpi.domain.featurematch.worker;
 
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchQueryRepository;
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchWriter;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Component;
 

@@ -3,9 +3,9 @@ package com.github.galpiii.galpi.domain.featurematch.support;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.galpiii.galpi.ai.dto.FeatureMatchingRequest;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFeatureRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchPullRequestRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRequirementRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FeatureRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.PrRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RequirementRow;
 import com.github.galpiii.galpi.global.util.Hashes;
 
 import java.util.ArrayList;
@@ -21,9 +21,9 @@ public final class FeatureMatchSnapshot {
     private FeatureMatchSnapshot() {
     }
 
-    public static List<FeatureMatchingRequest.Section> sections(List<FeatureMatchFeatureRow> features, List<FeatureMatchRequirementRow> requirements) {
+    public static List<FeatureMatchingRequest.Section> sections(List<FeatureRow> features, List<RequirementRow> requirements) {
         Map<Long, List<FeatureMatchingRequest.Feature>> grouped = new LinkedHashMap<>();
-        for (FeatureMatchFeatureRow f : features) {
+        for (FeatureRow f : features) {
             List<FeatureMatchingRequest.Requirement> reqs = requirements.stream().filter(r -> r.featureId() == f.id())
                     .map(r -> new FeatureMatchingRequest.Requirement(r.id(), r.content())).toList();
             grouped.computeIfAbsent(f.sectionId(), ignored -> new ArrayList<>())
@@ -31,15 +31,15 @@ public final class FeatureMatchSnapshot {
         }
         return grouped.entrySet().stream().map(entry -> new FeatureMatchingRequest.Section(entry.getKey(),
                 features.stream().filter(f -> Objects.equals(f.sectionId(), entry.getKey()))
-                        .findFirst().map(FeatureMatchFeatureRow::sectionTitle).orElse(null), entry.getValue())).toList();
+                        .findFirst().map(FeatureRow::sectionTitle).orElse(null), entry.getValue())).toList();
     }
 
-    public static String featureHash(List<FeatureMatchFeatureRow> features, List<FeatureMatchRequirementRow> requirements) {
+    public static String featureHash(List<FeatureRow> features, List<RequirementRow> requirements) {
         // 검토 여부는 매칭의 의미를 바꾸지 않는다. 이름/요구사항/섹션/순서만 비교한다.
         return Hashes.sha256Hex(json(sections(features, requirements)));
     }
 
-    public static String analysisHash(FeatureMatchPullRequestRow pr) {
+    public static String analysisHash(PrRow pr) {
         return Hashes.sha256Hex(json(Arrays.asList(pr.id(), pr.analysisId(), pr.headSha(),
                 pr.analysisHeadSha(), pr.title(), pr.body(), pr.summary(), pr.changeType())));
     }

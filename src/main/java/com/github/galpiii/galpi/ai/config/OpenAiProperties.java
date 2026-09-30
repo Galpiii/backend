@@ -1,13 +1,13 @@
 package com.github.galpiii.galpi.ai.config;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.AssertTrue;
-import org.springframework.boot.context.properties.ConfigurationProperties;
+import jakarta.validation.Valid;
 import org.springframework.boot.context.properties.bind.DefaultValue;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.Duration;
@@ -19,6 +19,7 @@ import java.time.Duration;
  * 비싼 모델과 큰 출력 상한이 맞고, PR 요약은 저장소 하나에 수백 건이라 같은 값을 쓰면
  * 비용이 그대로 곱해진다.
  *
+ * @param matching              기능대조 모델·출력 상한·PR 한 건의 호출 시간 예산
  * @param model                 기능명세서 추출 모델
  * @param maxOutputTokens       기능명세서 추출의 출력 상한. 기능 수십 개를 담은 JSON이 나온다
  * @param analysisBudget        기능명세서 분석 한 건이 재시도까지 포함해 쓸 수 있는 시간

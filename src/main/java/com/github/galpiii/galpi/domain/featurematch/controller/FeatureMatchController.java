@@ -1,6 +1,7 @@
 package com.github.galpiii.galpi.domain.featurematch.controller;
 
 import com.github.galpiii.galpi.domain.auth.jwt.AuthPrincipal;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFilter;
 import com.github.galpiii.galpi.domain.featurematch.dto.request.FeaturePrMatchesCreateRequest;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchDetailResponse;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchResultsResponse;
@@ -8,7 +9,6 @@ import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchRun
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchRunStatusResponse;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeaturePrMatchesCreatedResponse;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.UnmatchedPullRequestListResponse;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFilter;
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchQueryService;
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchRunService;
 import com.github.galpiii.galpi.domain.featurematch.service.FeaturePrMatchService;

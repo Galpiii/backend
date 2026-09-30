@@ -1,6 +1,5 @@
 package com.github.galpiii.galpi.domain.featurematch.dto;
 
-
 public enum FeatureMatchFilter {
     /**
      * 모든 기능.

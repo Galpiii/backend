@@ -1,39 +1,38 @@
 package com.github.galpiii.galpi.domain.featurematch.service;
 
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchProjectRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFeatureRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRequirementRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRunRow;
-import com.github.galpiii.galpi.domain.featurespec.entity.FeatureReviewStatus;
-
-import com.github.galpiii.galpi.domain.pullrequest.entity.PullRequestAnalysisStatus;
-
 import com.github.galpiii.galpi.domain.consent.service.AiDataConsentService;
+import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FeatureRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.ProjectRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.PrRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RequirementRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RunRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchRunCreatedResponse;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchPullRequestRow;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRun;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRunStatus;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchTarget;
+import com.github.galpiii.galpi.domain.featurematch.exception.FeatureMatchInputTooLargeException;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchQueryRepository;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchRunRepository;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchTargetRepository;
 import com.github.galpiii.galpi.domain.featurematch.support.FeatureMatchInputAssembler;
 import com.github.galpiii.galpi.domain.featurematch.support.FeatureMatchSnapshot;
+import com.github.galpiii.galpi.domain.featurespec.entity.FeatureReviewStatus;
 import com.github.galpiii.galpi.domain.featurespec.repository.SpecDocumentRepository;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
+import com.github.galpiii.galpi.domain.pullrequest.entity.PullRequestAnalysisStatus;
 import com.github.galpiii.galpi.domain.pullrequest.repository.PullRequestAnalysisRepository;
 import com.github.galpiii.galpi.domain.user.repository.UserRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
-import com.github.galpiii.galpi.global.error.exception.ConflictException;
 import com.github.galpiii.galpi.global.error.exception.BadRequestException;
-import com.github.galpiii.galpi.domain.featurematch.exception.FeatureMatchInputTooLargeException;
-import lombok.RequiredArgsConstructor;
+import com.github.galpiii.galpi.global.error.exception.ConflictException;
 import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Objects;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 이전 실행 정리와 새 실행 생성을 같은 트랜잭션으로 묶는 단일 진입점이다.
@@ -56,40 +55,54 @@ public class FeatureMatchRunCreator {
 
     @Transactional
     public FeatureMatchRunCreatedResponse create(long projectId, long userId) {
-        FeatureMatchProjectRow project = scope.project(projectId, userId, true);
+        ProjectRow project = scope.project(projectId, userId, true);
         consent.requireAgreed(userId);
         if (!queryRepository.connected(userId)) {
-            throw new ConflictException(ErrorCode.GITHUB_REAUTH_REQUIRED);
+            log.warn("[기능대조] 실행 생성 거절 projectId={} userId={} code={}",
+                    projectId, userId, ErrorCode.GITHUB_REAUTH_REQUIRED.getCode());
+            throw new GithubReauthRequiredException();
         }
-        FeatureMatchRunRow latest = queryRepository.latest(projectId);
+        RunRow latest = queryRepository.latest(projectId);
         if (latest != null && (latest.status() == FeatureMatchRunStatus.QUEUED
                 || latest.status() == FeatureMatchRunStatus.RUNNING)) {
+            log.warn("[기능대조] 실행 생성 거절 projectId={} userId={} code={}",
+                    projectId, userId, ErrorCode.FEATURE_MATCH_ALREADY_RUNNING.getCode());
             throw new ConflictException(ErrorCode.FEATURE_MATCH_ALREADY_RUNNING);
         }
         Long documentId = project.activeSpecDocumentId();
         if (documentId == null) {
+            log.warn("[기능대조] 실행 생성 거절 projectId={} userId={} code={}",
+                    projectId, userId, ErrorCode.FEATURE_MATCH_NO_TARGET.getCode());
             throw new ConflictException(ErrorCode.FEATURE_MATCH_NO_TARGET);
         }
-        queryRepository.lockDocument(documentId);
+        documentRepository.lockById(documentId);
         if (!queryRepository.documentReady(documentId)) {
+            log.warn("[기능대조] 실행 생성 거절 projectId={} userId={} code={}",
+                    projectId, userId, ErrorCode.FEATURE_MATCH_NO_TARGET.getCode());
             throw new ConflictException(ErrorCode.FEATURE_MATCH_NO_TARGET);
         }
-        List<FeatureMatchFeatureRow> features = queryRepository.features(documentId);
-        List<FeatureMatchRequirementRow> requirements = queryRepository.requirements(documentId);
-        List<FeatureMatchPullRequestRow> pullRequests = queryRepository.pullRequests(projectId);
+        List<FeatureRow> features = queryRepository.features(documentId);
+        List<RequirementRow> requirements = queryRepository.requirements(documentId);
+        List<PrRow> pullRequests = queryRepository.pullRequests(projectId);
         if (queryRepository.collectionBusy(projectId)
                 || pullRequests.stream().anyMatch(FeatureMatchRunCreator::analysisNotReady)) {
+            log.warn("[기능대조] 실행 생성 거절 projectId={} userId={} code={}",
+                    projectId, userId, ErrorCode.FEATURE_MATCH_PR_NOT_READY.getCode());
             throw new ConflictException(ErrorCode.FEATURE_MATCH_PR_NOT_READY);
         }
-        List<FeatureMatchPullRequestRow> eligiblePullRequests = pullRequests.stream()
+        List<PrRow> eligiblePullRequests = pullRequests.stream()
                 .filter(pr -> pr.analysisStatus() == PullRequestAnalysisStatus.COMPLETED)
                 .toList();
         if (features.isEmpty() || eligiblePullRequests.isEmpty()) {
+            log.warn("[기능대조] 실행 생성 거절 projectId={} userId={} code={}",
+                    projectId, userId, ErrorCode.FEATURE_MATCH_NO_TARGET.getCode());
             throw new ConflictException(ErrorCode.FEATURE_MATCH_NO_TARGET);
         }
         try {
             assembler.checkFeatureSize(features, requirements);
         } catch (FeatureMatchInputTooLargeException exception) {
+            log.warn("[기능대조] 실행 생성 거절 projectId={} userId={} code={}",
+                    projectId, userId, ErrorCode.FEATURE_MATCH_INPUT_TOO_LARGE.getCode());
             throw new BadRequestException(ErrorCode.FEATURE_MATCH_INPUT_TOO_LARGE);
         }
         int failed = (int) pullRequests.stream()
@@ -114,7 +127,7 @@ public class FeatureMatchRunCreator {
                 eligiblePullRequests.size(), failed, cancelled, run.getCreatedAt());
     }
 
-    private static boolean analysisNotReady(FeatureMatchPullRequestRow pullRequest) {
+    private static boolean analysisNotReady(PrRow pullRequest) {
         PullRequestAnalysisStatus status = pullRequest.analysisStatus();
         return status == null || status == PullRequestAnalysisStatus.PENDING
                 || status == PullRequestAnalysisStatus.RUNNING

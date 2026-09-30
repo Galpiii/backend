@@ -1,7 +1,7 @@
 package com.github.galpiii.galpi.domain.featurematch.repository;
 
-import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchTarget;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchFailureCode;
+import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchTarget;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;

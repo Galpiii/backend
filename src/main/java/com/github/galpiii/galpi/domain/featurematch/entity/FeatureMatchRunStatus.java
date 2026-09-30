@@ -1,6 +1,5 @@
 package com.github.galpiii.galpi.domain.featurematch.entity;
 
-
 public enum FeatureMatchRunStatus {
     /**
      * 실행 대기.

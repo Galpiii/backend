@@ -1,15 +1,14 @@
 package com.github.galpiii.galpi.domain.featurematch;
 
-import org.junit.jupiter.api.DisplayName;
 import com.github.galpiii.galpi.ai.dto.FeatureMatchingResult;
-import com.github.galpiii.galpi.ai.exception.FeatureMatchingInvalidResponseException;
 import com.github.galpiii.galpi.domain.collection.entity.PullRequest;
 import com.github.galpiii.galpi.domain.collection.repository.PullRequestRepository;
 import com.github.galpiii.galpi.domain.consent.config.ConsentProperties;
 import com.github.galpiii.galpi.domain.consent.service.AiDataConsentService;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFilter;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.TargetRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.request.FeaturePrMatchesCreateRequest;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchFailureCode;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFilter;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRun;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRunStatus;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchSource;
@@ -23,10 +22,9 @@ import com.github.galpiii.galpi.domain.featurematch.repository.FeaturePrMatchReq
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchQueryService;
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchRunService;
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchWriter;
+import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.domain.featurematch.service.FeaturePrMatchService;
 import com.github.galpiii.galpi.domain.featurematch.worker.FeatureMatchClaimer;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
 import com.github.galpiii.galpi.domain.featurespec.dto.request.FeatureUpdateRequest;
 import com.github.galpiii.galpi.domain.featurespec.entity.Feature;
 import com.github.galpiii.galpi.domain.featurespec.entity.FeatureRequirement;
@@ -38,34 +36,46 @@ import com.github.galpiii.galpi.domain.featurespec.repository.FeatureRequirement
 import com.github.galpiii.galpi.domain.featurespec.repository.FeatureSectionRepository;
 import com.github.galpiii.galpi.domain.featurespec.repository.SpecDocumentRepository;
 import com.github.galpiii.galpi.domain.featurespec.service.FeatureReviewService;
+import com.github.galpiii.galpi.domain.featurespec.service.SpecDocumentWriter;
 import com.github.galpiii.galpi.domain.github.entity.GithubRepository;
 import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
-import com.github.galpiii.galpi.domain.pullrequest.PullRequestFixture;
 import com.github.galpiii.galpi.domain.pullrequest.entity.ChangeType;
 import com.github.galpiii.galpi.domain.pullrequest.entity.PullRequestAnalysis;
+import com.github.galpiii.galpi.domain.pullrequest.PullRequestFixture;
 import com.github.galpiii.galpi.domain.pullrequest.repository.PullRequestAnalysisRepository;
 import com.github.galpiii.galpi.domain.user.entity.User;
 import com.github.galpiii.galpi.domain.user.repository.UserRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.GlobalException;
 import com.github.galpiii.galpi.support.IntegrationTestSupport;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Limit;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -90,7 +100,7 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
     @Autowired
     FeatureMatchWriter writer;
     @Autowired
-    com.github.galpiii.galpi.domain.featurespec.service.SpecDocumentWriter documentWriter;
+    SpecDocumentWriter documentWriter;
     @Autowired
     FeatureMatchQueryRepository matches;
     @Autowired
@@ -191,7 +201,9 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
     void disconnectedUserCannotStartMatching() {
         user.disconnectGithub();
         users.save(user);
-        error(this::start, ErrorCode.GITHUB_REAUTH_REQUIRED);
+        assertThatThrownBy(this::start)
+                .isInstanceOf(GithubReauthRequiredException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.GITHUB_REAUTH_REQUIRED);
         assertThat(matches.latest(project.getId())).isNull();
     }
 
@@ -580,14 +592,14 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
     @DisplayName("복구 조회는 대기·실행 대상이 없는 활성 실행만 선택한다")
     void reconcileSelectsOnlyOrphanedRun() {
         long runId = start();
-        assertThat(matches.finalizableRunIds(org.springframework.data.domain.Limit.of(50))).isEmpty();
+        assertThat(matches.finalizableRunIds(Limit.of(50))).isEmpty();
         jdbc.update("DELETE FROM feature_match_targets WHERE feature_match_run_id = ?", runId);
-        assertThat(matches.finalizableRunIds(org.springframework.data.domain.Limit.of(50)))
+        assertThat(matches.finalizableRunIds(Limit.of(50)))
                 .containsExactly(runId);
         writer.reconcile(runId);
         assertThat(runs.status(runId, user.getId()).status()).isEqualTo(FeatureMatchRunStatus.CANCELLED);
         assertThat(runs.status(runId, user.getId()).failureCode()).isEqualTo(FeatureMatchFailureCode.SOURCE_CHANGED);
-        assertThat(matches.finalizableRunIds(org.springframework.data.domain.Limit.of(50))).isEmpty();
+        assertThat(matches.finalizableRunIds(Limit.of(50))).isEmpty();
     }
 
     @Test
@@ -613,7 +625,7 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
     @DisplayName("미매칭 목록의 페이지 경계와 리터럴 검색을 DB에서 처리한다")
     void unmatchedDatabasePagination() {
         long runId = start();
-        for (com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchTargetRow target : claimTargets("empty", 4)) {
+        for (TargetRow target : claimTargets("empty", 4)) {
             writer.prepare(target.id(), "empty");
             writer.complete(target.id(), "empty", new FeatureMatchingResult(List.of()));
         }
@@ -628,9 +640,9 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("재업로드는 프로젝트 잠금을 기다리는 동안 문서를 먼저 잠그지 않는다")
     void replacementUsesProjectThenDocumentLockOrder() throws Exception {
-        try (java.util.concurrent.ExecutorService pool = Executors.newSingleThreadExecutor()) {
-            java.util.concurrent.atomic.AtomicReference<java.util.concurrent.Future<Long>> replacement =
-                    new java.util.concurrent.atomic.AtomicReference<>();
+        try (ExecutorService pool = Executors.newSingleThreadExecutor()) {
+            AtomicReference<Future<Long>> replacement =
+                    new AtomicReference<>();
             new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
                 matches.lockProject(project.getId(), user.getId());
                 replacement.set(pool.submit(() -> new TransactionTemplate(transactionManager).execute(ignored -> {
@@ -639,12 +651,14 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
                     return documentWriter.replace(project.getId(), user.getId(), document.getId(), "next.pdf").getId();
                 })));
                 // 테스트 풀은 커넥션 2개다. 조건을 별도 스레드에서 평가하면 세 번째 커넥션을 기다리다 끝난다.
-                org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(3)).pollInSameThread().until(() ->
-                        jdbc.queryForObject("""
+                Awaitility.await().atMost(Duration.ofSeconds(3)).pollInSameThread().until(() -> {
+                    jdbc.execute("SELECT pg_stat_clear_snapshot()");
+                    return jdbc.queryForObject("""
                                 SELECT count(*) FROM pg_stat_activity
                                 WHERE application_name = 'feature_match_replace_lock_test'
                                   AND wait_event_type = 'Lock'
-                                """, Integer.class) == 1);
+                                """, Integer.class) == 1;
+                });
                 // 재업로드가 document를 먼저 DELETE했다면 NOWAIT는 즉시 실패한다.
                 assertThat(jdbc.queryForObject("SELECT id FROM spec_documents WHERE id = ? FOR UPDATE NOWAIT",
                         Long.class, document.getId())).isEqualTo(document.getId());
@@ -655,11 +669,13 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
         }
     }
 
-    private List<com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchTargetRow> claimTargets(String token, int limit) {
-        List<com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchTargetRow> rows = new java.util.ArrayList<>();
+    private List<TargetRow> claimTargets(String token, int limit) {
+        List<TargetRow> rows = new ArrayList<>();
         for (int index = 0; index < limit; index++) {
-            java.util.Optional<Long> id = claimer.claim(token);
-            if (id.isEmpty()) break;
+            Optional<Long> id = claimer.claim(token);
+            if (id.isEmpty()) {
+                break;
+            }
             rows.add(matches.target(id.get()));
         }
         return rows;

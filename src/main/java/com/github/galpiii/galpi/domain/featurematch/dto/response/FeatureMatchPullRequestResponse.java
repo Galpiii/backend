@@ -1,9 +1,8 @@
 package com.github.galpiii.galpi.domain.featurematch.dto.response;
 
-import com.github.galpiii.galpi.domain.pullrequest.entity.ChangeType;
 import com.github.galpiii.galpi.domain.collection.entity.DataCompleteness;
-
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchPullRequestRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.PrRow;
+import com.github.galpiii.galpi.domain.pullrequest.entity.ChangeType;
 
 import java.time.OffsetDateTime;
 
@@ -12,7 +11,7 @@ public record FeatureMatchPullRequestResponse(long pullRequestId, long repositor
                                               OffsetDateTime mergedAt, String htmlUrl,
                                               String analysisSummary, ChangeType changeType,
                                               DataCompleteness dataCompleteness) {
-    public static FeatureMatchPullRequestResponse from(FeatureMatchPullRequestRow pr) {
+    public static FeatureMatchPullRequestResponse from(PrRow pr) {
         return new FeatureMatchPullRequestResponse(pr.id(), pr.repositoryId(), pr.fullName(), pr.number(), pr.title(),
                 "MERGED", pr.authorLogin(), pr.mergedAt(), pr.htmlUrl(), pr.summary(), pr.changeType(), pr.dataCompleteness());
     }

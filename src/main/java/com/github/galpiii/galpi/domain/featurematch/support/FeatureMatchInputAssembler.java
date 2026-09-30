@@ -4,15 +4,15 @@ import com.github.galpiii.galpi.ai.dto.FeatureMatchingRequest;
 import com.github.galpiii.galpi.domain.collection.secret.SecretContentScanner;
 import com.github.galpiii.galpi.domain.collection.secret.SecretPathRules;
 import com.github.galpiii.galpi.domain.featurematch.config.FeatureMatchProperties;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFeatureRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFileRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchPullRequestRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRequirementRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FeatureRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FileRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.PrRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RequirementRow;
 import com.github.galpiii.galpi.domain.featurematch.exception.FeatureMatchInputTooLargeException;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchQueryRepository;
+import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,12 +31,13 @@ public class FeatureMatchInputAssembler {
     private final SecretPathRules paths;
     private final FeatureMatchProperties properties;
 
-    public String assemble(List<FeatureMatchFeatureRow> features,
-                           List<FeatureMatchRequirementRow> requirements,
-                           FeatureMatchPullRequestRow pr) {
+    public String assemble(List<FeatureRow> features,
+                           List<RequirementRow> requirements,
+                           PrRow pr) {
         List<FeatureMatchingRequest.Section> sections = safeSections(features, requirements);
         int fieldLimit = Math.max(1, properties.maxInputChars() / 32);
-        String body = safe(pr.body(), Math.min(8000, fieldLimit));
+        // 기본 120k 예산에서는 본문 8k를 보존하고, 작은 설정에서만 비례해서 줄인다.
+        String body = safe(pr.body(), Math.min(8000, properties.maxInputChars() / 8));
         String summary = safe(pr.summary(), Math.min(1000, fieldLimit));
         String title = safe(pr.title(), Math.min(500, fieldLimit));
         String repositoryName = safe(pr.fullName(), Math.min(200, fieldLimit));
@@ -71,8 +72,8 @@ public class FeatureMatchInputAssembler {
             used += cost;
         }
         remaining -= used;
-        List<FeatureMatchFileRow> changedFiles = queryRepository.files(pr.id());
-        for (FeatureMatchFileRow file : changedFiles) {
+        List<FileRow> changedFiles = queryRepository.files(pr.id());
+        for (FileRow file : changedFiles) {
             if (paths.isSecretPath(file.path())) {
                 continue;
             }
@@ -90,8 +91,8 @@ public class FeatureMatchInputAssembler {
         return FeatureMatchSnapshot.json(input);
     }
 
-    public void checkFeatureSize(List<FeatureMatchFeatureRow> features,
-                                 List<FeatureMatchRequirementRow> requirements) {
+    public void checkFeatureSize(List<FeatureRow> features,
+                                 List<RequirementRow> requirements) {
         if (FeatureMatchSnapshot.json(safeSections(features, requirements)).length()
                 > properties.maxInputChars() / 2) {
             throw new FeatureMatchInputTooLargeException();
@@ -99,7 +100,7 @@ public class FeatureMatchInputAssembler {
     }
 
     private List<FeatureMatchingRequest.Section> safeSections(
-            List<FeatureMatchFeatureRow> features, List<FeatureMatchRequirementRow> requirements) {
+            List<FeatureRow> features, List<RequirementRow> requirements) {
         List<FeatureMatchingRequest.Section> result = new ArrayList<>();
         for (FeatureMatchingRequest.Section section : FeatureMatchSnapshot.sections(features, requirements)) {
             List<FeatureMatchingRequest.Feature> safeFeatures = new ArrayList<>();

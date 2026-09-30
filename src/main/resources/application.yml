@@ -54,10 +54,6 @@ galpi:
     enabled: ${API_DOCS_ENABLED:false}
 
   openai:
-    matching:
-      model: ${OPENAI_MATCHING_MODEL:gpt-5-mini}
-      max-output-tokens: ${OPENAI_MATCHING_MAX_OUTPUT_TOKENS:12000}
-      budget: ${OPENAI_MATCHING_BUDGET:3m}
     api-key: ${OPENAI_API_KEY}
     model: ${OPENAI_MODEL}
     max-output-tokens: ${OPENAI_MAX_OUTPUT_TOKENS}
@@ -69,6 +65,10 @@ galpi:
     summary-model: ${OPENAI_SUMMARY_MODEL:gpt-5-mini}
     summary-max-output-tokens: ${OPENAI_SUMMARY_MAX_OUTPUT_TOKENS:2000}
     summary-budget: ${OPENAI_SUMMARY_BUDGET:3m}
+    matching:
+      model: ${OPENAI_MATCHING_MODEL:gpt-5-mini}
+      max-output-tokens: ${OPENAI_MATCHING_MAX_OUTPUT_TOKENS:12000}
+      budget: ${OPENAI_MATCHING_BUDGET:3m}
 
   feature-extraction:
     core-pool-size: ${FEATURE_EXTRACTION_CORE_POOL_SIZE}

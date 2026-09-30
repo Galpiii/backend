@@ -2,8 +2,8 @@ package com.github.galpiii.galpi.domain.featurematch.support;
 
 import com.github.galpiii.galpi.ai.dto.FeatureMatchingResult;
 import com.github.galpiii.galpi.ai.exception.FeatureMatchingInvalidResponseException;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFeatureRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRequirementRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FeatureRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RequirementRow;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -25,14 +25,14 @@ import java.util.stream.Collectors;
 public class FeatureMatchResultValidator {
 
     public FeatureMatchingResult validate(FeatureMatchingResult result,
-                                          List<FeatureMatchFeatureRow> features,
-                                          List<FeatureMatchRequirementRow> requirements) {
+                                          List<FeatureRow> features,
+                                          List<RequirementRow> requirements) {
         if (result == null || result.matches() == null) {
             throw new FeatureMatchingInvalidResponseException("MISSING_MATCHES");
         }
-        Set<Long> allowed = features.stream().map(FeatureMatchFeatureRow::id).collect(Collectors.toSet());
+        Set<Long> allowed = features.stream().map(FeatureRow::id).collect(Collectors.toSet());
         Map<Long, Long> owners = requirements.stream().collect(Collectors.toMap(
-                FeatureMatchRequirementRow::id, FeatureMatchRequirementRow::featureId));
+                RequirementRow::id, RequirementRow::featureId));
         Set<Long> seen = new HashSet<>();
         List<FeatureMatchingResult.Match> valid = new ArrayList<>();
         for (FeatureMatchingResult.Match match : result.matches()) {

@@ -1,16 +1,17 @@
 package com.github.galpiii.galpi.domain.featurematch.worker;
 
-import com.github.galpiii.galpi.ai.FeatureMatchingAiService;
 import com.github.galpiii.galpi.ai.dto.FeatureMatchingResult;
-import com.github.galpiii.galpi.ai.exception.FeatureMatchingInvalidResponseException;
 import com.github.galpiii.galpi.ai.exception.FeatureMatchingAiException;
+import com.github.galpiii.galpi.ai.exception.FeatureMatchingInvalidResponseException;
 import com.github.galpiii.galpi.ai.exception.RetryableAiException;
+import com.github.galpiii.galpi.ai.FeatureMatchingAiService;
 import com.github.galpiii.galpi.ai.support.AiFailureKind;
-import com.github.galpiii.galpi.domain.featurematch.exception.FeatureMatchInputTooLargeException;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchFailureCode;
+import com.github.galpiii.galpi.domain.featurematch.exception.FeatureMatchInputTooLargeException;
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchWriter;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.TransientDataAccessException;
 import org.springframework.stereotype.Component;
 
@@ -50,8 +51,11 @@ public class FeatureMatchRunExecutor {
                     : FeatureMatchFailureCode.AI_CALL_FAILED, timeout);
         } catch (RuntimeException e) {
             // SDK 응답/SQL에 포함된 원문 대신 예외 타입과 코드 위치를 남긴다.
-            log.error("[기능대조] 내부 처리 실패 targetId={} stage={} type={} trace={}",
-                    targetId, stage, e.getClass().getName(), e.getStackTrace());
+            Throwable rootCause = NestedExceptionUtils.getMostSpecificCause(e);
+            StackTraceElement[] trace = rootCause.getStackTrace();
+            Object location = trace.length == 0 ? "unknown" : trace[0];
+            log.error("[기능대조] 내부 처리 실패 targetId={} stage={} type={} rootType={} location={}",
+                    targetId, stage, e.getClass().getName(), rootCause.getClass().getName(), location);
             writer.fail(targetId, token, FeatureMatchFailureCode.INTERNAL_ERROR,
                     e instanceof TransientDataAccessException);
         }

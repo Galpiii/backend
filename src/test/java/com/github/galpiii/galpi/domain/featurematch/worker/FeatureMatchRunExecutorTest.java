@@ -1,10 +1,10 @@
 package com.github.galpiii.galpi.domain.featurematch.worker;
 
-import com.github.galpiii.galpi.ai.FeatureMatchingAiService;
 import com.github.galpiii.galpi.ai.dto.FeatureMatchingResult;
 import com.github.galpiii.galpi.ai.exception.FeatureMatchingAiException;
 import com.github.galpiii.galpi.ai.exception.FeatureMatchingInvalidResponseException;
 import com.github.galpiii.galpi.ai.exception.RetryableAiException;
+import com.github.galpiii.galpi.ai.FeatureMatchingAiService;
 import com.github.galpiii.galpi.ai.support.AiFailureKind;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchFailureCode;
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchWriter;

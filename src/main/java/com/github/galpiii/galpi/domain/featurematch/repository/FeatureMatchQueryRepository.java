@@ -1,16 +1,16 @@
 package com.github.galpiii.galpi.domain.featurematch.repository;
 
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchCounts;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFeatureRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFileRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeaturePrMatchRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchPullRequestRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchProjectRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRepositoryRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRequirementLinkRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRequirementRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRunRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchTargetRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.Counts;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FeatureRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FileRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.ProjectRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.PrRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RepositoryRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RequirementLinkRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RequirementRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RunRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.TargetRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.MatchRow;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRun;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchTargetStatus;
 import jakarta.persistence.LockModeType;
@@ -19,8 +19,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.repository.Repository;
 
 import java.util.List;
 
@@ -43,26 +43,26 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
     List<Long> finalizableRunIds(Limit limit);
 
     @Query("""
-            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchPullRequestRow(
+            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$PrRow(
             pr.id, repository.id, repository.fullName, pr.number, pr.title, pr.body, pr.headSha,
             contributor.login, pr.mergedAt, pr.htmlUrl, pr.dataCompleteness,
             analysis.id, analysis.status, analysis.headSha, analysis.summary,
             analysis.changeType)
             from PullRequest pr join pr.repository repository left join pr.contributor contributor
             left join PullRequestAnalysis analysis on analysis.pullRequest.id = pr.id
-            where analysis.id = :analysisId AND repository.project.id = :projectId and repository.unlinkedAt is null
-            order by pr.mergedAt desc, pr.id desc
+            where analysis.id = :analysisId and repository.project.id = :projectId
+              and repository.unlinkedAt is null
             """)
-    FeatureMatchPullRequestRow pullRequestForAnalysis(@Param("analysisId") long analysisId,
-                                                      @Param("projectId") long projectId);
+    PrRow pullRequestForAnalysis(@Param("analysisId") long analysisId,
+                                @Param("projectId") long projectId);
 
     @Query("""
-            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchProjectRow(
+            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$ProjectRow(
             project.id, project.owner.id, project.activeSpecDocumentId)
             from Project project
             where project.id = :id and project.owner.id = :userId and project.deletedAt is null
             """)
-    FeatureMatchProjectRow findProject(@Param("id") long id, @Param("userId") long userId);
+    ProjectRow findProject(@Param("id") long id, @Param("userId") long userId);
 
     @Query("""
             select project.id from Feature feature
@@ -99,15 +99,15 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
     boolean collectionBusy(@Param("projectId") long projectId);
 
     @Query("""
-            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRepositoryRow(
+            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$RepositoryRow(
             repository.id, repository.fullName)
             from GithubRepository repository
             where repository.project.id = :projectId and repository.unlinkedAt is null order by repository.id
             """)
-    List<FeatureMatchRepositoryRow> repositories(@Param("projectId") long projectId);
+    List<RepositoryRow> repositories(@Param("projectId") long projectId);
 
     @Query("""
-            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFeatureRow(
+            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$FeatureRow(
             feature.id, section.id, section.title, section.displayOrder,
             feature.name, feature.displayOrder, feature.reviewStatus,
             feature.sourcePageStart, feature.sourcePageEnd)
@@ -115,18 +115,18 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
             where feature.specDocument.id = :documentId
             order by section.displayOrder nulls last, section.id, feature.displayOrder, feature.id
             """)
-    List<FeatureMatchFeatureRow> features(@Param("documentId") long documentId);
+    List<FeatureRow> features(@Param("documentId") long documentId);
 
     @Query("""
-            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRequirementRow(
+            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$RequirementRow(
             requirement.id, requirement.feature.id, requirement.content, requirement.displayOrder)
             from FeatureRequirement requirement where requirement.feature.specDocument.id = :documentId
             order by requirement.displayOrder, requirement.id
             """)
-    List<FeatureMatchRequirementRow> requirements(@Param("documentId") long documentId);
+    List<RequirementRow> requirements(@Param("documentId") long documentId);
 
     @Query("""
-            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchPullRequestRow(
+            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$PrRow(
             pr.id, repository.id, repository.fullName, pr.number, pr.title, pr.body, pr.headSha,
             contributor.login, pr.mergedAt, pr.htmlUrl, pr.dataCompleteness,
             analysis.id, analysis.status, analysis.headSha, analysis.summary,
@@ -136,10 +136,10 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
             where repository.project.id = :projectId and repository.unlinkedAt is null
             order by pr.mergedAt desc, pr.id desc
             """)
-    List<FeatureMatchPullRequestRow> pullRequests(@Param("projectId") long projectId);
+    List<PrRow> pullRequests(@Param("projectId") long projectId);
 
     @Query("""
-            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchPullRequestRow(
+            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$PrRow(
             pr.id, repository.id, repository.fullName, pr.number, pr.title, null, pr.headSha,
             contributor.login, pr.mergedAt, pr.htmlUrl, pr.dataCompleteness,
             analysis.id, analysis.status, analysis.headSha, analysis.summary, analysis.changeType)
@@ -158,7 +158,7 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
                   or locate(:query, lower(contributor.login)) > 0)
             order by pr.mergedAt desc, pr.id desc
             """)
-    Page<FeatureMatchPullRequestRow> unmatched(
+    Page<PrRow> unmatched(
             @Param("projectId") long projectId, @Param("runId") long runId,
             @Param("documentId") long documentId, @Param("repositoryId") Long repositoryId,
             @Param("query") String query, Pageable pageable);
@@ -170,14 +170,14 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
     List<String> findCommits(@Param("prId") long prId, Limit limit);
 
     @Query("""
-            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFileRow(
+            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$FileRow(
             file.path, cast(file.changeStatus as string), file.additions, file.deletions)
             from PullRequestFile file where file.pullRequest.id = :prId order by file.id
             """)
-    List<FeatureMatchFileRow> findFiles(@Param("prId") long prId, Limit limit);
+    List<FileRow> findFiles(@Param("prId") long prId, Limit limit);
 
     @Query("""
-            select new com.github.galpiii.galpi.domain.featurematch.dto.FeaturePrMatchRow(
+            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$MatchRow(
             match.id, match.feature.id, match.pullRequest.id, match.source,
             match.reason, match.user.id, match.createdAt)
             from FeaturePrMatch match
@@ -185,56 +185,52 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
             and (match.source = 'USER' or match.featureMatchRun.id = :runId)
             order by match.id
             """)
-    List<FeaturePrMatchRow> matches(@Param("runId") long runId, @Param("documentId") long documentId);
+    List<MatchRow> matches(@Param("runId") long runId, @Param("documentId") long documentId);
 
     @Query("""
-            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRequirementLinkRow(
+            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$RequirementLinkRow(
             link.featurePrMatch.id, link.featureRequirement.id)
             from FeaturePrMatchRequirement link where link.featurePrMatch.featureMatchRun.id = :runId
             """)
-    List<FeatureMatchRequirementLinkRow> requirementLinks(@Param("runId") long runId);
+    List<RequirementLinkRow> requirementLinks(@Param("runId") long runId);
 
     @Query("""
-            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRunRow(
+            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$RunRow(
             run.id, run.project.id, run.specDocument.id, run.user.id, run.status,
             run.featureSnapshotHash, run.featureCount, run.eligiblePrCount,
             run.excludedFailedPrCount, run.excludedCancelledPrCount, run.failureCode,
             run.startedAt, run.finishedAt, run.createdAt)
             from FeatureMatchRun run where run.id = :id
             """)
-    FeatureMatchRunRow run(@Param("id") long id);
+    RunRow run(@Param("id") long id);
 
     @Query("""
-            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRunRow(
+            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$RunRow(
             run.id, run.project.id, run.specDocument.id, run.user.id, run.status,
             run.featureSnapshotHash, run.featureCount, run.eligiblePrCount,
             run.excludedFailedPrCount, run.excludedCancelledPrCount, run.failureCode,
             run.startedAt, run.finishedAt, run.createdAt)
             from FeatureMatchRun run where run.project.id = :projectId order by run.id desc
             """)
-    List<FeatureMatchRunRow> findLatest(@Param("projectId") long projectId, Limit limit);
+    List<RunRow> findLatest(@Param("projectId") long projectId, Limit limit);
 
     @Query("""
-            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchTargetRow(
+            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$TargetRow(
             target.id, target.featureMatchRun.id, target.pullRequestAnalysis.id,
             target.analysisHeadSha, target.analysisSnapshotHash, target.status, target.claimedBy,
             target.attempts)
             from FeatureMatchTarget target where target.id = :id
             """)
-    FeatureMatchTargetRow target(@Param("id") long id);
+    TargetRow target(@Param("id") long id);
 
     @Query("""
-            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchTargetRow(
+            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$TargetRow(
             target.id, target.featureMatchRun.id, target.pullRequestAnalysis.id,
             target.analysisHeadSha, target.analysisSnapshotHash, target.status, target.claimedBy,
             target.attempts)
             from FeatureMatchTarget target where target.featureMatchRun.id = :runId order by target.id
             """)
-    List<FeatureMatchTargetRow> targets(@Param("runId") long runId);
-
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select row.id from SpecDocument row where row.id = :id")
-    Long lockDocument(@Param("id") long id);
+    List<TargetRow> targets(@Param("runId") long runId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select row.id from FeatureMatchRun row where row.id = :id")
@@ -255,14 +251,14 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
             """)
     Long lockProject(@Param("id") long id, @Param("userId") long userId);
 
-    default FeatureMatchProjectRow project(long id, long userId, boolean forUpdate) {
+    default ProjectRow project(long id, long userId, boolean forUpdate) {
         if (forUpdate) {
             lockProject(id, userId);
         }
         return findProject(id, userId);
     }
 
-    default FeatureMatchRunRow latest(long projectId) {
+    default RunRow latest(long projectId) {
         return findLatest(projectId, Limit.of(1)).stream().findFirst().orElse(null);
     }
 
@@ -270,7 +266,7 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
         return findCommits(prId, Limit.of(100));
     }
 
-    default List<FeatureMatchFileRow> files(long prId) {
+    default List<FileRow> files(long prId) {
         return findFiles(prId, Limit.of(300));
     }
 
@@ -281,7 +277,7 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
             """)
     List<TargetStatusCount> countTargetsByStatus(@Param("runId") long runId);
 
-    default FeatureMatchCounts counts(long runId) {
+    default Counts counts(long runId) {
         int pending = 0;
         int running = 0;
         int completed = 0;
@@ -297,7 +293,7 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
                 case CANCELLED -> cancelled = count;
             }
         }
-        return new FeatureMatchCounts(pending, running, completed, failed, cancelled);
+        return new Counts(pending, running, completed, failed, cancelled);
     }
 
     interface TargetStatusCount {

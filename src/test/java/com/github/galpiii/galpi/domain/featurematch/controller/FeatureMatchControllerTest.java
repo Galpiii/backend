@@ -1,15 +1,16 @@
 package com.github.galpiii.galpi.domain.featurematch.controller;
 
-import org.junit.jupiter.api.DisplayName;
 import com.github.galpiii.galpi.domain.auth.jwt.JwtTokenProvider;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFilter;
 import com.github.galpiii.galpi.domain.featurematch.dto.request.FeaturePrMatchesCreateRequest;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchRunCreatedResponse;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeaturePrMatchesCreatedResponse;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFilter;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRunStatus;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.ConflictException;
+import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
 import com.github.galpiii.galpi.support.WebMvcTestSupport;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -66,6 +67,16 @@ class FeatureMatchControllerTest extends WebMvcTestSupport {
         mockMvc.perform(post("/projects/3/feature-match-runs").header("Authorization", bearer()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("FEATURE-MATCH-002"));
+    }
+
+    @Test
+    @DisplayName("GitHub 재연결 필요는 기존 공통 응답인 401을 유지한다")
+    void githubReauthPreservesExistingResponse() throws Exception {
+        given(featureMatchRunService.create(3L, 7L))
+                .willThrow(new GithubReauthRequiredException());
+        mockMvc.perform(post("/projects/3/feature-match-runs").header("Authorization", bearer()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GITHUB-001"));
     }
 
     @Test

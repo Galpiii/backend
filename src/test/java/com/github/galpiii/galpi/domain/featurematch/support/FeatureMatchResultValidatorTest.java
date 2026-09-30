@@ -3,8 +3,8 @@ package com.github.galpiii.galpi.domain.featurematch.support;
 import com.github.galpiii.galpi.ai.dto.FeatureMatchingResult;
 import com.github.galpiii.galpi.ai.dto.FeatureMatchingResult.Match;
 import com.github.galpiii.galpi.ai.exception.FeatureMatchingInvalidResponseException;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFeatureRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRequirementRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FeatureRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RequirementRow;
 import com.github.galpiii.galpi.domain.featurespec.entity.FeatureReviewStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,10 +17,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DisplayName("기능대조 응답 조각 검증")
 class FeatureMatchResultValidatorTest {
     private final FeatureMatchResultValidator validator = new FeatureMatchResultValidator();
-    private final List<FeatureMatchFeatureRow> features = List.of(new FeatureMatchFeatureRow(
+    private final List<FeatureRow> features = List.of(new FeatureRow(
             1, null, null, null, "가입", 0, FeatureReviewStatus.UNREVIEWED, null, null));
-    private final List<FeatureMatchRequirementRow> requirements = List.of(
-            new FeatureMatchRequirementRow(3, 1, "가입 처리", 0));
+    private final List<RequirementRow> requirements = List.of(
+            new RequirementRow(3, 1, "가입 처리", 0));
 
     @Test
     @DisplayName("외부 기능·외부 요구사항·중복 ID만 제외하고 유효한 연결은 보존한다")
