@@ -51,6 +51,9 @@ class AnalysisRunCreationIntegrationTest extends IntegrationTestSupport {
     private static final String TOKEN = "ghu_abcdefghijklmnopqrstuvwxyz012345";
 
     @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    @Autowired
     private AnalysisRunService analysisRunService;
     @Autowired
     private GithubConnectionService connectionService;
@@ -110,6 +113,33 @@ class AnalysisRunCreationIntegrationTest extends IntegrationTestSupport {
 
         // 하나라도 남으면 워커가 그것을 집어 권한 근거 없이 수집한다.
         assertThat(runRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void addingFrontendKeepsBackendCompletedAcrossFreshStatusReads() {
+        Long firstId = analysisRunService.create(user.getId(), projectId).analysisRunId();
+        var firstRun = runRepository.findById(firstId).orElseThrow();
+        firstRun.finish(com.github.galpiii.galpi.domain.analysis.entity.AnalysisRunStatus.COMPLETED);
+        runRepository.saveAndFlush(firstRun);
+        // Simulate the worker's completed target without making external GitHub/AI calls.
+        jdbcTemplate.update("update analysis_run_repositories set status = 'COMPLETED' where analysis_run_id = ?", firstId);
+        var project = projectRepository.findById(projectId).orElseThrow();
+        var frontendSnapshot = new RepositorySnapshot(777L, INSTALLATION_ID, "galpiii", "frontend",
+                "galpiii/frontend", true, "main", "https://github.com/galpiii/frontend");
+        var frontend = repositoryRepository.saveAndFlush(GithubRepository.link(project, frontendSnapshot));
+        given(installationService.accessibleSnapshots(anyLong(), any()))
+                .willReturn(Map.of(GITHUB_REPOSITORY_ID, snapshot(), 777L, frontendSnapshot));
+        Long secondId = analysisRunService.create(user.getId(), projectId, java.util.List.of(frontend.getId())).analysisRunId();
+        assertThat(analysisRunService.get(user.getId(), secondId).repositories())
+                .extracting(r -> r.repositoryId()).containsExactly(frontend.getId());
+        for (int i = 0; i < 2; i++) {
+            var statuses = analysisRunService.repositoryStatuses(user.getId(), projectId);
+            assertThat(statuses).hasSize(2);
+            assertThat(statuses).filteredOn(r -> r.analysisRunId().equals(firstId))
+                    .extracting(r -> r.status()).containsExactly("COMPLETED");
+            assertThat(statuses).filteredOn(r -> r.repositoryId().equals(frontend.getId()))
+                    .extracting(r -> r.status()).containsExactly("PENDING");
+        }
     }
 
     private static RepositorySnapshot snapshot() {

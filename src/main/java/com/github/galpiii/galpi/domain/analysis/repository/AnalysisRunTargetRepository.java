@@ -9,6 +9,20 @@ import java.util.List;
 
 public interface AnalysisRunTargetRepository extends JpaRepository<AnalysisRunTarget, Long> {
 
+    @Query("""
+            select target from AnalysisRunTarget target
+            join fetch target.repository repository
+            join fetch target.analysisRun
+            where repository.project.id = :projectId and repository.unlinkedAt is null
+              and not exists (
+                select newer.id from AnalysisRunTarget newer
+                where newer.repository.id = repository.id
+                  and newer.analysisRun.id > target.analysisRun.id
+              )
+            order by repository.id
+            """)
+    List<AnalysisRunTarget> findLatestForProject(@Param("projectId") Long projectId);
+
     List<AnalysisRunTarget> findAllByAnalysisRunId(Long analysisRunId);
 
     /**

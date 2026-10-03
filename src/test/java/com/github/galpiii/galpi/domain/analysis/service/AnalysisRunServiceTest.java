@@ -214,6 +214,42 @@ class AnalysisRunServiceTest {
         }
     }
 
+    @Test
+    void selectedAnalysisDoesNotRecollectExistingRepository() {
+        var backend = repository(1L, 11L, "galpi/backend", PERSONAL_INSTALLATION);
+        var frontend = repository(2L, 22L, "galpi/frontend", PERSONAL_INSTALLATION);
+        given(repositoryRepository.findAllByProjectId(PROJECT_ID)).willReturn(List.of(backend, frontend));
+        given(installationService.accessibleSnapshots(USER_ID, List.of(22L)))
+                .willReturn(accessible(snapshot(22L, "galpi/frontend", PERSONAL_INSTALLATION)));
+        var response = service.create(USER_ID, PROJECT_ID, List.of(2L, 2L));
+        assertThat(response.repositoryCount()).isEqualTo(1);
+        verify(installationService).accessibleSnapshots(USER_ID, List.of(22L));
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<AnalysisRunCreator.TargetSpec>> captor = ArgumentCaptor.forClass(List.class);
+        verify(creator).create(eq(USER_ID), eq(PROJECT_ID), captor.capture(), any());
+        assertThat(captor.getValue()).extracting(AnalysisRunCreator.TargetSpec::repositoryId).containsExactly(2L);
+        verify(creator, never()).markInaccessible(anyList());
+    }
+
+    @Test
+    void rejectsUnknownOrOtherProjectRepositoryWithoutGithubCalls() {
+        given(repositoryRepository.findAllByProjectId(PROJECT_ID))
+                .willReturn(List.of(repository(1L, 11L, "galpi/backend", PERSONAL_INSTALLATION)));
+        assertThatThrownBy(() -> service.create(USER_ID, PROJECT_ID, List.of(1L, 999L)))
+                .isInstanceOf(NotFoundException.class);
+        verify(installationService, never()).accessibleSnapshots(anyLong(), any());
+        verify(creator, never()).create(anyLong(), anyLong(), anyList(), any());
+    }
+
+    @Test
+    void emptySelectionNeverFallsBackToAllRepositories() {
+        given(repositoryRepository.findAllByProjectId(PROJECT_ID))
+                .willReturn(List.of(repository(1L, 11L, "galpi/backend", PERSONAL_INSTALLATION)));
+        assertThatThrownBy(() -> service.create(USER_ID, PROJECT_ID, List.of()))
+                .isInstanceOf(BadRequestException.class);
+        verify(creator, never()).create(anyLong(), anyLong(), anyList(), any());
+    }
+
     private GithubRepository repository(long id, long githubRepositoryId, String fullName,
                                         long installationId) {
         GithubRepository repository = GithubRepository.link(project,
