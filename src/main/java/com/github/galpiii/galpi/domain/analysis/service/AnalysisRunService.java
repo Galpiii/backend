@@ -24,9 +24,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.stream.Collectors;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import com.github.galpiii.galpi.domain.analysis.dto.RepositoryAnalysisStatusResponse;
 
 /**
  * 분석 작업 생성과 조회.
@@ -61,6 +65,10 @@ public class AnalysisRunService {
     private final AiDataConsentService consentService;
 
     public AnalysisRunCreatedResponse create(Long userId, Long projectId) {
+        return create(userId, projectId, null);
+    }
+
+    public AnalysisRunCreatedResponse create(Long userId, Long projectId, List<Long> repositoryIds) {
         // GitHub을 부르기 전에 소유권부터 본다. 남의 프로젝트면 외부 호출 없이 끝난다.
         requireOwnedProject(userId, projectId);
 
@@ -75,6 +83,18 @@ public class AnalysisRunService {
         List<GithubRepository> linked = repositoryRepository.findAllByProjectId(projectId);
         if (linked.isEmpty()) {
             throw new BadRequestException(ErrorCode.ANALYSIS_NO_REPOSITORY);
+        }
+
+        if (repositoryIds != null) {
+            if (repositoryIds.isEmpty() || repositoryIds.stream().anyMatch(id -> id == null || id <= 0)) {
+                throw new BadRequestException(ErrorCode.ANALYSIS_NO_REPOSITORY);
+            }
+            var requested = new HashSet<>(repositoryIds);
+            linked = linked.stream().filter(repository -> requested.contains(repository.getId())).toList();
+            // Reject the entire request, never silently broaden or partially accept an invalid scope.
+            if (linked.size() != requested.size()) {
+                throw new NotFoundException(ErrorCode.PROJECT_REPOSITORY_NOT_FOUND);
+            }
         }
 
         Map<Long, RepositorySnapshot> accessible = installationService.accessibleSnapshots(
@@ -130,6 +150,19 @@ public class AnalysisRunService {
         }
         return AnalysisRunStatusResponse.of(run,
                 targetRepository.findAllWithRepositoryByAnalysisRunId(analysisRunId));
+    }
+
+    @Transactional(readOnly = true)
+    public List<RepositoryAnalysisStatusResponse> repositoryStatuses(Long userId, Long projectId) {
+        requireOwnedProject(userId, projectId);
+        var latest = targetRepository.findLatestForProject(projectId).stream()
+                .map(RepositoryAnalysisStatusResponse::from)
+                .collect(Collectors.toMap(RepositoryAnalysisStatusResponse::repositoryId, status -> status));
+        return repositoryRepository.findAllByProjectId(projectId).stream()
+                .sorted(Comparator.comparing(GithubRepository::getId))
+                .map(repository -> latest.getOrDefault(repository.getId(),
+                        RepositoryAnalysisStatusResponse.notAnalyzed(repository.getId())))
+                .toList();
     }
 
     private void requireOwnedProject(Long userId, Long projectId) {
