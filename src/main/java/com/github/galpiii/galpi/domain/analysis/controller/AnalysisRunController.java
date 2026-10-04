@@ -57,7 +57,10 @@ public class AnalysisRunController {
                 analysisRunService.create(principal.userId(), projectId, request.repositoryIds())));
     }
 
-    @Operation(summary = "연결된 저장소별 마지막 수집 상태")
+    @Operation(summary = "연결된 저장소별 마지막 수집 상태",
+            description = "현재 연결된 저장소 전체를 반환한다. 분석 이력이 없으면 status는 NOT_ANALYZED, "
+                    + "analysisRunId는 null이다. 종료되거나 요청 제한으로 중단된 작업의 미완료 저장소는 "
+                    + "작업 상태를 반영하며, 이미 완료된 저장소의 상태는 유지한다.")
     @GetMapping("/projects/{projectId}/analyses/repositories")
     public ResponseEntity<ApiResponse<List<RepositoryAnalysisStatusResponse>>> repositories(
             @AuthenticationPrincipal AuthPrincipal principal,

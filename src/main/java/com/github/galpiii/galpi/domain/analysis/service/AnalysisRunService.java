@@ -24,6 +24,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.stream.Collectors;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -153,8 +155,14 @@ public class AnalysisRunService {
     @Transactional(readOnly = true)
     public List<RepositoryAnalysisStatusResponse> repositoryStatuses(Long userId, Long projectId) {
         requireOwnedProject(userId, projectId);
-        return targetRepository.findLatestForProject(projectId).stream()
-                .map(RepositoryAnalysisStatusResponse::from).toList();
+        var latest = targetRepository.findLatestForProject(projectId).stream()
+                .map(RepositoryAnalysisStatusResponse::from)
+                .collect(Collectors.toMap(RepositoryAnalysisStatusResponse::repositoryId, status -> status));
+        return repositoryRepository.findAllByProjectId(projectId).stream()
+                .sorted(Comparator.comparing(GithubRepository::getId))
+                .map(repository -> latest.getOrDefault(repository.getId(),
+                        RepositoryAnalysisStatusResponse.notAnalyzed(repository.getId())))
+                .toList();
     }
 
     private void requireOwnedProject(Long userId, Long projectId) {

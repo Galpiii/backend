@@ -22,6 +22,9 @@ import com.github.galpiii.galpi.support.IntegrationTestSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import com.github.galpiii.galpi.domain.analysis.entity.AnalysisRunStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -140,6 +143,70 @@ class AnalysisRunCreationIntegrationTest extends IntegrationTestSupport {
             assertThat(statuses).filteredOn(r -> r.repositoryId().equals(frontend.getId()))
                     .extracting(r -> r.status()).containsExactly("PENDING");
         }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"FAILED,PENDING", "FAILED,COLLECTING", "CANCELLED,PENDING",
+            "CANCELLED,COLLECTING", "RATE_LIMITED,PENDING", "RATE_LIMITED,COLLECTING"})
+    void stoppedRunOverridesOnlyUnfinishedTargets(AnalysisRunStatus status, String targetStatus) {
+        Long runId = analysisRunService.create(user.getId(), projectId).analysisRunId();
+        jdbcTemplate.update("update analysis_run_repositories set status = ? where analysis_run_id = ?",
+                targetStatus, runId);
+        var run = runRepository.findById(runId).orElseThrow();
+        if (status == AnalysisRunStatus.FAILED) {
+            run.fail("TEST_FAILURE", "attempt limit exceeded");
+        } else if (status == AnalysisRunStatus.RATE_LIMITED) {
+            run.markRateLimited(OffsetDateTime.now().plusMinutes(1));
+        } else {
+            run.finish(status);
+        }
+        runRepository.saveAndFlush(run);
+
+        assertThat(analysisRunService.repositoryStatuses(user.getId(), projectId))
+                .singleElement().satisfies(response -> {
+                    assertThat(response.analysisRunId()).isEqualTo(runId);
+                    assertThat(response.status()).isEqualTo(status.name());
+                });
+
+        jdbcTemplate.update("update analysis_run_repositories set status = 'COMPLETED' where analysis_run_id = ?",
+                runId);
+        assertThat(analysisRunService.repositoryStatuses(user.getId(), projectId))
+                .singleElement().satisfies(response -> assertThat(response.status()).isEqualTo("COMPLETED"));
+    }
+
+    @Test
+    void includesUnanalyzedRepositoriesAlongsideLatestTargetsAndExcludesUnlinkedOnes() {
+        var backend = repositoryRepository.findAllByProjectId(projectId).getFirst();
+        var project = projectRepository.findById(projectId).orElseThrow();
+        var frontendSnapshot = new RepositorySnapshot(777L, INSTALLATION_ID, "galpiii", "frontend",
+                "galpiii/frontend", true, "main", "https://github.com/galpiii/frontend");
+        var frontend = repositoryRepository.saveAndFlush(GithubRepository.link(project, frontendSnapshot));
+
+        var initial = analysisRunService.repositoryStatuses(user.getId(), projectId);
+        assertThat(initial).extracting(response -> response.repositoryId())
+                .containsExactly(backend.getId(), frontend.getId());
+        assertThat(initial).allSatisfy(response -> {
+            assertThat(response.status()).isEqualTo("NOT_ANALYZED");
+            assertThat(response.analysisRunId()).isNull();
+            assertThat(response.incompleteReasons()).isEmpty();
+        });
+
+        Long runId = analysisRunService.create(user.getId(), projectId, java.util.List.of(backend.getId()))
+                .analysisRunId();
+        var mixed = analysisRunService.repositoryStatuses(user.getId(), projectId);
+        assertThat(mixed).hasSize(2);
+        assertThat(mixed.getFirst().analysisRunId()).isEqualTo(runId);
+        assertThat(mixed.getFirst().status()).isEqualTo("PENDING");
+        assertThat(mixed.getLast().status()).isEqualTo("NOT_ANALYZED");
+        assertThat(mixed.getLast().analysisRunId()).isNull();
+
+        backend.unlink();
+        repositoryRepository.saveAndFlush(backend);
+        assertThat(analysisRunService.repositoryStatuses(user.getId(), projectId))
+                .singleElement().satisfies(response -> assertThat(response.repositoryId()).isEqualTo(frontend.getId()));
+        frontend.unlink();
+        repositoryRepository.saveAndFlush(frontend);
+        assertThat(analysisRunService.repositoryStatuses(user.getId(), projectId)).isEmpty();
     }
 
     private static RepositorySnapshot snapshot() {
