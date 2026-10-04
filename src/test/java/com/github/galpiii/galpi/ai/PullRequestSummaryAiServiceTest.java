@@ -265,7 +265,8 @@ class PullRequestSummaryAiServiceTest {
     private OpenAiProperties properties(Duration summaryBudget) {
         return new OpenAiProperties("test-api-key", "gpt-5", 64000L, Duration.ofMinutes(5), 3,
                 Duration.ofMillis(1), Duration.ofMinutes(15),
-                "gpt-5-mini", 2000L, summaryBudget);
+                "gpt-5-mini", 2000L, summaryBudget,
+                new OpenAiProperties.Matching("gpt-5-mini", 12000, Duration.ofMinutes(3)));
     }
 
     private static String json(String summary, String changeType) {

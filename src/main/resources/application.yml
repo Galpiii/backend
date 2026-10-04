@@ -8,11 +8,11 @@ spring:
     # 분석 워커의 poll()이 수집 전체를 동기로 실행해 스레드를 수십 분씩 잡는다. 기본값 1이면
     # 그동안 토큰 폐기 배치가 한 번도 돌지 못한다. @Scheduled를 더 붙이면 이 값도 함께 올린다.
     #
-    # PR 요약 워커가 세 번째다. 이쪽도 배치 하나가 끝날 때까지 폴링 스레드를 붙잡는다 --
-    # 그래야 배치가 도는 동안 lease 연장이 계속된다.
+    # 수집·토큰 폐기·PR 요약·기능대조의 네 스케줄러를 분리한다.
+    # 기능대조 폴링은 빈 슬롯만 채우고 즉시 반환하며, lease는 전용 실행기에서 갱신한다.
     scheduling:
       pool:
-        size: ${TASK_SCHEDULING_POOL_SIZE:3}
+        size: ${TASK_SCHEDULING_POOL_SIZE:4}
 
   servlet:
     multipart:
@@ -65,6 +65,10 @@ galpi:
     summary-model: ${OPENAI_SUMMARY_MODEL:gpt-5-mini}
     summary-max-output-tokens: ${OPENAI_SUMMARY_MAX_OUTPUT_TOKENS:2000}
     summary-budget: ${OPENAI_SUMMARY_BUDGET:3m}
+    matching:
+      model: ${OPENAI_MATCHING_MODEL:gpt-5-mini}
+      max-output-tokens: ${OPENAI_MATCHING_MAX_OUTPUT_TOKENS:12000}
+      budget: ${OPENAI_MATCHING_BUDGET:3m}
 
   feature-extraction:
     core-pool-size: ${FEATURE_EXTRACTION_CORE_POOL_SIZE}
@@ -155,6 +159,15 @@ galpi:
     # 전부 내리면 응답이 수 MB가 된다. 자른 사실은 각각의 *Truncated로 알린다.
     max-detail-files: ${PR_MAX_DETAIL_FILES:200}
     max-detail-commits: ${PR_MAX_DETAIL_COMMITS:200}
+
+  feature-match:
+    enabled: ${FEATURE_MATCH_ENABLED:true}
+    poll-interval: ${FEATURE_MATCH_POLL_INTERVAL:5s}
+    lease: ${FEATURE_MATCH_LEASE:10m}
+    retry-backoff: ${FEATURE_MATCH_RETRY_BACKOFF:5s}
+    max-attempts: ${FEATURE_MATCH_MAX_ATTEMPTS:3}
+    max-concurrency: ${FEATURE_MATCH_MAX_CONCURRENCY:4}
+    max-input-chars: ${FEATURE_MATCH_MAX_INPUT_CHARS:120000}
 
   summary:
     worker:

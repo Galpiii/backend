@@ -66,7 +66,8 @@ class FeatureSpecAiRealCallTest {
                 Duration.parse(envOrDefault("OPENAI_ANALYSIS_BUDGET", "PT15M")),
                 envOrDefault("OPENAI_SUMMARY_MODEL", "gpt-5-mini"),
                 Long.parseLong(envOrDefault("OPENAI_SUMMARY_MAX_OUTPUT_TOKENS", "2000")),
-                Duration.parse(envOrDefault("OPENAI_SUMMARY_BUDGET", "PT3M")));
+                Duration.parse(envOrDefault("OPENAI_SUMMARY_BUDGET", "PT3M")),
+                new OpenAiProperties.Matching("gpt-5-mini", 12000, Duration.ofMinutes(3)));
 
         OpenAIClient client = OpenAIOkHttpClient.builder()
                 .apiKey(properties.apiKey())

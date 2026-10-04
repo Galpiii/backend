@@ -3,7 +3,9 @@ package com.github.galpiii.galpi.domain.featurespec.repository;
 import com.github.galpiii.galpi.domain.featurespec.entity.ExtractionFailureCode;
 import com.github.galpiii.galpi.domain.featurespec.entity.ExtractionStatus;
 import com.github.galpiii.galpi.domain.featurespec.entity.SpecDocument;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -13,6 +15,11 @@ import java.util.Collection;
 import java.util.Optional;
 
 public interface SpecDocumentRepository extends JpaRepository<SpecDocument, Long> {
+
+    /** 기능 검토와 기능대조가 공유하는 문서 행 잠금. 프로젝트 잠금이 필요하면 먼저 획득한다. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select document.id from SpecDocument document where document.id = :id")
+    Long lockById(@Param("id") Long id);
 
     boolean existsByProjectId(Long projectId);
 

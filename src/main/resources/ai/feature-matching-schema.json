@@ -1,0 +1,39 @@
+{
+  "name": "feature_pr_matching",
+  "strict": true,
+  "schema": {
+    "type": "object",
+    "properties": {
+      "matches": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "featureId": {
+              "type": "integer"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "requirementIds": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            }
+          },
+          "required": [
+            "featureId",
+            "reason",
+            "requirementIds"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "matches"
+    ],
+    "additionalProperties": false
+  }
+}

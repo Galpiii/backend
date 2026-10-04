@@ -6,6 +6,7 @@ import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.domain.user.repository.UserRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.ConflictException;
+import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
@@ -72,6 +73,9 @@ public class SpecDocumentWriter {
      */
     @Transactional
     public SpecDocument replace(Long projectId, Long userId, Long currentSpecDocumentId, String fileName) {
+        // 기능대조와 같은 project → document 순서를 지켜 삭제/flush 사이의 교착을 막는다.
+        projectRepository.findOwnedForUpdate(projectId, userId)
+                .orElseThrow(() -> new NotFoundException(ErrorCode.PROJECT_NOT_FOUND));
         if (specDocumentRepository.deleteByIdReturningCount(currentSpecDocumentId) == 0) {
             log.info(
                     "[기능명세서 교체] 교체가 동시에 들어와 지울 문서가 이미 사라졌습니다. specDocumentId: {}",
