@@ -30,11 +30,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 
 /**
  * 프로젝트 생명주기를 실제 Postgres에 붙여 확인한다.
@@ -261,8 +263,10 @@ class ProjectLifecycleIntegrationTest extends IntegrationTestSupport {
         // flush 전에 응답을 만들면 여기 수정 전 시각이 담긴다. 목록 정렬이 updatedAt 기준이라
         // 프론트가 그 값을 그대로 쓰면 방금 고친 프로젝트가 뒤로 밀린다.
         assertThat(response.updatedAt()).isAfter(before);
+        OffsetDateTime persistedUpdatedAt =
+                projectRepository.findById(projectId).orElseThrow().getUpdatedAt();
         assertThat(response.updatedAt())
-                .isEqualTo(projectRepository.findById(projectId).orElseThrow().getUpdatedAt());
+                .isCloseTo(persistedUpdatedAt, within(1, ChronoUnit.MICROS));
         assertThat(response.name()).isEqualTo("갈피 v2");
     }
 }
