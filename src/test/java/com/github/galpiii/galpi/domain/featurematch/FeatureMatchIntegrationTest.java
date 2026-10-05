@@ -15,11 +15,14 @@ import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchSource;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchTargetStatus;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeaturePrMatch;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchQueryRepository;
+import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchCurrentFeatureRepository;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchRunRepository;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchTargetRepository;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeaturePrMatchRepository;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeaturePrMatchRequirementRepository;
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchQueryService;
+import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchChangeService;
+import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchChangesResponse;
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchRunService;
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchWriter;
 import com.github.galpiii.galpi.domain.github.exception.GithubReauthRequiredException;
@@ -43,6 +46,7 @@ import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.domain.pullrequest.entity.ChangeType;
 import com.github.galpiii.galpi.domain.pullrequest.entity.PullRequestAnalysis;
+import com.github.galpiii.galpi.domain.pullrequest.entity.SummaryFailureCode;
 import com.github.galpiii.galpi.domain.pullrequest.PullRequestFixture;
 import com.github.galpiii.galpi.domain.pullrequest.repository.PullRequestAnalysisRepository;
 import com.github.galpiii.galpi.domain.user.entity.User;
@@ -96,6 +100,8 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
     @Autowired
     FeatureMatchQueryService queries;
     @Autowired
+    FeatureMatchChangeService changes;
+    @Autowired
     FeaturePrMatchService manual;
     @Autowired
     FeatureMatchWriter writer;
@@ -103,6 +109,8 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
     SpecDocumentWriter documentWriter;
     @Autowired
     FeatureMatchQueryRepository matches;
+    @Autowired
+    FeatureMatchCurrentFeatureRepository currentFeatures;
     @Autowired
     FeatureMatchClaimer claimer;
     @Autowired
@@ -306,31 +314,508 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
         var target = claimTargets("invalid", 4).getFirst();
         writer.prepare(target.id(), "invalid");
         writer.complete(target.id(), "invalid", result(first.getId(), otherRequirement.getId()));
-        assertThat(matches.matches(id, document.getId())).hasSize(1);
-        assertThat(matches.requirementLinks(id)).isEmpty();
+        assertThat(matches.matches(document.getId())).hasSize(1);
+        assertThat(matches.requirementLinks(document.getId())).isEmpty();
         assertThat(matches.target(target.id()).status()).isEqualTo(FeatureMatchTargetStatus.COMPLETED);
     }
 
     @Test
-    @DisplayName("검토 상태 변경은 유지하고 내용 변경은 결과를 무효화한다")
+    @DisplayName("검토 상태 변경은 유지하고 내용 변경은 오래된 결과로 표시한다")
     void completedReviewDoesNotInvalidateButContentEditDoes() {
         finish(start());
         review.confirm(document.getId(), user.getId(), first.getId());
         assertThat(queries.detail(first.getId(), user.getId(), null).reviewStatus()).isEqualTo(FeatureReviewStatus.USER_CONFIRMED);
         review.update(document.getId(), user.getId(), first.getId(), new FeatureUpdateRequest("가입 수정", null));
-        error(() -> queries.detail(first.getId(), user.getId(), null), ErrorCode.FEATURE_MATCH_RESULT_STALE);
+        assertThat(queries.detail(first.getId(), user.getId(), null).freshness())
+                .isEqualTo(FeatureMatchChangesResponse.Freshness.STALE);
+        assertThat(changes.get(project.getId(), user.getId()).fullRequired()).isTrue();
+        error(() -> runs.createPartial(project.getId(), user.getId()), ErrorCode.FEATURE_MATCH_FULL_REQUIRED);
     }
 
     @Test
-    @DisplayName("변경된 입력은 저장 전에 실행을 취소한다")
-    void staleInputCancelsBeforeSaving() {
+    @DisplayName("변경된 PR 한 건만 재대조하고 다른 PR 결과는 보존한다")
+    void partialRerunsOnlyChangedPullRequest() {
+        long base = start();
+        finish(base);
+        var analysis = analyses.findByPullRequestId(pr2.getId()).orElseThrow();
+        analysis.complete("다시 분석된 로그인 작업", ChangeType.FEATURE, "test");
+        analyses.save(analysis);
+
+        var change = changes.get(project.getId(), user.getId());
+        assertThat(change.freshness()).isEqualTo(FeatureMatchChangesResponse.Freshness.STALE);
+        assertThat(change.changedPullRequests()).extracting(item -> item.pullRequestId())
+                .containsExactly(pr2.getId());
+
+        var partial = runs.createPartial(project.getId(), user.getId());
+        assertThat(partial.baseRunId()).isEqualTo(base);
+        assertThat(partial.eligiblePullRequestCount()).isEqualTo(1);
+        var target = claimTargets("partial", 4).getFirst();
+        assertThat(writer.prepare(target.id(), "partial")).isNotNull();
+        writer.complete(target.id(), "partial", result(second.getId(), otherRequirement.getId()));
+
+        assertThat(runs.status(partial.featureMatchRunId(), user.getId()).status())
+                .isEqualTo(FeatureMatchRunStatus.COMPLETED);
+        assertThat(changes.get(project.getId(), user.getId()).freshness())
+                .isEqualTo(FeatureMatchChangesResponse.Freshness.CURRENT);
+        assertThat(matches.matches(document.getId())).extracting(match -> match.pullRequestId())
+                .containsExactlyInAnyOrder(pr1.getId(), pr2.getId());
+        error(() -> runs.createPartial(project.getId(), user.getId()), ErrorCode.FEATURE_MATCH_NO_CHANGES);
+    }
+
+    @Test
+    @DisplayName("처음부터 분석이 실패한 PR은 전체 대조의 변경사항으로 다시 잡지 않는다")
+    void excludedFailedAnalysisDoesNotMakeFullResultStale() {
+        PullRequest excluded = pr(3, false);
+        var analysis = analyses.findByPullRequestId(excluded.getId()).orElseThrow();
+        analysis.fail(SummaryFailureCode.SUMMARY_LLM_FAILED, "요약 실패");
+        analyses.save(analysis);
+
+        finish(start());
+
+        assertThat(changes.get(project.getId(), user.getId()).freshness())
+                .isEqualTo(FeatureMatchChangesResponse.Freshness.CURRENT);
+        assertThat(queries.results(project.getId(), user.getId(), null, null, null)
+                .summary().excludedFailedPullRequestCount()).isEqualTo(1);
+        error(() -> runs.createPartial(project.getId(), user.getId()), ErrorCode.FEATURE_MATCH_NO_CHANGES);
+    }
+
+    @Test
+    @DisplayName("원본이 그대로인 PR의 재분석 실패는 이전 결과를 유지하고 CURRENT로 표시한다")
+    void failedReanalysisKeepsPreviousMatchCurrent() {
+        finish(start());
+        var analysis = analyses.findByPullRequestId(pr1.getId()).orElseThrow();
+        analysis.fail(SummaryFailureCode.SUMMARY_LLM_FAILED, "요약 실패");
+        analyses.save(analysis);
+
+        assertThat(queries.detail(first.getId(), user.getId(), null).relatedPullRequestCount()).isEqualTo(1);
+        assertThat(changes.get(project.getId(), user.getId()).changedPullRequests()).isEmpty();
+        assertThat(changes.get(project.getId(), user.getId()).freshness())
+                .isEqualTo(FeatureMatchChangesResponse.Freshness.CURRENT);
+        assertThat(changes.get(project.getId(), user.getId()).staleReasons()).isEmpty();
+        var summary = queries.results(project.getId(), user.getId(), null, null, null);
+        assertThat(summary.summary().eligiblePullRequestCount()).isEqualTo(1);
+        assertThat(summary.summary().matchedPullRequestCount()).isEqualTo(1);
+        assertThat(summary.summary().excludedFailedPullRequestCount()).isEqualTo(1);
+        assertThat(summary.repositories().getFirst().matchedPullRequestCount()).isEqualTo(1);
+        error(() -> runs.createPartial(project.getId(), user.getId()), ErrorCode.FEATURE_MATCH_NO_CHANGES);
+
+        finish(start());
+        assertThat(queries.detail(first.getId(), user.getId(), null).relatedPullRequestCount()).isEqualTo(1);
+        assertThat(changes.get(project.getId(), user.getId()).freshness())
+                .isEqualTo(FeatureMatchChangesResponse.Freshness.CURRENT);
+    }
+
+    @Test
+    @DisplayName("V17에서 이관된 정상 결과는 PR 원본 기준을 복구한 뒤 재분석 실패해도 CURRENT를 유지한다")
+    void backfillsLegacyPullRequestSourceHash() {
+        finish(start());
+        jdbc.update("UPDATE feature_match_current_pull_requests SET source_snapshot_hash=NULL WHERE pull_request_id=?",
+                pr1.getId());
+        changes.backfillLegacySnapshots();
+        var analysis = analyses.findByPullRequestId(pr1.getId()).orElseThrow();
+        analysis.fail(SummaryFailureCode.PATCH_UNAVAILABLE, "patch를 받을 수 없음");
+        analyses.save(analysis);
+
+        assertThat(changes.get(project.getId(), user.getId()).freshness())
+                .isEqualTo(FeatureMatchChangesResponse.Freshness.CURRENT);
+    }
+
+    @Test
+    @DisplayName("PR 원본 변경 뒤 재분석이 실패하면 이전 연결을 유지하되 STALE로 표시한다")
+    void changedSourceAndFailedReanalysisIsStale() {
+        finish(start());
+        jdbc.update("UPDATE pull_requests SET title='변경된 PR' WHERE id=?", pr1.getId());
+        var analysis = analyses.findByPullRequestId(pr1.getId()).orElseThrow();
+        analysis.fail(SummaryFailureCode.PATCH_UNAVAILABLE, "patch를 받을 수 없음");
+        analyses.save(analysis);
+
+        var change = changes.get(project.getId(), user.getId());
+        assertThat(change.freshness()).isEqualTo(FeatureMatchChangesResponse.Freshness.STALE);
+        assertThat(change.staleReasons()).containsExactly(FeatureMatchChangesResponse.StaleReason.PULL_REQUEST_CHANGED);
+        assertThat(change.changedPullRequests()).isEmpty();
+        assertThat(change.changedPullRequestCount()).isZero();
+        assertThat(change.rerunBlockReasons()).containsExactly(
+                FeatureMatchChangesResponse.RerunBlockReason.PR_REANALYSIS_REQUIRED);
+        assertThat(queries.detail(first.getId(), user.getId(), null).relatedPullRequestCount()).isEqualTo(1);
+        error(() -> runs.createPartial(project.getId(), user.getId()), ErrorCode.FEATURE_MATCH_PR_NOT_READY);
+        pr(3, false);
+        assertThat(changes.get(project.getId(), user.getId()).rerunBlockReasons()).containsExactly(
+                FeatureMatchChangesResponse.RerunBlockReason.PR_ANALYSIS_NOT_READY,
+                FeatureMatchChangesResponse.RerunBlockReason.PR_REANALYSIS_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("새 PR의 분석 실패는 결과를 낡게 만들지 않고 분석 완료 후에만 변경으로 감지한다")
+    void newlyFailedPullRequestBecomesChangeOnlyAfterAnalysisCompletes() {
+        finish(start());
+        PullRequest newPr = pr(3, false);
+        var pending = changes.get(project.getId(), user.getId());
+        assertThat(pending.freshness()).isEqualTo(FeatureMatchChangesResponse.Freshness.CURRENT);
+        assertThat(pending.rerunBlockReasons()).containsExactly(
+                FeatureMatchChangesResponse.RerunBlockReason.PR_ANALYSIS_NOT_READY);
+        var analysis = analyses.findByPullRequestId(newPr.getId()).orElseThrow();
+        analysis.fail(SummaryFailureCode.PATCH_UNAVAILABLE, "patch를 받을 수 없음");
+        analyses.save(analysis);
+
+        var change = changes.get(project.getId(), user.getId());
+        assertThat(change.freshness()).isEqualTo(FeatureMatchChangesResponse.Freshness.CURRENT);
+        assertThat(change.changedPullRequests()).isEmpty();
+        assertThat(change.staleReasons()).isEmpty();
+        assertThat(change.rerunBlockReasons()).isEmpty();
+        error(() -> runs.createPartial(project.getId(), user.getId()), ErrorCode.FEATURE_MATCH_NO_CHANGES);
+
+        analysis.complete("새 작업", ChangeType.FEATURE, "test");
+        analyses.save(analysis);
+        var ready = changes.get(project.getId(), user.getId());
+        assertThat(ready.freshness()).isEqualTo(FeatureMatchChangesResponse.Freshness.STALE);
+        assertThat(ready.changedPullRequests()).extracting(item -> item.pullRequestId())
+                .containsExactly(newPr.getId());
+    }
+
+    @Test
+    @DisplayName("새 PR 분석이 실패해도 준비된 다른 PR은 부분 대조하고 제외 건수를 기록한다")
+    void newlyFailedPullRequestDoesNotBlockReadyPartialTarget() {
+        finish(start());
+        PullRequest newPr = pr(3, false);
+        var failed = analyses.findByPullRequestId(newPr.getId()).orElseThrow();
+        failed.fail(SummaryFailureCode.PATCH_UNAVAILABLE, "patch를 받을 수 없음");
+        analyses.save(failed);
+        var ready = analyses.findByPullRequestId(pr2.getId()).orElseThrow();
+        ready.complete("변경된 작업", ChangeType.FEATURE, "test");
+        analyses.save(ready);
+
+        var change = changes.get(project.getId(), user.getId());
+        assertThat(change.changedPullRequests()).extracting(item -> item.pullRequestId())
+                .containsExactly(pr2.getId());
+        var partial = runs.createPartial(project.getId(), user.getId());
+        assertThat(partial.eligiblePullRequestCount()).isEqualTo(1);
+        assertThat(partial.excludedFailedPullRequestCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("원본 변경 뒤 재분석 실패한 PR은 보류하되 준비된 다른 PR은 부분 대조한다")
+    void changedFailedAnalysisDoesNotBlockReadyPartialTarget() {
+        finish(start());
+        jdbc.update("UPDATE pull_requests SET title='변경된 PR' WHERE id=?", pr1.getId());
+        var failed = analyses.findByPullRequestId(pr1.getId()).orElseThrow();
+        failed.fail(SummaryFailureCode.PATCH_UNAVAILABLE, "patch를 받을 수 없음");
+        analyses.save(failed);
+        var ready = analyses.findByPullRequestId(pr2.getId()).orElseThrow();
+        ready.complete("변경된 작업", ChangeType.FEATURE, "test");
+        analyses.save(ready);
+
+        var change = changes.get(project.getId(), user.getId());
+        assertThat(change.changedPullRequests()).extracting(item -> item.pullRequestId())
+                .containsExactly(pr2.getId());
+        assertThat(change.rerunBlockReasons()).containsExactly(
+                FeatureMatchChangesResponse.RerunBlockReason.PR_REANALYSIS_REQUIRED);
+        assertThat(runs.createPartial(project.getId(), user.getId()).eligiblePullRequestCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("재분석 실패 PR이 있어도 기능 삭제와 준비된 PR 대조는 진행한다")
+    void retryRequiredAnalysisDoesNotBlockOtherPartialWork() {
+        finish(start());
+        var failed = analyses.findByPullRequestId(pr1.getId()).orElseThrow();
+        failed.fail(SummaryFailureCode.PATCH_UNAVAILABLE, "patch를 받을 수 없음");
+        analyses.save(failed);
+        review.delete(document.getId(), user.getId(), second.getId());
+        var changed = analyses.findByPullRequestId(pr2.getId()).orElseThrow();
+        changed.complete("변경된 로그인 작업", ChangeType.FEATURE, "test");
+        analyses.save(changed);
+
+        var before = changes.get(project.getId(), user.getId());
+        assertThat(before.changedPullRequests()).extracting(item -> item.pullRequestId())
+                .containsExactly(pr2.getId());
+        assertThat(before.removedFeatureIds()).containsExactly(second.getId());
+        assertThat(before.changedPullRequestCount()).isEqualTo(1);
+
+        var partial = runs.createPartial(project.getId(), user.getId());
+        assertThat(partial.eligiblePullRequestCount()).isEqualTo(1);
+        assertThat(partial.excludedFailedPullRequestCount()).isEqualTo(1);
+        var target = claimTargets("retry-required", 4).getFirst();
+        writer.complete(target.id(), "retry-required", new FeatureMatchingResult(List.of()));
+
+        var after = changes.get(project.getId(), user.getId());
+        assertThat(after.freshness()).isEqualTo(FeatureMatchChangesResponse.Freshness.CURRENT);
+        assertThat(after.changedPullRequests()).isEmpty();
+        assertThat(after.removedFeatureIds()).isEmpty();
+        assertThat(queries.detail(first.getId(), user.getId(), null).relatedPullRequestCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("재분석 실패 PR이 있어도 기능 삭제만 하는 부분 실행은 즉시 완료한다")
+    void retryRequiredAnalysisDoesNotBlockDeletionOnlyPartial() {
+        finish(start());
+        var failed = analyses.findByPullRequestId(pr1.getId()).orElseThrow();
+        failed.fail(SummaryFailureCode.PATCH_UNAVAILABLE, "patch를 받을 수 없음");
+        analyses.save(failed);
+        review.delete(document.getId(), user.getId(), second.getId());
+
+        var partial = runs.createPartial(project.getId(), user.getId());
+        assertThat(partial.status()).isEqualTo(FeatureMatchRunStatus.COMPLETED);
+        assertThat(partial.eligiblePullRequestCount()).isZero();
+        assertThat(partial.excludedFailedPullRequestCount()).isEqualTo(1);
+        assertThat(changes.get(project.getId(), user.getId()).freshness())
+                .isEqualTo(FeatureMatchChangesResponse.Freshness.CURRENT);
+    }
+
+    @Test
+    @DisplayName("PR 분석이 하나라도 진행 중이면 준비된 PR도 목록에서 제외하고 FULL·PARTIAL 모두 거절한다")
+    void partialRejectsMixedReadyAndPendingChanges() {
+        long base = start();
+        finish(base);
+        pr(3, false);
+        var analysis = analyses.findByPullRequestId(pr2.getId()).orElseThrow();
+        analysis.complete("변경된 작업", ChangeType.FEATURE, "test");
+        analyses.save(analysis);
+
+        var change = changes.get(project.getId(), user.getId());
+        assertThat(change.freshness()).isEqualTo(FeatureMatchChangesResponse.Freshness.STALE);
+        assertThat(change.changedPullRequests()).isEmpty();
+        assertThat(change.rerunBlockReasons()).containsExactly(
+                FeatureMatchChangesResponse.RerunBlockReason.PR_ANALYSIS_NOT_READY);
+        error(this::start, ErrorCode.FEATURE_MATCH_PR_NOT_READY);
+        error(() -> runs.createPartial(project.getId(), user.getId()), ErrorCode.FEATURE_MATCH_PR_NOT_READY);
+        assertThat(runs.latest(project.getId(), user.getId()).featureMatchRunId()).isEqualTo(base);
+    }
+
+    @Test
+    @DisplayName("변경이 기능 삭제뿐이어도 다른 PR 분석이 진행 중이면 PARTIAL을 거절한다")
+    void partialRejectsPendingAnalysisDuringDeletionOnlyChange() {
+        finish(start());
+        review.delete(document.getId(), user.getId(), second.getId());
+        pr(3, false);
+
+        error(() -> runs.createPartial(project.getId(), user.getId()), ErrorCode.FEATURE_MATCH_PR_NOT_READY);
+    }
+
+    @Test
+    @DisplayName("원본이 그대로인 PR 재분석 중에도 CURRENT를 유지하지만 실행은 거절한다")
+    void pendingReanalysisBlocksRunsWithoutMakingResultStale() {
+        finish(start());
+        var analysis = analyses.findByPullRequestId(pr1.getId()).orElseThrow();
+        analysis.requeueForNewHead(analysis.getInstallationId(), user, pr1.getHeadSha());
+        analyses.save(analysis);
+
+        var change = changes.get(project.getId(), user.getId());
+        assertThat(change.freshness()).isEqualTo(FeatureMatchChangesResponse.Freshness.CURRENT);
+        assertThat(change.changedPullRequests()).isEmpty();
+        assertThat(change.rerunBlockReasons()).containsExactly(
+                FeatureMatchChangesResponse.RerunBlockReason.PR_ANALYSIS_NOT_READY);
+        error(this::start, ErrorCode.FEATURE_MATCH_PR_NOT_READY);
+        error(() -> runs.createPartial(project.getId(), user.getId()), ErrorCode.FEATURE_MATCH_PR_NOT_READY);
+    }
+
+    @Test
+    @DisplayName("실패한 대상을 부분 대조로 복구하면 현재 요약의 실패 건수가 사라진다")
+    void partialRecoveryUpdatesCurrentFailureSummary() {
+        long base = start();
+        var targets = claimTargets("first-attempt", 4);
+        writer.complete(targets.getFirst().id(), "first-attempt", new FeatureMatchingResult(List.of()));
+        writer.fail(targets.getLast().id(), "first-attempt", FeatureMatchFailureCode.AI_RESPONSE_INVALID, false);
+        assertThat(queries.results(project.getId(), user.getId(), null, null, null)
+                .summary().matchingFailedPullRequestCount()).isEqualTo(1);
+
+        var partial = runs.createPartial(project.getId(), user.getId());
+        assertThat(queries.results(project.getId(), user.getId(), null, null, null)
+                .summary().matchingFailedPullRequestCount()).isEqualTo(1);
+        var retry = claimTargets("retry", 4).getFirst();
+        writer.complete(retry.id(), "retry", new FeatureMatchingResult(List.of()));
+
+        var result = queries.results(project.getId(), user.getId(), null, null, null);
+        assertThat(result.featureMatchRunId()).isEqualTo(base);
+        assertThat(result.status()).isEqualTo(FeatureMatchRunStatus.PARTIALLY_COMPLETED);
+        assertThat(result.summary().matchingFailedPullRequestCount()).isZero();
+        assertThat(result.changes().freshness()).isEqualTo(FeatureMatchChangesResponse.Freshness.CURRENT);
+        assertThat(runs.status(partial.featureMatchRunId(), user.getId()).status())
+                .isEqualTo(FeatureMatchRunStatus.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("재대조 실패 건수는 보존된 표시 결과와 겹칠 수 있다")
+    void failedPartialAttemptOverlapsCurrentResultCounts() {
+        finish(start());
+        var analysis = analyses.findByPullRequestId(pr2.getId()).orElseThrow();
+        analysis.complete("변경된 작업", ChangeType.FEATURE, "test");
+        analyses.save(analysis);
+        runs.createPartial(project.getId(), user.getId());
+        var target = claimTargets("failed-partial", 4).getFirst();
+        writer.fail(target.id(), "failed-partial", FeatureMatchFailureCode.AI_RESPONSE_INVALID, false);
+
+        var summary = queries.results(project.getId(), user.getId(), null, null, null).summary();
+        assertThat(summary.eligiblePullRequestCount()).isEqualTo(2);
+        assertThat(summary.matchedPullRequestCount()).isEqualTo(1);
+        assertThat(summary.unmatchedPullRequestCount()).isEqualTo(1);
+        assertThat(summary.matchingFailedPullRequestCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("PR 재분석이 실패해도 이전 미매칭 결과의 요약과 목록은 일치한다")
+    void failedReanalysisKeepsPreviousUnmatchedResultVisible() {
+        finish(start());
+        var analysis = analyses.findByPullRequestId(pr2.getId()).orElseThrow();
+        analysis.fail(SummaryFailureCode.PATCH_UNAVAILABLE, "patch를 받을 수 없음");
+        analyses.save(analysis);
+
+        var summary = queries.results(project.getId(), user.getId(), null, null, null).summary();
+        assertThat(summary.eligiblePullRequestCount()).isEqualTo(1);
+        assertThat(summary.unmatchedPullRequestCount()).isEqualTo(1);
+        assertThat(summary.excludedFailedPullRequestCount()).isEqualTo(1);
+        assertThat(queries.unmatched(project.getId(), user.getId(), null, null, 0, 20).pullRequests())
+                .extracting(item -> item.pullRequestId()).containsExactly(pr2.getId());
+    }
+
+    @Test
+    @DisplayName("전체 대조 중 일부 성공 후 연결이 끊기면 성공한 실행을 현재 기준으로 승격한다")
+    void cancelledFullWithCompletedTargetBecomesCurrentBase() {
+        long previous = start();
+        finish(previous);
+        long next = start();
+        var targets = claimTargets("disconnect", 4);
+        writer.complete(targets.getFirst().id(), "disconnect", new FeatureMatchingResult(List.of()));
+        user.disconnectGithub();
+        users.save(user);
+        assertThat(writer.prepare(targets.getLast().id(), "disconnect")).isNull();
+
+        var status = runs.status(next, user.getId());
+        assertThat(status.status()).isEqualTo(FeatureMatchRunStatus.PARTIALLY_COMPLETED);
+        assertThat(status.failureCode()).isEqualTo(FeatureMatchFailureCode.GITHUB_DISCONNECTED);
+        assertThat(queries.results(project.getId(), user.getId(), null, null, null)
+                .featureMatchRunId()).isEqualTo(next);
+        assertThat(runRepository.existsById(previous)).isFalse();
+    }
+
+    @Test
+    @DisplayName("기능 삭제와 PR 변경이 함께 있으면 변경 PR만 다시 대조한다")
+    void partialHandlesFeatureDeletionAndChangedPullRequestTogether() {
+        finish(start());
+        review.delete(document.getId(), user.getId(), first.getId());
+        var analysis = analyses.findByPullRequestId(pr2.getId()).orElseThrow();
+        analysis.complete("변경된 로그인 작업", ChangeType.FEATURE, "test");
+        analyses.save(analysis);
+
+        var change = changes.get(project.getId(), user.getId());
+        assertThat(change.fullRequired()).isFalse();
+        assertThat(change.removedFeatureIds()).containsExactly(first.getId());
+        assertThat(change.changedPullRequests()).extracting(item -> item.pullRequestId())
+                .containsExactly(pr2.getId());
+
+        var partial = runs.createPartial(project.getId(), user.getId());
+        assertThat(partial.eligiblePullRequestCount()).isEqualTo(1);
+        var target = claimTargets("deletion-and-pr", 4).getFirst();
+        writer.complete(target.id(), "deletion-and-pr", result(second.getId(), otherRequirement.getId()));
+        assertThat(changes.get(project.getId(), user.getId()).freshness())
+                .isEqualTo(FeatureMatchChangesResponse.Freshness.CURRENT);
+    }
+
+    @Test
+    @DisplayName("저장소 연결 해제는 삭제된 PR로 표시하고 부분 실행에서 현재 스냅샷을 정리한다")
+    void unlinkingRepositoryRemovesCurrentPullRequestSnapshots() {
+        finish(start());
+        repository.unlink();
+        repositories.save(repository);
+
+        var change = changes.get(project.getId(), user.getId());
+        assertThat(change.changedPullRequests()).isEmpty();
+        assertThat(change.removedPullRequestIds()).containsExactlyInAnyOrder(pr1.getId(), pr2.getId());
+        assertThat(change.changedPullRequestCount()).isEqualTo(2);
+
+        var partial = runs.createPartial(project.getId(), user.getId());
+        assertThat(partial.status()).isEqualTo(FeatureMatchRunStatus.COMPLETED);
+        assertThat(changes.get(project.getId(), user.getId()).freshness())
+                .isEqualTo(FeatureMatchChangesResponse.Freshness.CURRENT);
+        assertThat(matches.matches(document.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("기능 삭제만 있으면 LLM 대상 없이 부분 실행으로 정리한다")
+    void deletedFeatureNeedsNoAiTarget() {
+        long base = start();
+        finish(base);
+        new TransactionTemplate(transactionManager).executeWithoutResult(
+                status -> currentFeatures.deleteAllByProjectId(project.getId()));
+        changes.backfillLegacySnapshots();
+        review.delete(document.getId(), user.getId(), first.getId());
+
+        var change = changes.get(project.getId(), user.getId());
+        assertThat(change.fullRequired()).isFalse();
+        assertThat(change.removedFeatureIds()).containsExactly(first.getId());
+        var partial = runs.createPartial(project.getId(), user.getId());
+        assertThat(partial.eligiblePullRequestCount()).isZero();
+        assertThat(runs.status(partial.featureMatchRunId(), user.getId()).status())
+                .isEqualTo(FeatureMatchRunStatus.COMPLETED);
+        assertThat(changes.get(project.getId(), user.getId()).freshness())
+                .isEqualTo(FeatureMatchChangesResponse.Freshness.CURRENT);
+        review.delete(document.getId(), user.getId(), second.getId());
+        var lastDeletion = runs.createPartial(project.getId(), user.getId());
+        assertThat(lastDeletion.featureCount()).isZero();
+        assertThat(queries.results(project.getId(), user.getId(), null, null, null)
+                .summary().totalFeatureCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("새 전체 실행이 일부 실패해도 실패한 PR의 기존 결과를 유지한다")
+    void partialFullKeepsPreviousResultForFailedTarget() {
+        long previous = start();
+        finish(previous);
+        review.update(document.getId(), user.getId(), first.getId(),
+                new FeatureUpdateRequest("회원가입 변경", null));
+
+        long next = start();
+        var targets = claimTargets("new-full", 4);
+        long firstAnalysisId = analyses.findByPullRequestId(pr1.getId()).orElseThrow().getId();
+        var firstTarget = targets.stream().filter(target -> target.pullRequestAnalysisId() == firstAnalysisId)
+                .findFirst().orElseThrow();
+        var otherTarget = targets.stream().filter(target -> target.pullRequestAnalysisId() != firstAnalysisId)
+                .findFirst().orElseThrow();
+        writer.complete(otherTarget.id(), "new-full", new FeatureMatchingResult(List.of()));
+        writer.fail(firstTarget.id(), "new-full", FeatureMatchFailureCode.AI_RESPONSE_INVALID, false);
+
+        assertThat(runs.status(next, user.getId()).status())
+                .isEqualTo(FeatureMatchRunStatus.PARTIALLY_COMPLETED);
+        assertThat(runRepository.existsById(previous)).isFalse();
+        assertThat(queries.detail(first.getId(), user.getId(), null).relatedPullRequestCount()).isEqualTo(1);
+        assertThat(changes.get(project.getId(), user.getId()).freshness())
+                .isEqualTo(FeatureMatchChangesResponse.Freshness.STALE);
+    }
+
+    @Test
+    @DisplayName("부분 대조 실행 중 PR 분석이 다시 바뀌면 결과를 반영하되 오래된 상태로 표시한다")
+    void partialResultBecomesStaleWhenPrChangesDuringRun() {
+        finish(start());
+        var analysis = analyses.findByPullRequestId(pr2.getId()).orElseThrow();
+        analysis.complete("첫 변경", ChangeType.FEATURE, "test");
+        analyses.save(analysis);
+        var partial = runs.createPartial(project.getId(), user.getId());
+        var target = claimTargets("changing", 4).getFirst();
+        assertThat(writer.prepare(target.id(), "changing")).isNotNull();
+        analysis.complete("실행 중 두 번째 변경", ChangeType.FEATURE, "test");
+        analyses.save(analysis);
+        writer.complete(target.id(), "changing", result(second.getId(), otherRequirement.getId()));
+
+        assertThat(runs.status(partial.featureMatchRunId(), user.getId()).status())
+                .isEqualTo(FeatureMatchRunStatus.COMPLETED);
+        assertThat(queries.detail(second.getId(), user.getId(), null).relatedPullRequestCount()).isEqualTo(1);
+        assertThat(changes.get(project.getId(), user.getId()).changedPullRequests())
+                .extracting(item -> item.pullRequestId()).containsExactly(pr2.getId());
+    }
+
+    @Test
+    @DisplayName("실행 중 변경된 입력의 결과는 반영하고 오래된 결과로 표시한다")
+    void staleInputIsSavedAndMarkedStale() {
         long id = start();
-        var t = claimTargets("stale", 4).getFirst();
+        var claimed = claimTargets("stale", 4);
+        var t = claimed.getFirst();
         assertThat(writer.prepare(t.id(), "stale")).isNotNull();
         jdbc.update("UPDATE features SET name='변경' WHERE id=?", first.getId());
         writer.complete(t.id(), "stale", result(first.getId(), requirement.getId()));
-        assertThat(runs.status(id, user.getId()).status()).isEqualTo(FeatureMatchRunStatus.CANCELLED);
-        assertThat(matches.matches(id, document.getId())).isEmpty();
+        assertThat(matches.target(t.id()).status()).isEqualTo(FeatureMatchTargetStatus.COMPLETED);
+        assertThat(matches.matches(document.getId())).hasSize(1);
+        writer.complete(claimed.get(1).id(), "stale", new FeatureMatchingResult(List.of()));
+        assertThat(runs.status(id, user.getId()).status()).isEqualTo(FeatureMatchRunStatus.COMPLETED);
+        assertThat(changes.get(project.getId(), user.getId()).freshness())
+                .isEqualTo(FeatureMatchChangesResponse.Freshness.STALE);
     }
 
     @Test
@@ -343,7 +828,7 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
         assertThat(secondClaim).hasSize(2);
         writer.complete(firstClaim.getFirst().id(), "old", result(first.getId(), requirement.getId()));
         assertThat(matches.target(firstClaim.getFirst().id()).claimedBy()).isEqualTo("new");
-        assertThat(matches.matches(matches.latest(project.getId()).id(), document.getId())).isEmpty();
+        assertThat(matches.matches(document.getId())).isEmpty();
     }
 
     @Test
@@ -362,7 +847,7 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("재실행은 해당 프로젝트의 이전 실행만 정리하고 사용자 연결은 유지한다")
+    @DisplayName("새 전체 실행이 완료되면 이전 세대만 정리하고 사용자 연결을 유지한다")
     void rerunDeletesOnlyPreviousProjectExecutionAndKeepsManualLinks() {
         long previous = start();
         finish(previous);
@@ -379,6 +864,8 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
         assertThat(requirementMatchRepository.count()).isEqualTo(1);
 
         long next = start();
+        assertThat(runRepository.existsById(previous)).isTrue();
+        finish(next);
 
         assertThat(next).isNotEqualTo(previous);
         assertThat(runRepository.existsById(previous)).isFalse();
@@ -387,8 +874,8 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
         assertThat(oldTargets).allSatisfy(target ->
                 assertThat(targetRepository.existsById(target.id())).isFalse());
         assertThat(targetRepository.count()).isEqualTo(2);
-        assertThat(requirementMatchRepository.count()).isZero();
-        assertThat(matchRepository.findAll()).extracting(FeaturePrMatch::getId).containsExactly(manualId);
+        assertThat(requirementMatchRepository.count()).isEqualTo(1);
+        assertThat(matchRepository.findAll()).extracting(FeaturePrMatch::getId).contains(manualId);
         assertThat(prs.existsById(pr1.getId())).isTrue();
         assertThat(analyses.count()).isEqualTo(2);
         assertThat(requirements.count()).isEqualTo(2);
@@ -419,7 +906,7 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
 
         assertThatThrownBy(() -> new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             start();
-            assertThat(runRepository.existsById(previous)).isFalse();
+            assertThat(runRepository.existsById(previous)).isTrue();
             throw new IllegalStateException("새 실행 트랜잭션 실패");
         })).isInstanceOf(IllegalStateException.class);
 
@@ -431,22 +918,24 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("늦게 끝난 워커는 삭제된 실행을 복원할 수 없다")
+    @DisplayName("종료된 작업의 늦은 완료는 다음 실행 결과를 덮지 않는다")
     void lateWorkerCannotRestoreDeletedExecution() {
         long previous = start();
-        var target = claimTargets("old", 4).getFirst();
+        var claimed = claimTargets("old", 4);
+        var target = claimed.getFirst();
         assertThat(writer.prepare(target.id(), "old")).isNotNull();
         jdbc.update("UPDATE features SET name = '변경된 기능' WHERE id = ?", first.getId());
         writer.complete(target.id(), "old", result(first.getId(), requirement.getId()));
-        assertThat(runs.status(previous, user.getId()).status()).isEqualTo(FeatureMatchRunStatus.CANCELLED);
+        writer.complete(claimed.get(1).id(), "old", new FeatureMatchingResult(List.of()));
+        assertThat(runs.status(previous, user.getId()).status()).isEqualTo(FeatureMatchRunStatus.COMPLETED);
         long next = start();
 
         writer.complete(target.id(), "old", result(first.getId(), requirement.getId()));
         writer.fail(target.id(), "old", FeatureMatchFailureCode.AI_CALL_FAILED, true);
         claimer.heartbeat(target.id(), "old");
 
-        assertThat(runRepository.existsById(previous)).isFalse();
-        assertThat(matchRepository.count()).isZero();
+        assertThat(runRepository.existsById(previous)).isTrue();
+        assertThat(matchRepository.count()).isEqualTo(1);
         assertThat(runs.status(next, user.getId()).status()).isEqualTo(FeatureMatchRunStatus.QUEUED);
         assertThat(matches.targets(next)).allMatch(row -> row.status() == FeatureMatchTargetStatus.PENDING);
     }
@@ -468,7 +957,7 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
     void deletingAiLinkAlsoDeletesItsRequirementLinksButNotThePullRequest() {
         long id = start();
         finish(id);
-        long matchId = matches.matches(id, document.getId()).getFirst().id();
+        long matchId = matches.matches(document.getId()).getFirst().id();
 
         manual.delete(matchId, user.getId());
 
@@ -499,9 +988,9 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
 
             assertThat(outcomes.stream().filter(Long.class::isInstance)).hasSize(1);
             assertThat(outcomes).contains(ErrorCode.FEATURE_MATCH_ALREADY_RUNNING);
-            assertThat(runRepository.existsById(previous)).isFalse();
-            assertThat(runRepository.count()).isEqualTo(1);
-            assertThat(targetRepository.count()).isEqualTo(2);
+            assertThat(runRepository.existsById(previous)).isTrue();
+            assertThat(runRepository.count()).isEqualTo(2);
+            assertThat(targetRepository.count()).isEqualTo(4);
         }
     }
 

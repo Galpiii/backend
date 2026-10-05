@@ -1,6 +1,7 @@
 package com.github.galpiii.galpi.domain.featurematch.support;
 
 import com.github.galpiii.galpi.ai.dto.FeatureMatchingResult;
+import com.github.galpiii.galpi.ai.dto.FeatureMatchingRequest;
 import com.github.galpiii.galpi.ai.exception.FeatureMatchingInvalidResponseException;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FeatureRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RequirementRow;
@@ -27,12 +28,25 @@ public class FeatureMatchResultValidator {
     public FeatureMatchingResult validate(FeatureMatchingResult result,
                                           List<FeatureRow> features,
                                           List<RequirementRow> requirements) {
+        return validate(result, features.stream().map(FeatureRow::id).collect(Collectors.toSet()),
+                requirements.stream().collect(Collectors.toMap(RequirementRow::id, RequirementRow::featureId)));
+    }
+
+    public FeatureMatchingResult validate(FeatureMatchingResult result, FeatureMatchingRequest input) {
+        Set<Long> allowed = input.sections().stream().flatMap(section -> section.features().stream())
+                .map(FeatureMatchingRequest.Feature::featureId).collect(Collectors.toSet());
+        Map<Long, Long> owners = input.sections().stream().flatMap(section -> section.features().stream())
+                .flatMap(feature -> feature.requirements().stream()
+                        .map(requirement -> Map.entry(requirement.requirementId(), feature.featureId())))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        return validate(result, allowed, owners);
+    }
+
+    private FeatureMatchingResult validate(FeatureMatchingResult result, Set<Long> allowed,
+                                           Map<Long, Long> owners) {
         if (result == null || result.matches() == null) {
             throw new FeatureMatchingInvalidResponseException("MISSING_MATCHES");
         }
-        Set<Long> allowed = features.stream().map(FeatureRow::id).collect(Collectors.toSet());
-        Map<Long, Long> owners = requirements.stream().collect(Collectors.toMap(
-                RequirementRow::id, RequirementRow::featureId));
         Set<Long> seen = new HashSet<>();
         List<FeatureMatchingResult.Match> valid = new ArrayList<>();
         for (FeatureMatchingResult.Match match : result.matches()) {

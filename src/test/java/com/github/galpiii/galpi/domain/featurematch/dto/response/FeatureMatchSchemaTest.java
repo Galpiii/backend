@@ -30,6 +30,10 @@ class FeatureMatchSchemaTest {
         assertThat(((Schema<?>) section.getProperties().get("features")).getItems().get$ref())
                 .isEqualTo("#/components/schemas/FeatureMatchResultFeature");
         assertThat(feature.getProperties()).containsKeys("evidenceStatus", "relatedPullRequestCount", "reviewStatus");
+        assertThat(feature.getProperties()).doesNotContainKey("freshness");
+        assertThat(schemas.get("FeatureMatchChangesResponse").getProperties())
+                .containsKeys("freshness", "changedPullRequests", "rerunBlockReasons")
+                .doesNotContainKey("analysisRetryRequiredPullRequests");
         assertThat(((Schema<?>) feature.getProperties().get("evidenceStatus")).getEnum().stream().map(Object::toString).toList())
                 .containsExactly("EVIDENCE_FOUND", "NO_EVIDENCE");
         assertThat(((Schema<?>) results.getProperties().get("status")).getEnum().stream().map(Object::toString).toList())

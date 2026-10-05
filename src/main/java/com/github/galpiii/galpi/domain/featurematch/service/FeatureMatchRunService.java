@@ -25,6 +25,10 @@ public class FeatureMatchRunService {
         return creator.create(projectId, userId);
     }
 
+    public FeatureMatchRunCreatedResponse createPartial(long projectId, long userId) {
+        return creator.createPartial(projectId, userId);
+    }
+
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public FeatureMatchRunStatusResponse latest(long projectId, long userId) {
         if (queryRepository.project(projectId, userId, false) == null) {
@@ -50,10 +54,12 @@ public class FeatureMatchRunService {
 
     private FeatureMatchRunStatusResponse statusResponse(RunRow run) {
         Counts counts = queryRepository.counts(run.id());
-        int progress = (counts.completedCount() + counts.failedCount() + counts.cancelledCount())
+        int progress = run.eligiblePrCount() == 0 ? 100
+                : (counts.completedCount() + counts.failedCount() + counts.cancelledCount())
                 * 100 / run.eligiblePrCount();
         return new FeatureMatchRunStatusResponse(run.id(), run.status(), run.specDocumentId(), run.featureCount(), run.eligiblePrCount(),
                 counts.pendingCount(), counts.runningCount(), counts.completedCount(), counts.failedCount(),
-                counts.cancelledCount(), progress, run.failureCode(), run.startedAt(), run.finishedAt(), run.createdAt());
+                counts.cancelledCount(), progress, run.failureCode(), run.startedAt(), run.finishedAt(), run.createdAt(),
+                run.runType(), run.baseRunId());
     }
 }
