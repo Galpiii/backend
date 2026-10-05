@@ -24,6 +24,15 @@ public interface FeatureMatchApi {
             """)
     ResponseEntity<ApiResponse<FeatureMatchRunCreatedResponse>> run(AuthPrincipal principal, Long projectId);
 
+    @Operation(summary = "최신 기능대조 실행 조회", description = """
+            프로젝트의 최신 실행을 실행 ID 내림차순으로 조회합니다. 대기·진행·완료·일부 완료·실패·취소 상태를 모두 반환합니다.
+            새로고침, 화면 복귀 또는 실행 요청 응답 유실 시 실행 ID와 진행 상태를 복구할 수 있습니다.
+            입력 변경 여부와 무관하게 실행 상태를 반환하며, 결과의 유효성은 결과 조회 API에서 확인합니다.
+            실행 이력이 없으면 404 FEATURE-MATCH-001, 프로젝트가 없거나 접근할 수 없으면 404 PROJECT-001입니다.
+            진행 중인 실행의 중복 생성은 기존 실행 API에서 409 FEATURE-MATCH-003으로 거부합니다.
+            """)
+    ResponseEntity<ApiResponse<FeatureMatchRunStatusResponse>> latest(AuthPrincipal principal, Long projectId);
+
     @Operation(summary = "기능대조 진행 상태", description = """
             대상별 처리 건수와 실행 상태·대표 실패 원인을 조회합니다. 여러 원인이 있으면 최빈 원인을 반환합니다.
             실행이 없거나 접근할 수 없으면 FEATURE-MATCH-001입니다.

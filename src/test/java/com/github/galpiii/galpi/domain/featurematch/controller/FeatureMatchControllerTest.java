@@ -4,6 +4,9 @@ import com.github.galpiii.galpi.domain.auth.jwt.JwtTokenProvider;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFilter;
 import com.github.galpiii.galpi.domain.featurematch.dto.request.FeaturePrMatchesCreateRequest;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchRunCreatedResponse;
+import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchRunStatusResponse;
+import com.github.galpiii.galpi.global.error.exception.NotFoundException;
+import org.junit.jupiter.params.provider.EnumSource;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeaturePrMatchesCreatedResponse;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRunStatus;
 import com.github.galpiii.galpi.global.error.ErrorCode;
@@ -31,6 +34,46 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class FeatureMatchControllerTest extends WebMvcTestSupport {
+
+    @Test
+    @DisplayName("최신 실행 조회는 인증이 필요하다")
+    void latestRequiresAuthentication() throws Exception {
+        mockMvc.perform(get("/projects/3/feature-match-runs/latest"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(featureMatchRunService);
+    }
+
+    @Test
+    @DisplayName("최신 실행 ID와 복구에 필요한 상태를 반환한다")
+    void returnsLatestRun() throws Exception {
+        var now = OffsetDateTime.parse("2026-10-05T06:00:00Z");
+        given(featureMatchRunService.latest(3L, 7L)).willReturn(
+                new FeatureMatchRunStatusResponse(
+                        123, FeatureMatchRunStatus.RUNNING, 10, 2, 20, 10, 1, 9, 0, 0,
+                        45, null, now, null, now));
+        mockMvc.perform(get("/projects/3/feature-match-runs/latest").header("Authorization", bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.featureMatchRunId").value(123))
+                .andExpect(jsonPath("$.data.specDocumentId").value(10))
+                .andExpect(jsonPath("$.data.status").value("RUNNING"))
+                .andExpect(jsonPath("$.data.progressPercent").value(45))
+                .andExpect(jsonPath("$.data.createdAt").exists())
+                .andExpect(jsonPath("$.data.startedAt").exists());
+        verify(featureMatchRunService).latest(3L, 7L);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ErrorCode.class,
+            names = {"FEATURE_MATCH_RUN_NOT_FOUND", "PROJECT_NOT_FOUND"})
+    @DisplayName("최신 실행의 실행 없음 및 접근 불가 오류는 404다")
+    void latestNotFound(ErrorCode code) throws Exception {
+        given(featureMatchRunService.latest(3L, 7L))
+                .willThrow(new NotFoundException(code));
+        mockMvc.perform(get("/projects/3/feature-match-runs/latest").header("Authorization", bearer()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(code.getCode()));
+    }
+
 
     @Autowired
     private JwtTokenProvider tokenProvider;

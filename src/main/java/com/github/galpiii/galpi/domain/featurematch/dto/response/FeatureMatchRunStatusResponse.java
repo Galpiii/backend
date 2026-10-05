@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.OffsetDateTime;
 
 public record FeatureMatchRunStatusResponse(long featureMatchRunId, FeatureMatchRunStatus status,
+                                            @Schema(description = "실행 기준 명세서 ID") long specDocumentId,
                                             int featureCount, int totalTargetCount, int pendingCount, int runningCount,
                                             int completedCount,
                                             int failedCount, int cancelledCount, int progressPercent,
