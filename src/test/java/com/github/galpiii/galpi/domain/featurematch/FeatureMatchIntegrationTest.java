@@ -172,6 +172,29 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
         return pr;
     }
 
+    @Test
+    @DisplayName("최신 실행은 생성 전 오류, 실행 상태 변화, 재실행을 반영한다")
+    void restoresLatestExecutionThroughoutLifecycle() {
+        error(() -> runs.latest(project.getId(), user.getId()), ErrorCode.FEATURE_MATCH_RUN_NOT_FOUND);
+        long firstRun = start();
+        var queued = runs.latest(project.getId(), user.getId());
+        assertThat(queued.featureMatchRunId()).isEqualTo(firstRun);
+        assertThat(queued.status()).isEqualTo(FeatureMatchRunStatus.QUEUED);
+        assertThat(queued.specDocumentId()).isEqualTo(document.getId());
+        assertThat(queued.progressPercent()).isZero();
+        finish(firstRun);
+        var completed = runs.latest(project.getId(), user.getId());
+        assertThat(completed.status()).isEqualTo(FeatureMatchRunStatus.COMPLETED);
+        assertThat(completed.progressPercent()).isEqualTo(100);
+        assertThat(completed.finishedAt()).isNotNull();
+        long next = start();
+        assertThat(next).isGreaterThan(firstRun);
+        assertThat(runs.latest(project.getId(), user.getId()).featureMatchRunId()).isEqualTo(next);
+        var stranger = users.save(PullRequestFixture.user("latest-stranger"));
+        error(() -> runs.latest(project.getId(), stranger.getId()), ErrorCode.PROJECT_NOT_FOUND);
+        error(() -> runs.latest(Long.MAX_VALUE, user.getId()), ErrorCode.PROJECT_NOT_FOUND);
+    }
+
     long start() {
         return runs.create(project.getId(), user.getId()).featureMatchRunId();
     }

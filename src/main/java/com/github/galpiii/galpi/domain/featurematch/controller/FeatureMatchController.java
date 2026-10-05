@@ -42,6 +42,14 @@ public class FeatureMatchController implements FeatureMatchApi {
     }
 
     @Override
+    @GetMapping("/projects/{projectId}/feature-match-runs/latest")
+    public ResponseEntity<ApiResponse<FeatureMatchRunStatusResponse>> latest(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable Long projectId) {
+        return ResponseEntity.ok(ApiResponse.success(runs.latest(projectId, principal.userId())));
+    }
+
+    @Override
     @GetMapping("/feature-match-runs/{id}")
     public ResponseEntity<ApiResponse<FeatureMatchRunStatusResponse>> status(
             @AuthenticationPrincipal AuthPrincipal principal,
