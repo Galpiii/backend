@@ -1,7 +1,9 @@
 package com.github.galpiii.galpi.domain.featurematch.repository;
 
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.CommitInputRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.Counts;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FeatureRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FileInputRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FileRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.ProjectRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.PrRow;
@@ -176,6 +178,26 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
             """)
     List<FileRow> findFiles(@Param("prId") long prId, Limit limit);
 
+    @Query(value = """
+            SELECT selected.pull_request_id, selected.message
+            FROM (SELECT pr_commit.pull_request_id, pr_commit.message,
+                         row_number() OVER (PARTITION BY pr_commit.pull_request_id ORDER BY pr_commit.id) AS row_no
+                    FROM pull_request_commits pr_commit WHERE pr_commit.pull_request_id IN (:prIds)) selected
+            WHERE selected.row_no <= 100 ORDER BY selected.pull_request_id, selected.row_no
+            """, nativeQuery = true)
+    List<Object[]> findCommitInputs(@Param("prIds") List<Long> prIds);
+
+    @Query(value = """
+            SELECT selected.pull_request_id, selected.path, selected.change_status,
+                   selected.additions, selected.deletions
+            FROM (SELECT file.pull_request_id, file.path, file.change_status,
+                         file.additions, file.deletions,
+                         row_number() OVER (PARTITION BY file.pull_request_id ORDER BY file.id) AS row_no
+                    FROM pull_request_files file WHERE file.pull_request_id IN (:prIds)) selected
+            WHERE selected.row_no <= 300 ORDER BY selected.pull_request_id, selected.row_no
+            """, nativeQuery = true)
+    List<Object[]> findFileInputs(@Param("prIds") List<Long> prIds);
+
     @Query("""
             select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$MatchRow(
             match.id, match.feature.id, match.pullRequest.id, match.source,
@@ -276,6 +298,19 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
 
     default List<FileRow> files(long prId) {
         return findFiles(prId, Limit.of(300));
+    }
+
+    default List<CommitInputRow> commitInputs(List<Long> prIds) {
+        return findCommitInputs(prIds).stream()
+                .map(row -> new CommitInputRow(((Number) row[0]).longValue(), (String) row[1]))
+                .toList();
+    }
+
+    default List<FileInputRow> fileInputs(List<Long> prIds) {
+        return findFileInputs(prIds).stream()
+                .map(row -> new FileInputRow(((Number) row[0]).longValue(), (String) row[1],
+                        (String) row[2], ((Number) row[3]).intValue(), ((Number) row[4]).intValue()))
+                .toList();
     }
 
     @Query("""

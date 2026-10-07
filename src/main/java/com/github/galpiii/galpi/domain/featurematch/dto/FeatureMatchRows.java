@@ -77,6 +77,13 @@ public final class FeatureMatchRows {
     public record FileRow(String path, String changeStatus, int additions, int deletions) {
     }
 
+    public record CommitInputRow(long pullRequestId, String message) {
+    }
+
+    public record FileInputRow(long pullRequestId, String path, String changeStatus,
+                               int additions, int deletions) {
+    }
+
     public record Counts(int pendingCount, int runningCount, int completedCount,
                          int failedCount, int cancelledCount) {
     }

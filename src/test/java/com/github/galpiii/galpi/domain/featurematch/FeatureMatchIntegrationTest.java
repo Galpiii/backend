@@ -8,6 +8,7 @@ import com.github.galpiii.galpi.domain.collection.repository.PullRequestFileRepo
 import com.github.galpiii.galpi.domain.consent.config.ConsentProperties;
 import com.github.galpiii.galpi.domain.consent.service.AiDataConsentService;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFilter;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FileRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.TargetRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.request.FeaturePrMatchesCreateRequest;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchFailureCode;
@@ -390,6 +391,35 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
 
         assertThat(changes.get(project.getId(), user.getId()).changedPullRequests())
                 .extracting(item -> item.pullRequestId()).containsExactlyInAnyOrder(pr1.getId(), pr2.getId());
+    }
+
+    @Test
+    @DisplayName("일괄 조회도 PR별 커밋 100건·파일 300건 제한과 기존 순서를 유지한다")
+    void batchInputsMatchSinglePullRequestLimitsAndOrder() {
+        for (int index = 0; index < 102; index++) {
+            commits.save(PullRequestFixture.commit(pr1, "bulk-commit-" + index, "커밋 " + index));
+        }
+        for (int index = 0; index < 302; index++) {
+            files.save(PullRequestFixture.file(pr1, "src/File" + index + ".java"));
+        }
+        commits.save(PullRequestFixture.commit(pr2, "other-commit", "다른 PR 커밋"));
+        files.save(PullRequestFixture.file(pr2, "src/Other.java"));
+
+        List<Long> ids = List.of(pr1.getId(), pr2.getId());
+        var batchedCommits = matches.commitInputs(ids);
+        var batchedFiles = matches.fileInputs(ids);
+        assertThat(batchedCommits.stream().filter(row -> row.pullRequestId() == pr1.getId())
+                .map(row -> row.message()).toList()).containsExactlyElementsOf(matches.commits(pr1.getId()));
+        assertThat(batchedCommits.stream().filter(row -> row.pullRequestId() == pr2.getId())
+                .map(row -> row.message()).toList()).containsExactlyElementsOf(matches.commits(pr2.getId()));
+        assertThat(batchedFiles.stream().filter(row -> row.pullRequestId() == pr1.getId())
+                .map(row -> new FileRow(row.path(), row.changeStatus(), row.additions(), row.deletions())).toList())
+                .containsExactlyElementsOf(matches.files(pr1.getId()));
+        assertThat(batchedFiles.stream().filter(row -> row.pullRequestId() == pr2.getId())
+                .map(row -> new FileRow(row.path(), row.changeStatus(), row.additions(), row.deletions())).toList())
+                .containsExactlyElementsOf(matches.files(pr2.getId()));
+        assertThat(batchedCommits).hasSize(101);
+        assertThat(batchedFiles).hasSize(301);
     }
 
     @Test

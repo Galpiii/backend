@@ -1,6 +1,7 @@
 package com.github.galpiii.galpi.domain.featurematch.service;
 
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FeatureRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FileRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.PrRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchChangesResponse;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchCurrentFeature;
@@ -25,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +39,8 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 public class FeatureMatchChangeService {
+    private static final int INPUT_BATCH_SIZE = 500;
+
     private final FeatureMatchQueryRepository queryRepository;
     private final FeatureMatchCurrentStateRepository stateRepository;
     private final FeatureMatchCurrentFeatureRepository featureRepository;
@@ -154,8 +158,24 @@ public class FeatureMatchChangeService {
         List<PrRow> prs = queryRepository.pullRequests(projectId);
         Map<Long, FeatureMatchCurrentPullRequest> savedPrs = pullRequestRepository.findAllByProjectId(projectId).stream()
                 .collect(Collectors.toMap(FeatureMatchCurrentPullRequest::getPullRequestId, pr -> pr));
+        Map<Long, List<String>> commits = new HashMap<>();
+        Map<Long, List<FileRow>> files = new HashMap<>();
+        List<Long> comparableIds = prs.stream()
+                .filter(pr -> hasInputSnapshot(savedPrs.get(pr.id())))
+                .map(PrRow::id).toList();
+        // 쿼리별 IN 절과 응답 크기를 제한하면서 PR마다 기존과 동일한 앞 100/300건만 읽는다.
+        for (int start = 0; start < comparableIds.size(); start += INPUT_BATCH_SIZE) {
+            List<Long> batch = comparableIds.subList(start,
+                    Math.min(start + INPUT_BATCH_SIZE, comparableIds.size()));
+            queryRepository.commitInputs(batch).forEach(row ->
+                    commits.computeIfAbsent(row.pullRequestId(), ignored -> new ArrayList<>()).add(row.message()));
+            queryRepository.fileInputs(batch).forEach(row ->
+                    files.computeIfAbsent(row.pullRequestId(), ignored -> new ArrayList<>())
+                            .add(new FileRow(row.path(), row.changeStatus(), row.additions(), row.deletions())));
+        }
         Map<Long, Boolean> sourceChanges = prs.stream()
-                .collect(Collectors.toMap(PrRow::id, pr -> sourceChanged(pr, savedPrs.get(pr.id()))));
+                .collect(Collectors.toMap(PrRow::id, pr -> sourceChanged(pr, savedPrs.get(pr.id()),
+                        commits.getOrDefault(pr.id(), List.of()), files.getOrDefault(pr.id(), List.of()))));
         List<PrRow> changedPrs = prs.stream()
                 .filter(pr -> pr.analysisStatus() == PullRequestAnalysisStatus.COMPLETED
                         && Objects.equals(pr.headSha(), pr.analysisHeadSha()))
@@ -174,14 +194,19 @@ public class FeatureMatchChangeService {
                 changedFeatures, fullRequired, featureHash, pullRequestChanged, analysisBlocked, reanalysisRequired);
     }
 
-    private boolean sourceChanged(PrRow pr, FeatureMatchCurrentPullRequest previous) {
+    private static boolean hasInputSnapshot(FeatureMatchCurrentPullRequest previous) {
+        return previous != null && previous.getFeatureInputChars() != null
+                && previous.getAnalysisInputChars() != null && previous.getSourceSnapshotHash() != null;
+    }
+
+    private boolean sourceChanged(PrRow pr, FeatureMatchCurrentPullRequest previous,
+                                  List<String> commits, List<FileRow> files) {
         if (previous == null) {
             // 아직 대조 가능한 분석 결과가 없는 새 PR은 표시 결과를 낡게 만들지 않는다.
             return pr.analysisStatus() == PullRequestAnalysisStatus.COMPLETED
                     && Objects.equals(pr.headSha(), pr.analysisHeadSha());
         }
-        if (previous.getFeatureInputChars() == null || previous.getAnalysisInputChars() == null
-                || previous.getSourceSnapshotHash() == null) {
+        if (!hasInputSnapshot(previous)) {
             // 이전 입력을 복구할 수 없는 결과는 실제 입력을 한 번 다시 확인해야 한다.
             return true;
         }
@@ -190,10 +215,10 @@ public class FeatureMatchChangeService {
                     || !Objects.equals(pr.headSha(), pr.analysisHeadSha())) {
                 // 분석 실패로 요약이 비어도 기존 AI 입력의 요약 예산을 유지해 원본 부분만 비교한다.
                 var current = assembler.sourcePullRequest(
-                        pr, previous.getFeatureInputChars(), previous.getAnalysisInputChars());
+                        pr, previous.getFeatureInputChars(), previous.getAnalysisInputChars(), commits, files);
                 return !Objects.equals(previous.getSourceSnapshotHash(), FeatureMatchSnapshot.sourceHash(current));
             }
-            var current = assembler.pullRequest(pr, previous.getFeatureInputChars());
+            var current = assembler.pullRequest(pr, previous.getFeatureInputChars(), commits, files);
             return !Objects.equals(previous.getAnalysisSnapshotHash(), FeatureMatchSnapshot.analysisHash(current));
         } catch (FeatureMatchInputTooLargeException exception) {
             return true;

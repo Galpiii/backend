@@ -41,17 +41,30 @@ public class FeatureMatchInputAssembler {
 
     public FeatureMatchingRequest.PullRequest pullRequest(PrRow pr, int sectionChars) {
         return pullRequest(pr, sectionChars, pr.summary(),
-                pr.changeType() == null ? null : pr.changeType().name());
+                pr.changeType() == null ? null : pr.changeType().name(), null, null);
+    }
+
+    public FeatureMatchingRequest.PullRequest pullRequest(
+            PrRow pr, int sectionChars, List<String> candidates, List<FileRow> changedFiles) {
+        return pullRequest(pr, sectionChars, pr.summary(),
+                pr.changeType() == null ? null : pr.changeType().name(), candidates, changedFiles);
     }
 
     public FeatureMatchingRequest.PullRequest sourcePullRequest(
             PrRow pr, int sectionChars, int analysisChars) {
         // 분석 실패로 요약이 비어도 이전 대조의 요약 길이만큼 입력 예산을 예약한다.
-        return pullRequest(pr, sectionChars + analysisChars, null, null);
+        return pullRequest(pr, sectionChars + analysisChars, null, null, null, null);
+    }
+
+    public FeatureMatchingRequest.PullRequest sourcePullRequest(
+            PrRow pr, int sectionChars, int analysisChars,
+            List<String> candidates, List<FileRow> changedFiles) {
+        return pullRequest(pr, sectionChars + analysisChars, null, null, candidates, changedFiles);
     }
 
     private FeatureMatchingRequest.PullRequest pullRequest(
-            PrRow pr, int sectionChars, String analysisSummary, String changeType) {
+            PrRow pr, int sectionChars, String analysisSummary, String changeType,
+            List<String> suppliedCommits, List<FileRow> suppliedFiles) {
         int fieldLimit = Math.max(1, properties.maxInputChars() / 32);
         // 기본 120k 예산에서는 본문 8k를 보존하고, 작은 설정에서만 비례해서 줄인다.
         String body = safe(pr.body(), Math.min(8000, properties.maxInputChars() / 8));
@@ -73,7 +86,7 @@ public class FeatureMatchInputAssembler {
             throw new FeatureMatchInputTooLargeException();
         }
 
-        List<String> candidates = queryRepository.commits(pr.id());
+        List<String> candidates = suppliedCommits == null ? queryRepository.commits(pr.id()) : suppliedCommits;
         int commitBudget = remaining / 2;
         int used = 0;
         for (String message : candidates) {
@@ -86,7 +99,7 @@ public class FeatureMatchInputAssembler {
             used += cost;
         }
         remaining -= used;
-        List<FileRow> changedFiles = queryRepository.files(pr.id());
+        List<FileRow> changedFiles = suppliedFiles == null ? queryRepository.files(pr.id()) : suppliedFiles;
         for (FileRow file : changedFiles) {
             if (paths.isSecretPath(file.path())) {
                 continue;
