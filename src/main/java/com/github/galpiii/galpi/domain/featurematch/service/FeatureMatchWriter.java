@@ -131,12 +131,22 @@ public class FeatureMatchWriter {
                             requirementRepository.getReferenceById(requirementId)))
                     .toList());
         }
+        FeatureMatchSnapshot.PullRequestInput snapshot = context.target().inputJson() == null ? null
+                : FeatureMatchSnapshot.pullRequestInput(context.target().inputJson());
         currentPrRepository.findById(context.pr().id()).ifPresentOrElse(
-                current -> current.update(context.target().analysisSnapshotHash(),
-                        context.target().sourceSnapshotHash()),
-                () -> currentPrRepository.save(new FeatureMatchCurrentPullRequest(
-                        context.run().projectId(), context.pr().id(), context.target().analysisSnapshotHash(),
-                        context.target().sourceSnapshotHash())));
+                current -> {
+                    if (snapshot == null) {
+                        current.update(context.target().analysisSnapshotHash(), context.target().sourceSnapshotHash());
+                    } else {
+                        current.update(snapshot.analysisHash(), snapshot.sourceHash(),
+                                snapshot.sectionChars(), snapshot.analysisChars());
+                    }
+                },
+                () -> currentPrRepository.save(snapshot == null
+                        ? new FeatureMatchCurrentPullRequest(context.run().projectId(), context.pr().id(),
+                        context.target().analysisSnapshotHash(), context.target().sourceSnapshotHash())
+                        : new FeatureMatchCurrentPullRequest(context.run().projectId(), context.pr().id(),
+                        snapshot.analysisHash(), snapshot.sourceHash(), snapshot.sectionChars(), snapshot.analysisChars())));
         finishTarget(id, token, FeatureMatchTargetStatus.COMPLETED, null, null);
         aggregate(context.run().id());
     }

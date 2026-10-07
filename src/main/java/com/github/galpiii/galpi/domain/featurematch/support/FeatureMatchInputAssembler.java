@@ -35,25 +35,39 @@ public class FeatureMatchInputAssembler {
                            List<RequirementRow> requirements,
                            PrRow pr) {
         List<FeatureMatchingRequest.Section> sections = safeSections(features, requirements);
+        FeatureMatchingRequest.PullRequest pullRequest = pullRequest(pr, FeatureMatchSnapshot.json(sections).length());
+        return FeatureMatchSnapshot.json(new FeatureMatchingRequest(sections, pullRequest));
+    }
+
+    public FeatureMatchingRequest.PullRequest pullRequest(PrRow pr, int sectionChars) {
+        return pullRequest(pr, sectionChars, pr.summary(),
+                pr.changeType() == null ? null : pr.changeType().name());
+    }
+
+    public FeatureMatchingRequest.PullRequest sourcePullRequest(
+            PrRow pr, int sectionChars, int analysisChars) {
+        // 분석 실패로 요약이 비어도 이전 대조의 요약 길이만큼 입력 예산을 예약한다.
+        return pullRequest(pr, sectionChars + analysisChars, null, null);
+    }
+
+    private FeatureMatchingRequest.PullRequest pullRequest(
+            PrRow pr, int sectionChars, String analysisSummary, String changeType) {
         int fieldLimit = Math.max(1, properties.maxInputChars() / 32);
         // 기본 120k 예산에서는 본문 8k를 보존하고, 작은 설정에서만 비례해서 줄인다.
         String body = safe(pr.body(), Math.min(8000, properties.maxInputChars() / 8));
-        String summary = safe(pr.summary(), Math.min(1000, fieldLimit));
+        String summary = safe(analysisSummary, Math.min(1000, fieldLimit));
         String title = safe(pr.title(), Math.min(500, fieldLimit));
         String repositoryName = safe(pr.fullName(), Math.min(200, fieldLimit));
         List<String> commits = new ArrayList<>();
         List<FeatureMatchingRequest.ChangedFile> files = new ArrayList<>();
-        String changeType = pr.changeType() == null ? null : pr.changeType().name();
         FeatureMatchingRequest.PullRequest pullRequest = new FeatureMatchingRequest.PullRequest(
                 repositoryName, title, body, summary, changeType, commits, files);
-        FeatureMatchingRequest input = new FeatureMatchingRequest(sections, pullRequest);
-        int remaining = properties.maxInputChars() - FeatureMatchSnapshot.json(input).length();
+        int remaining = remaining(sectionChars, pullRequest);
         if (remaining < 0) {
             // PR 메타데이터도 예산 밖이라면 최소 텍스트부터 다시 구성한다.
             pullRequest = new FeatureMatchingRequest.PullRequest(
                     safe(repositoryName, 20), safe(title, 20), null, null, changeType, commits, files);
-            input = new FeatureMatchingRequest(sections, pullRequest);
-            remaining = properties.maxInputChars() - FeatureMatchSnapshot.json(input).length();
+            remaining = remaining(sectionChars, pullRequest);
         }
         if (remaining < 0) {
             throw new FeatureMatchInputTooLargeException();
@@ -88,7 +102,13 @@ public class FeatureMatchInputAssembler {
         }
         log.info("[기능대조] 입력 구성 prId={} commits={}/{} files={}/{} remainingChars={}",
                 pr.id(), commits.size(), candidates.size(), files.size(), changedFiles.size(), remaining);
-        return FeatureMatchSnapshot.json(input);
+        return pullRequest;
+    }
+
+    private int remaining(int sectionChars, FeatureMatchingRequest.PullRequest pullRequest) {
+        int withEmptySections = FeatureMatchSnapshot.json(
+                new FeatureMatchingRequest(List.of(), pullRequest)).length();
+        return properties.maxInputChars() - withEmptySections + 2 - sectionChars;
     }
 
     public void checkFeatureSize(List<FeatureRow> features,

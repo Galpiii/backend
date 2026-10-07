@@ -5,7 +5,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.galpiii.galpi.ai.dto.FeatureMatchingRequest;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FeatureRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.PrRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RequirementRow;
 import com.github.galpiii.galpi.global.util.Hashes;
 
@@ -54,14 +53,26 @@ public final class FeatureMatchSnapshot {
         return hashes;
     }
 
-    public static String analysisHash(PrRow pr) {
-        return Hashes.sha256Hex(json(Arrays.asList(pr.id(), pr.analysisId(), pr.headSha(),
-                pr.analysisHeadSha(), pr.title(), pr.body(), pr.summary(), pr.changeType())));
+    public record PullRequestInput(int sectionChars, int analysisChars, String analysisHash, String sourceHash) {
     }
 
-    public static String sourceHash(PrRow pr) {
-        return Hashes.sha256Hex(json(Arrays.asList(pr.id(), pr.headSha(), pr.title(), pr.body(),
-                pr.dataCompleteness())));
+    public static PullRequestInput pullRequestInput(String inputJson) {
+        FeatureMatchingRequest request = parseRequest(inputJson);
+        FeatureMatchingRequest.PullRequest pr = request.pullRequest();
+        FeatureMatchingRequest.PullRequest withoutAnalysis = new FeatureMatchingRequest.PullRequest(
+                pr.repositoryName(), pr.title(), pr.body(), null, null, pr.commitMessages(), pr.changedFiles());
+        return new PullRequestInput(json(request.sections()).length(),
+                json(pr).length() - json(withoutAnalysis).length(),
+                analysisHash(pr), sourceHash(pr));
+    }
+
+    public static String analysisHash(FeatureMatchingRequest.PullRequest pr) {
+        return Hashes.sha256Hex(json(pr));
+    }
+
+    public static String sourceHash(FeatureMatchingRequest.PullRequest pr) {
+        return Hashes.sha256Hex(json(Arrays.asList(pr.repositoryName(), pr.title(), pr.body(),
+                pr.commitMessages(), pr.changedFiles())));
     }
 
     public static String json(Object value) {

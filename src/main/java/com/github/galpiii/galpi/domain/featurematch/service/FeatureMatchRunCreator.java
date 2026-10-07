@@ -131,9 +131,12 @@ public class FeatureMatchRunCreator {
                 FeatureMatchRunType.FULL, null,
                 FeatureMatchSnapshot.json(FeatureMatchSnapshot.featureHashes(features, requirements))));
         targetRepository.saveAll(eligiblePullRequests.stream()
-                .map(pr -> FeatureMatchTarget.pending(run, analysisRepository.getReferenceById(pr.analysisId()),
-                        pr.analysisHeadSha(), FeatureMatchSnapshot.analysisHash(pr), FeatureMatchSnapshot.sourceHash(pr),
-                        assembler.assemble(features, requirements, pr)))
+                .map(pr -> {
+                    String input = assembler.assemble(features, requirements, pr);
+                    var snapshot = FeatureMatchSnapshot.pullRequestInput(input);
+                    return FeatureMatchTarget.pending(run, analysisRepository.getReferenceById(pr.analysisId()),
+                            pr.analysisHeadSha(), snapshot.analysisHash(), snapshot.sourceHash(), input);
+                })
                 .toList());
         log.info("[기능대조] 실행 생성 projectId={} runId={} features={} targets={}",
                 projectId, run.getId(), features.size(), eligiblePullRequests.size());
@@ -196,10 +199,12 @@ public class FeatureMatchRunCreator {
                 targets.size(), excludedFailed, excludedCancelled, FeatureMatchRunType.PARTIAL,
                 baseId == null ? null : runRepository.getReferenceById(baseId),
                 FeatureMatchSnapshot.json(FeatureMatchSnapshot.featureHashes(change.features(), requirements))));
-        targetRepository.saveAll(targets.stream().map(pr -> FeatureMatchTarget.pending(run,
-                analysisRepository.getReferenceById(pr.analysisId()), pr.analysisHeadSha(),
-                FeatureMatchSnapshot.analysisHash(pr), FeatureMatchSnapshot.sourceHash(pr),
-                assembler.assemble(change.features(), requirements, pr))).toList());
+        targetRepository.saveAll(targets.stream().map(pr -> {
+            String input = assembler.assemble(change.features(), requirements, pr);
+            var snapshot = FeatureMatchSnapshot.pullRequestInput(input);
+            return FeatureMatchTarget.pending(run, analysisRepository.getReferenceById(pr.analysisId()),
+                    pr.analysisHeadSha(), snapshot.analysisHash(), snapshot.sourceHash(), input);
+        }).toList());
 
         Set<Long> removedPrs = Set.copyOf(change.removedPullRequestIds());
         if (!removedPrs.isEmpty()) {

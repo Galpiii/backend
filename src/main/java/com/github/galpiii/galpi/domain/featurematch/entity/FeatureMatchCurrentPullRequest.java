@@ -25,6 +25,10 @@ public class FeatureMatchCurrentPullRequest {
     @Column(length = 64)
     private String sourceSnapshotHash;
 
+    private Integer featureInputChars;
+
+    private Integer analysisInputChars;
+
     public FeatureMatchCurrentPullRequest(long projectId, long pullRequestId, String analysisHash, String sourceHash) {
         this.projectId = projectId;
         this.pullRequestId = pullRequestId;
@@ -32,14 +36,28 @@ public class FeatureMatchCurrentPullRequest {
         this.sourceSnapshotHash = sourceHash;
     }
 
+    public FeatureMatchCurrentPullRequest(long projectId, long pullRequestId, String analysisHash,
+                                          String sourceHash, int featureInputChars, int analysisInputChars) {
+        this(projectId, pullRequestId, analysisHash, sourceHash);
+        this.featureInputChars = featureInputChars;
+        this.analysisInputChars = analysisInputChars;
+    }
+
     public void update(String analysisHash, String sourceHash) {
         this.analysisSnapshotHash = analysisHash;
         this.sourceSnapshotHash = sourceHash;
     }
 
-    public void backfillSourceHash(String sourceHash) {
-        if (sourceSnapshotHash == null) {
-            this.sourceSnapshotHash = sourceHash;
+    public void update(String analysisHash, String sourceHash, int featureInputChars, int analysisInputChars) {
+        update(analysisHash, sourceHash);
+        this.featureInputChars = featureInputChars;
+        this.analysisInputChars = analysisInputChars;
+    }
+
+    public void backfillInput(String analysisHash, String sourceHash,
+                              int featureInputChars, int analysisInputChars) {
+        if (this.featureInputChars == null || this.analysisInputChars == null || this.sourceSnapshotHash == null) {
+            update(analysisHash, sourceHash, featureInputChars, analysisInputChars);
         }
     }
 }

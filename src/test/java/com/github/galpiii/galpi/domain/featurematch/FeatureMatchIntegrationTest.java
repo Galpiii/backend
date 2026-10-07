@@ -3,6 +3,8 @@ package com.github.galpiii.galpi.domain.featurematch;
 import com.github.galpiii.galpi.ai.dto.FeatureMatchingResult;
 import com.github.galpiii.galpi.domain.collection.entity.PullRequest;
 import com.github.galpiii.galpi.domain.collection.repository.PullRequestRepository;
+import com.github.galpiii.galpi.domain.collection.repository.PullRequestCommitRepository;
+import com.github.galpiii.galpi.domain.collection.repository.PullRequestFileRepository;
 import com.github.galpiii.galpi.domain.consent.config.ConsentProperties;
 import com.github.galpiii.galpi.domain.consent.service.AiDataConsentService;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFilter;
@@ -41,6 +43,7 @@ import com.github.galpiii.galpi.domain.featurespec.repository.SpecDocumentReposi
 import com.github.galpiii.galpi.domain.featurespec.service.FeatureReviewService;
 import com.github.galpiii.galpi.domain.featurespec.service.SpecDocumentWriter;
 import com.github.galpiii.galpi.domain.github.entity.GithubRepository;
+import com.github.galpiii.galpi.domain.github.dto.RepositorySnapshot;
 import com.github.galpiii.galpi.domain.github.repository.GithubRepositoryRepository;
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
@@ -121,6 +124,10 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
     GithubRepositoryRepository repositories;
     @Autowired
     PullRequestRepository prs;
+    @Autowired
+    PullRequestCommitRepository commits;
+    @Autowired
+    PullRequestFileRepository files;
     @Autowired
     PullRequestAnalysisRepository analyses;
     @Autowired
@@ -363,6 +370,40 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("기능대조 입력에 포함된 저장소 이름 변경은 재대조 대상으로 잡는다")
+    void repositoryNameChangeMakesMatchStale() {
+        finish(start());
+        repository.refresh(new RepositorySnapshot(repository.getGithubRepositoryId(), 5000L,
+                "org", "renamed", "org/renamed", true, "main", "https://github.com/org/renamed"));
+        repositories.save(repository);
+
+        assertThat(changes.get(project.getId(), user.getId()).changedPullRequests())
+                .extracting(item -> item.pullRequestId()).containsExactlyInAnyOrder(pr1.getId(), pr2.getId());
+    }
+
+    @Test
+    @DisplayName("기능대조 입력에 포함된 커밋과 변경 파일만 재대조 대상으로 잡는다")
+    void collectedMatchInputsMakeOnlyTheirPullRequestsStale() {
+        finish(start());
+        commits.save(PullRequestFixture.commit(pr1, "new-commit", "새 구현 내용"));
+        files.save(PullRequestFixture.file(pr2, "src/LoginController.java"));
+
+        assertThat(changes.get(project.getId(), user.getId()).changedPullRequests())
+                .extracting(item -> item.pullRequestId()).containsExactlyInAnyOrder(pr1.getId(), pr2.getId());
+    }
+
+    @Test
+    @DisplayName("기능대조 AI 입력에서 제외된 비밀 파일은 재대조를 유발하지 않는다")
+    void excludedFileDoesNotMakeMatchStale() {
+        finish(start());
+        files.save(PullRequestFixture.file(pr1, ".env"));
+
+        assertThat(changes.get(project.getId(), user.getId()).freshness())
+                .isEqualTo(FeatureMatchChangesResponse.Freshness.CURRENT);
+        error(() -> runs.createPartial(project.getId(), user.getId()), ErrorCode.FEATURE_MATCH_NO_CHANGES);
+    }
+
+    @Test
     @DisplayName("처음부터 분석이 실패한 PR은 전체 대조의 변경사항으로 다시 잡지 않는다")
     void excludedFailedAnalysisDoesNotMakeFullResultStale() {
         PullRequest excluded = pr(3, false);
@@ -406,10 +447,14 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("V17에서 이관된 정상 결과는 PR 원본 기준을 복구한 뒤 재분석 실패해도 CURRENT를 유지한다")
+    @DisplayName("기존 결과의 PR 입력 스냅샷을 복구한 뒤 재분석 실패해도 CURRENT를 유지한다")
     void backfillsLegacyPullRequestSourceHash() {
         finish(start());
-        jdbc.update("UPDATE feature_match_current_pull_requests SET source_snapshot_hash=NULL WHERE pull_request_id=?",
+        jdbc.update("""
+                UPDATE feature_match_current_pull_requests
+                SET source_snapshot_hash=NULL, feature_input_chars=NULL, analysis_input_chars=NULL
+                WHERE pull_request_id=?
+                """,
                 pr1.getId());
         changes.backfillLegacySnapshots();
         var analysis = analyses.findByPullRequestId(pr1.getId()).orElseThrow();
@@ -741,6 +786,7 @@ class FeatureMatchIntegrationTest extends IntegrationTestSupport {
         var change = changes.get(project.getId(), user.getId());
         assertThat(change.fullRequired()).isFalse();
         assertThat(change.removedFeatureIds()).containsExactly(first.getId());
+        assertThat(change.changedPullRequests()).isEmpty();
         var partial = runs.createPartial(project.getId(), user.getId());
         assertThat(partial.eligiblePullRequestCount()).isZero();
         assertThat(runs.status(partial.featureMatchRunId(), user.getId()).status())

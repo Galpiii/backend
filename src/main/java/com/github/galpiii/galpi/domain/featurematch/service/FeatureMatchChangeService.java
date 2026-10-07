@@ -6,10 +6,14 @@ import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchCha
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchCurrentFeature;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchCurrentPullRequest;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchCurrentState;
+import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchTarget;
+import com.github.galpiii.galpi.domain.featurematch.exception.FeatureMatchInputTooLargeException;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchCurrentFeatureRepository;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchCurrentPullRequestRepository;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchCurrentStateRepository;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchQueryRepository;
+import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchTargetRepository;
+import com.github.galpiii.galpi.domain.featurematch.support.FeatureMatchInputAssembler;
 import com.github.galpiii.galpi.domain.featurematch.support.FeatureMatchSnapshot;
 import com.github.galpiii.galpi.domain.pullrequest.entity.PullRequestAnalysisStatus;
 import com.github.galpiii.galpi.global.error.ErrorCode;
@@ -21,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -36,6 +41,8 @@ public class FeatureMatchChangeService {
     private final FeatureMatchCurrentStateRepository stateRepository;
     private final FeatureMatchCurrentFeatureRepository featureRepository;
     private final FeatureMatchCurrentPullRequestRepository pullRequestRepository;
+    private final FeatureMatchTargetRepository targetRepository;
+    private final FeatureMatchInputAssembler assembler;
 
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
@@ -54,14 +61,24 @@ public class FeatureMatchChangeService {
                         .map(entry -> new FeatureMatchCurrentFeature(item.getProjectId(), entry.getKey(), entry.getValue()))
                         .toList());
             }
-            Map<Long, PrRow> currentPrs = queryRepository.pullRequests(item.getProjectId()).stream()
-                    .collect(Collectors.toMap(PrRow::id, pr -> pr));
-            for (FeatureMatchCurrentPullRequest saved : pullRequestRepository.findAllByProjectId(item.getProjectId())) {
-                PrRow pr = currentPrs.get(saved.getPullRequestId());
-                if (saved.getSourceSnapshotHash() == null && pr != null
-                        && pr.analysisStatus() == PullRequestAnalysisStatus.COMPLETED
-                        && Objects.equals(saved.getAnalysisSnapshotHash(), FeatureMatchSnapshot.analysisHash(pr))) {
-                    saved.backfillSourceHash(FeatureMatchSnapshot.sourceHash(pr));
+            List<FeatureMatchCurrentPullRequest> savedPrs = pullRequestRepository.findAllByProjectId(item.getProjectId());
+            Map<Long, FeatureMatchTarget> completedTargets = new HashMap<>();
+            if (savedPrs.stream().anyMatch(saved -> saved.getFeatureInputChars() == null
+                    || saved.getAnalysisInputChars() == null || saved.getSourceSnapshotHash() == null)) {
+                targetRepository.completedByProject(item.getProjectId()).forEach(target ->
+                        completedTargets.putIfAbsent(target.getPullRequestAnalysis().getPullRequest().getId(), target));
+            }
+            for (FeatureMatchCurrentPullRequest saved : savedPrs) {
+                if (saved.getFeatureInputChars() != null && saved.getAnalysisInputChars() != null
+                        && saved.getSourceSnapshotHash() != null) {
+                    continue;
+                }
+                FeatureMatchTarget target = completedTargets.get(saved.getPullRequestId());
+                if (target != null && target.getInputJson() != null
+                        && Objects.equals(saved.getAnalysisSnapshotHash(), target.getAnalysisSnapshotHash())) {
+                    var snapshot = FeatureMatchSnapshot.pullRequestInput(target.getInputJson());
+                    saved.backfillInput(snapshot.analysisHash(), snapshot.sourceHash(),
+                            snapshot.sectionChars(), snapshot.analysisChars());
                 }
             }
         }
@@ -137,17 +154,18 @@ public class FeatureMatchChangeService {
         List<PrRow> prs = queryRepository.pullRequests(projectId);
         Map<Long, FeatureMatchCurrentPullRequest> savedPrs = pullRequestRepository.findAllByProjectId(projectId).stream()
                 .collect(Collectors.toMap(FeatureMatchCurrentPullRequest::getPullRequestId, pr -> pr));
+        Map<Long, Boolean> sourceChanges = prs.stream()
+                .collect(Collectors.toMap(PrRow::id, pr -> sourceChanged(pr, savedPrs.get(pr.id()))));
         List<PrRow> changedPrs = prs.stream()
                 .filter(pr -> pr.analysisStatus() == PullRequestAnalysisStatus.COMPLETED
                         && Objects.equals(pr.headSha(), pr.analysisHeadSha()))
-                .filter(pr -> sourceChanged(pr, savedPrs.get(pr.id())))
+                .filter(pr -> sourceChanges.get(pr.id()))
                 .toList();
-        boolean pullRequestChanged = prs.stream()
-                .anyMatch(pr -> sourceChanged(pr, savedPrs.get(pr.id())));
+        boolean pullRequestChanged = sourceChanges.containsValue(true);
         boolean reanalysisRequired = prs.stream().anyMatch(pr -> savedPrs.containsKey(pr.id())
                 && (pr.analysisStatus() == PullRequestAnalysisStatus.FAILED
                 || pr.analysisStatus() == PullRequestAnalysisStatus.CANCELLED)
-                && sourceChanged(pr, savedPrs.get(pr.id())));
+                && sourceChanges.get(pr.id()));
         boolean analysisBlocked = queryRepository.collectionBusy(projectId)
                 || prs.stream().anyMatch(FeatureMatchChangeService::analysisNotReady);
         Set<Long> currentPrIds = prs.stream().map(PrRow::id).collect(Collectors.toSet());
@@ -156,18 +174,30 @@ public class FeatureMatchChangeService {
                 changedFeatures, fullRequired, featureHash, pullRequestChanged, analysisBlocked, reanalysisRequired);
     }
 
-    private static boolean sourceChanged(PrRow pr, FeatureMatchCurrentPullRequest previous) {
+    private boolean sourceChanged(PrRow pr, FeatureMatchCurrentPullRequest previous) {
         if (previous == null) {
             // 아직 대조 가능한 분석 결과가 없는 새 PR은 표시 결과를 낡게 만들지 않는다.
             return pr.analysisStatus() == PullRequestAnalysisStatus.COMPLETED
                     && Objects.equals(pr.headSha(), pr.analysisHeadSha());
         }
-        if (pr.analysisStatus() != PullRequestAnalysisStatus.COMPLETED
-                || !Objects.equals(pr.headSha(), pr.analysisHeadSha())) {
-            // 분석 실패가 요약을 비워도 PR 원본이 그대로면 이전 대조 결과는 유효하다.
-            return !Objects.equals(previous.getSourceSnapshotHash(), FeatureMatchSnapshot.sourceHash(pr));
+        if (previous.getFeatureInputChars() == null || previous.getAnalysisInputChars() == null
+                || previous.getSourceSnapshotHash() == null) {
+            // 이전 입력을 복구할 수 없는 결과는 실제 입력을 한 번 다시 확인해야 한다.
+            return true;
         }
-        return !Objects.equals(previous.getAnalysisSnapshotHash(), FeatureMatchSnapshot.analysisHash(pr));
+        try {
+            if (pr.analysisStatus() != PullRequestAnalysisStatus.COMPLETED
+                    || !Objects.equals(pr.headSha(), pr.analysisHeadSha())) {
+                // 분석 실패로 요약이 비어도 기존 AI 입력의 요약 예산을 유지해 원본 부분만 비교한다.
+                var current = assembler.sourcePullRequest(
+                        pr, previous.getFeatureInputChars(), previous.getAnalysisInputChars());
+                return !Objects.equals(previous.getSourceSnapshotHash(), FeatureMatchSnapshot.sourceHash(current));
+            }
+            var current = assembler.pullRequest(pr, previous.getFeatureInputChars());
+            return !Objects.equals(previous.getAnalysisSnapshotHash(), FeatureMatchSnapshot.analysisHash(current));
+        } catch (FeatureMatchInputTooLargeException exception) {
+            return true;
+        }
     }
 
     private static boolean analysisNotReady(PrRow pr) {
