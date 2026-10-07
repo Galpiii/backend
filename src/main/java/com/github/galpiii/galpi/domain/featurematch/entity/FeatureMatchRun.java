@@ -43,6 +43,17 @@ public class FeatureMatchRun extends BaseEntity {
     @Column(nullable = false, length = 30)
     private FeatureMatchRunStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private FeatureMatchRunType runType;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "base_run_id")
+    private FeatureMatchRun baseRun;
+
+    @Column(columnDefinition = "text")
+    private String featureSnapshotJson;
+
     @Column(nullable = false, length = 64)
     private String featureSnapshotHash;
 
@@ -66,7 +77,8 @@ public class FeatureMatchRun extends BaseEntity {
     private OffsetDateTime finishedAt;
 
     private FeatureMatchRun(Project project, SpecDocument document, User user, String hash,
-                            int features, int eligible, int failed, int cancelled) {
+                            int features, int eligible, int failed, int cancelled,
+                            FeatureMatchRunType type, FeatureMatchRun baseRun, String snapshotJson) {
         this.project = project;
         this.specDocument = document;
         this.user = user;
@@ -76,11 +88,22 @@ public class FeatureMatchRun extends BaseEntity {
         this.excludedFailedPrCount = failed;
         this.excludedCancelledPrCount = cancelled;
         this.status = FeatureMatchRunStatus.QUEUED;
+        this.runType = type;
+        this.baseRun = baseRun;
+        this.featureSnapshotJson = snapshotJson;
     }
 
     public static FeatureMatchRun queue(Project project, SpecDocument document, User user, String hash,
                                         int features, int eligible, int failed, int cancelled) {
-        return new FeatureMatchRun(project, document, user, hash, features, eligible, failed, cancelled);
+        return new FeatureMatchRun(project, document, user, hash, features, eligible, failed, cancelled,
+                FeatureMatchRunType.FULL, null, null);
+    }
+
+    public static FeatureMatchRun queue(Project project, SpecDocument document, User user, String hash,
+                                        int features, int eligible, int failed, int cancelled,
+                                        FeatureMatchRunType type, FeatureMatchRun baseRun, String snapshotJson) {
+        return new FeatureMatchRun(project, document, user, hash, features, eligible, failed, cancelled,
+                type, baseRun, snapshotJson);
     }
 
     public boolean isInFlight() {

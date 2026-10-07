@@ -40,6 +40,12 @@ public class FeatureMatchTarget extends BaseEntity {
     @Column(nullable = false, length = 64)
     private String analysisSnapshotHash;
 
+    @Column(length = 64)
+    private String sourceSnapshotHash;
+
+    @Column(columnDefinition = "text")
+    private String inputJson;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private FeatureMatchTargetStatus status;
@@ -70,6 +76,14 @@ public class FeatureMatchTarget extends BaseEntity {
     public static FeatureMatchTarget pending(FeatureMatchRun run, PullRequestAnalysis analysis,
                                              String headSha, String hash) {
         return new FeatureMatchTarget(run, analysis, headSha, hash);
+    }
+
+    public static FeatureMatchTarget pending(FeatureMatchRun run, PullRequestAnalysis analysis,
+                                             String headSha, String hash, String sourceHash, String inputJson) {
+        FeatureMatchTarget target = new FeatureMatchTarget(run, analysis, headSha, hash);
+        target.sourceSnapshotHash = sourceHash;
+        target.inputJson = inputJson;
+        return target;
     }
 
     public void finish(String token, FeatureMatchTargetStatus status,

@@ -1,10 +1,10 @@
 package com.github.galpiii.galpi.domain.featurematch.support;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.galpiii.galpi.ai.dto.FeatureMatchingRequest;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FeatureRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.PrRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RequirementRow;
 import com.github.galpiii.galpi.global.util.Hashes;
 
@@ -39,9 +39,40 @@ public final class FeatureMatchSnapshot {
         return Hashes.sha256Hex(json(sections(features, requirements)));
     }
 
-    public static String analysisHash(PrRow pr) {
-        return Hashes.sha256Hex(json(Arrays.asList(pr.id(), pr.analysisId(), pr.headSha(),
-                pr.analysisHeadSha(), pr.title(), pr.body(), pr.summary(), pr.changeType())));
+    public static Map<Long, String> featureHashes(List<FeatureRow> features, List<RequirementRow> requirements) {
+        Map<Long, String> hashes = new LinkedHashMap<>();
+        for (FeatureRow feature : features) {
+            List<RequirementRow> owned = requirements.stream()
+                    .filter(requirement -> requirement.featureId() == feature.id()).toList();
+            hashes.put(feature.id(), Hashes.sha256Hex(json(Arrays.asList(
+                    feature.sectionId(), feature.sectionTitle(), feature.sectionOrder(),
+                    feature.name(), feature.displayOrder(),
+                    owned.stream().map(requirement -> Arrays.asList(
+                            requirement.id(), requirement.content(), requirement.displayOrder())).toList()))));
+        }
+        return hashes;
+    }
+
+    public record PullRequestInput(int sectionChars, int analysisChars, String analysisHash, String sourceHash) {
+    }
+
+    public static PullRequestInput pullRequestInput(String inputJson) {
+        FeatureMatchingRequest request = parseRequest(inputJson);
+        FeatureMatchingRequest.PullRequest pr = request.pullRequest();
+        FeatureMatchingRequest.PullRequest withoutAnalysis = new FeatureMatchingRequest.PullRequest(
+                pr.repositoryName(), pr.title(), pr.body(), null, null, pr.commitMessages(), pr.changedFiles());
+        return new PullRequestInput(json(request.sections()).length(),
+                json(pr).length() - json(withoutAnalysis).length(),
+                analysisHash(pr), sourceHash(pr));
+    }
+
+    public static String analysisHash(FeatureMatchingRequest.PullRequest pr) {
+        return Hashes.sha256Hex(json(pr));
+    }
+
+    public static String sourceHash(FeatureMatchingRequest.PullRequest pr) {
+        return Hashes.sha256Hex(json(Arrays.asList(pr.repositoryName(), pr.title(), pr.body(),
+                pr.commitMessages(), pr.changedFiles())));
     }
 
     public static String json(Object value) {
@@ -51,4 +82,21 @@ public final class FeatureMatchSnapshot {
             throw new IllegalStateException("대조 입력을 직렬화할 수 없습니다.", e);
         }
     }
+
+    public static FeatureMatchingRequest parseRequest(String value) {
+        try {
+            return JSON.readValue(value, FeatureMatchingRequest.class);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("대조 입력을 읽을 수 없습니다.", e);
+        }
+    }
+
+    public static Map<Long, String> parseFeatureHashes(String value) {
+        try {
+            return JSON.readValue(value, new TypeReference<>() {});
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("기능 스냅샷을 읽을 수 없습니다.", e);
+        }
+    }
+
 }

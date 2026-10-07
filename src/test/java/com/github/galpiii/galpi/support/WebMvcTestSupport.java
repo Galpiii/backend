@@ -13,6 +13,7 @@ import com.github.galpiii.galpi.domain.featurespec.service.FeatureReviewService;
 import com.github.galpiii.galpi.domain.featurespec.service.FeatureSpecService;
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchRunService;
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchQueryService;
+import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchChangeService;
 import com.github.galpiii.galpi.domain.featurematch.service.FeaturePrMatchService;
 import com.github.galpiii.galpi.domain.github.service.GithubConnectionService;
 import com.github.galpiii.galpi.domain.github.service.GithubInstallationService;
@@ -86,6 +87,8 @@ public abstract class WebMvcTestSupport {
     protected FeatureMatchRunService featureMatchRunService;
     @MockitoBean
     protected FeatureMatchQueryService featureMatchQueryService;
+    @MockitoBean
+    protected FeatureMatchChangeService featureMatchChangeService;
     @MockitoBean
     protected FeaturePrMatchService featurePrMatchService;
 }

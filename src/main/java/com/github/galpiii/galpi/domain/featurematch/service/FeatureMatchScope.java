@@ -6,12 +6,10 @@ import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.PrRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RepositoryRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RequirementRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RunRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.TargetRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.MatchRow;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchQueryRepository;
-import com.github.galpiii.galpi.domain.featurematch.support.FeatureMatchSnapshot;
+import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchCurrentStateRepository;
 import com.github.galpiii.galpi.domain.featurespec.repository.SpecDocumentRepository;
-import com.github.galpiii.galpi.domain.pullrequest.entity.PullRequestAnalysisStatus;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.ConflictException;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
@@ -20,15 +18,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
-/**
- * 결과 조회/수동 편집/워커가 같은 유효성 기준을 사용한다.
- * 소스 버전이나 무효화 이벤트가 없으므로 조회 시 해시 비교도 유지한다.
- * 이를 생략하면 기능 내용 수정이나 PR 재분석 후 이전 근거가 최신 결과처럼 노출될 수 있다.
- */
+/** 현재 표시 결과의 접근 범위와 기준 실행을 읽는다. 입력의 최신 여부는 변경 조회 서비스가 계산한다. */
 @Component
 @Slf4j
 @RequiredArgsConstructor
@@ -36,10 +28,11 @@ public class FeatureMatchScope {
 
     private final FeatureMatchQueryRepository queryRepository;
     private final SpecDocumentRepository documentRepository;
+    private final FeatureMatchCurrentStateRepository currentStateRepository;
 
     public record View(ProjectRow project, RunRow run, List<FeatureRow> features,
                        List<RequirementRow> requirements,
-                       List<PrRow> prs, List<TargetRow> targets,
+                       List<PrRow> prs,
                        List<MatchRow> matches, List<RepositoryRow> repositories) {
     }
 
@@ -66,49 +59,35 @@ public class FeatureMatchScope {
         if (lock && project.activeSpecDocumentId() != null) {
             documentRepository.lockById(project.activeSpecDocumentId());
         }
-        RunRow run = queryRepository.latest(projectId);
+        var current = currentStateRepository.findById(projectId).orElse(null);
+        RunRow run = current == null || current.getBaseRun() == null
+                ? queryRepository.latest(projectId) : queryRepository.run(current.getBaseRun().getId());
         if (run == null) {
             log.warn("[기능대조] 결과 없음 projectId={} userId={}", projectId, userId);
             throw new NotFoundException(ErrorCode.FEATURE_MATCH_RESULT_NOT_FOUND);
         }
-        switch (run.status()) {
-            case QUEUED, RUNNING -> {
-                log.debug("[기능대조] 진행 중 결과 조회 거절 projectId={} runId={}", projectId, run.id());
-                throw new ConflictException(ErrorCode.FEATURE_MATCH_RESULT_RUNNING);
+        if (current == null) {
+            switch (run.status()) {
+                case QUEUED, RUNNING -> {
+                    log.debug("[기능대조] 진행 중 결과 조회 거절 projectId={} runId={}", projectId, run.id());
+                    throw new ConflictException(ErrorCode.FEATURE_MATCH_RESULT_RUNNING);
+                }
+                case FAILED, CANCELLED -> {
+                    log.warn("[기능대조] 종료 상태 조회 거절 runId={} status={}", run.id(), run.status());
+                    throw new ConflictException(ErrorCode.FEATURE_MATCH_RESULT_UNAVAILABLE);
+                }
+                default -> {
+                }
             }
-            case FAILED, CANCELLED -> {
-                log.warn("[기능대조] 종료 상태 조회 거절 runId={} status={}", run.id(), run.status());
-                throw new ConflictException(ErrorCode.FEATURE_MATCH_RESULT_UNAVAILABLE);
-            }
-            default -> {
-            }
+        }
+        if (current == null || !Objects.equals(project.activeSpecDocumentId(), current.getSpecDocument().getId())) {
+            throw new NotFoundException(ErrorCode.FEATURE_MATCH_RESULT_NOT_FOUND);
         }
         List<FeatureRow> features = queryRepository.features(run.specDocumentId());
         List<RequirementRow> requirements = queryRepository.requirements(run.specDocumentId());
         List<PrRow> prs = queryRepository.pullRequests(projectId);
-        List<TargetRow> targets = queryRepository.targets(run.id());
-        if (!Objects.equals(project.activeSpecDocumentId(), run.specDocumentId())
-                || !run.featureSnapshotHash().equals(FeatureMatchSnapshot.featureHash(features, requirements))
-                || targets.size() != run.eligiblePrCount()) {
-            stale(projectId, run.id());
-        }
-        Map<Long, PrRow> byAnalysis = prs.stream().filter(pr -> pr.analysisId() != null)
-                .collect(Collectors.toMap(PrRow::analysisId, pr -> pr));
-        for (TargetRow target : targets) {
-            PrRow pr = byAnalysis.get(target.pullRequestAnalysisId());
-            if (!current(target, pr)) {
-                stale(projectId, run.id());
-            }
-        }
-        return new View(project, run, features, requirements, prs, targets,
-                queryRepository.matches(run.id(), run.specDocumentId()), queryRepository.repositories(projectId));
-    }
-
-    public boolean current(TargetRow target, PrRow pr) {
-        return pr != null && pr.analysisStatus() == PullRequestAnalysisStatus.COMPLETED
-                && Objects.equals(pr.headSha(), pr.analysisHeadSha())
-                && Objects.equals(target.analysisHeadSha(), pr.analysisHeadSha())
-                && target.analysisSnapshotHash().equals(FeatureMatchSnapshot.analysisHash(pr));
+        return new View(project, run, features, requirements, prs,
+                queryRepository.matches(run.specDocumentId()), queryRepository.repositories(projectId));
     }
 
     public void repositoryScope(View view, Long repositoryId) {
@@ -118,8 +97,4 @@ public class FeatureMatchScope {
         }
     }
 
-    private static void stale(long projectId, long runId) {
-        log.debug("[기능대조] 변경된 실행 기준 조회 거절 projectId={} runId={}", projectId, runId);
-        throw new ConflictException(ErrorCode.FEATURE_MATCH_RESULT_STALE);
-    }
 }

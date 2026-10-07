@@ -1,7 +1,9 @@
 package com.github.galpiii.galpi.domain.featurematch.repository;
 
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.CommitInputRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.Counts;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FeatureRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FileInputRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.FileRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.ProjectRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.PrRow;
@@ -10,6 +12,7 @@ import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.Require
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RequirementRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RunRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.TargetRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.TargetOutcomeRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.MatchRow;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRun;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchTargetStatus;
@@ -147,19 +150,18 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
             join PullRequestAnalysis analysis on analysis.pullRequest.id = pr.id
             where repository.project.id = :projectId and repository.unlinkedAt is null
               and (:repositoryId is null or repository.id = :repositoryId)
-              and exists (select target.id from FeatureMatchTarget target
-                  where target.featureMatchRun.id = :runId
-                    and target.pullRequestAnalysis.id = analysis.id and target.status = 'COMPLETED')
+              and exists (select current.pullRequestId from FeatureMatchCurrentPullRequest current
+                  where current.pullRequestId = pr.id and current.projectId = :projectId)
               and not exists (select match.id from FeaturePrMatch match
                   where match.pullRequest.id = pr.id and match.feature.specDocument.id = :documentId
-                    and (match.source = 'USER' or match.featureMatchRun.id = :runId))
+                    and match.source in ('USER','AI'))
               and (:query = '' or cast(pr.number as string) = :query
                   or locate(:query, lower(pr.title)) > 0
                   or locate(:query, lower(contributor.login)) > 0)
             order by pr.mergedAt desc, pr.id desc
             """)
     Page<PrRow> unmatched(
-            @Param("projectId") long projectId, @Param("runId") long runId,
+            @Param("projectId") long projectId,
             @Param("documentId") long documentId, @Param("repositoryId") Long repositoryId,
             @Param("query") String query, Pageable pageable);
 
@@ -176,30 +178,49 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
             """)
     List<FileRow> findFiles(@Param("prId") long prId, Limit limit);
 
+    @Query(value = """
+            SELECT selected.pull_request_id, selected.message
+            FROM (SELECT pr_commit.pull_request_id, pr_commit.message,
+                         row_number() OVER (PARTITION BY pr_commit.pull_request_id ORDER BY pr_commit.id) AS row_no
+                    FROM pull_request_commits pr_commit WHERE pr_commit.pull_request_id IN (:prIds)) selected
+            WHERE selected.row_no <= 100 ORDER BY selected.pull_request_id, selected.row_no
+            """, nativeQuery = true)
+    List<Object[]> findCommitInputs(@Param("prIds") List<Long> prIds);
+
+    @Query(value = """
+            SELECT selected.pull_request_id, selected.path, selected.change_status,
+                   selected.additions, selected.deletions
+            FROM (SELECT file.pull_request_id, file.path, file.change_status,
+                         file.additions, file.deletions,
+                         row_number() OVER (PARTITION BY file.pull_request_id ORDER BY file.id) AS row_no
+                    FROM pull_request_files file WHERE file.pull_request_id IN (:prIds)) selected
+            WHERE selected.row_no <= 300 ORDER BY selected.pull_request_id, selected.row_no
+            """, nativeQuery = true)
+    List<Object[]> findFileInputs(@Param("prIds") List<Long> prIds);
+
     @Query("""
             select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$MatchRow(
             match.id, match.feature.id, match.pullRequest.id, match.source,
             match.reason, match.user.id, match.createdAt)
             from FeaturePrMatch match
             where match.feature.specDocument.id = :documentId and match.pullRequest.repository.unlinkedAt is null
-            and (match.source = 'USER' or match.featureMatchRun.id = :runId)
             order by match.id
             """)
-    List<MatchRow> matches(@Param("runId") long runId, @Param("documentId") long documentId);
+    List<MatchRow> matches(@Param("documentId") long documentId);
 
     @Query("""
             select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$RequirementLinkRow(
             link.featurePrMatch.id, link.featureRequirement.id)
-            from FeaturePrMatchRequirement link where link.featurePrMatch.featureMatchRun.id = :runId
+            from FeaturePrMatchRequirement link where link.featurePrMatch.feature.specDocument.id = :documentId
             """)
-    List<RequirementLinkRow> requirementLinks(@Param("runId") long runId);
+    List<RequirementLinkRow> requirementLinks(@Param("documentId") long documentId);
 
     @Query("""
             select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$RunRow(
             run.id, run.project.id, run.specDocument.id, run.user.id, run.status,
             run.featureSnapshotHash, run.featureCount, run.eligiblePrCount,
             run.excludedFailedPrCount, run.excludedCancelledPrCount, run.failureCode,
-            run.startedAt, run.finishedAt, run.createdAt)
+            run.startedAt, run.finishedAt, run.createdAt, run.runType, run.baseRun.id, run.featureSnapshotJson)
             from FeatureMatchRun run where run.id = :id
             """)
     RunRow run(@Param("id") long id);
@@ -209,7 +230,7 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
             run.id, run.project.id, run.specDocument.id, run.user.id, run.status,
             run.featureSnapshotHash, run.featureCount, run.eligiblePrCount,
             run.excludedFailedPrCount, run.excludedCancelledPrCount, run.failureCode,
-            run.startedAt, run.finishedAt, run.createdAt)
+            run.startedAt, run.finishedAt, run.createdAt, run.runType, run.baseRun.id, run.featureSnapshotJson)
             from FeatureMatchRun run where run.project.id = :projectId order by run.id desc
             """)
     List<RunRow> findLatest(@Param("projectId") long projectId, Limit limit);
@@ -217,8 +238,8 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
     @Query("""
             select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$TargetRow(
             target.id, target.featureMatchRun.id, target.pullRequestAnalysis.id,
-            target.analysisHeadSha, target.analysisSnapshotHash, target.status, target.claimedBy,
-            target.attempts)
+            target.analysisHeadSha, target.analysisSnapshotHash, target.sourceSnapshotHash, target.status, target.claimedBy,
+            target.attempts, target.inputJson)
             from FeatureMatchTarget target where target.id = :id
             """)
     TargetRow target(@Param("id") long id);
@@ -226,11 +247,20 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
     @Query("""
             select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$TargetRow(
             target.id, target.featureMatchRun.id, target.pullRequestAnalysis.id,
-            target.analysisHeadSha, target.analysisSnapshotHash, target.status, target.claimedBy,
-            target.attempts)
+            target.analysisHeadSha, target.analysisSnapshotHash, target.sourceSnapshotHash, target.status, target.claimedBy,
+            target.attempts, target.inputJson)
             from FeatureMatchTarget target where target.featureMatchRun.id = :runId order by target.id
             """)
     List<TargetRow> targets(@Param("runId") long runId);
+
+    @Query("""
+            select new com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows$TargetOutcomeRow(
+            target.pullRequestAnalysis.pullRequest.id, target.status)
+            from FeatureMatchTarget target join target.featureMatchRun run
+            where run.project.id = :projectId and target.status in ('COMPLETED','FAILED','CANCELLED')
+            order by run.id desc, target.id desc
+            """)
+    List<TargetOutcomeRow> targetOutcomes(@Param("projectId") long projectId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select row.id from FeatureMatchRun row where row.id = :id")
@@ -268,6 +298,19 @@ public interface FeatureMatchQueryRepository extends Repository<FeatureMatchRun,
 
     default List<FileRow> files(long prId) {
         return findFiles(prId, Limit.of(300));
+    }
+
+    default List<CommitInputRow> commitInputs(List<Long> prIds) {
+        return findCommitInputs(prIds).stream()
+                .map(row -> new CommitInputRow(((Number) row[0]).longValue(), (String) row[1]))
+                .toList();
+    }
+
+    default List<FileInputRow> fileInputs(List<Long> prIds) {
+        return findFileInputs(prIds).stream()
+                .map(row -> new FileInputRow(((Number) row[0]).longValue(), (String) row[1],
+                        (String) row[2], ((Number) row[3]).intValue(), ((Number) row[4]).intValue()))
+                .toList();
     }
 
     @Query("""

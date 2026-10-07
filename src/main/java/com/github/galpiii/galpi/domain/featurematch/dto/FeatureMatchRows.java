@@ -3,6 +3,7 @@ package com.github.galpiii.galpi.domain.featurematch.dto;
 import com.github.galpiii.galpi.domain.collection.entity.DataCompleteness;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchFailureCode;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRunStatus;
+import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRunType;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchSource;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchTargetStatus;
 import com.github.galpiii.galpi.domain.featurespec.entity.FeatureReviewStatus;
@@ -24,12 +25,28 @@ public final class FeatureMatchRows {
                          FeatureMatchRunStatus status, String featureSnapshotHash, int featureCount,
                          int eligiblePrCount, int excludedFailedPrCount, int excludedCancelledPrCount,
                          FeatureMatchFailureCode failureCode, OffsetDateTime startedAt,
-                         OffsetDateTime finishedAt, OffsetDateTime createdAt) {
+                         OffsetDateTime finishedAt, OffsetDateTime createdAt,
+                         FeatureMatchRunType runType, Long baseRunId, String featureSnapshotJson) {
+        public RunRow(long id, long projectId, long specDocumentId, long userId,
+                      FeatureMatchRunStatus status, String featureSnapshotHash, int featureCount,
+                      int eligiblePrCount, int excludedFailedPrCount, int excludedCancelledPrCount,
+                      FeatureMatchFailureCode failureCode, OffsetDateTime startedAt,
+                      OffsetDateTime finishedAt, OffsetDateTime createdAt) {
+            this(id, projectId, specDocumentId, userId, status, featureSnapshotHash, featureCount,
+                    eligiblePrCount, excludedFailedPrCount, excludedCancelledPrCount, failureCode,
+                    startedAt, finishedAt, createdAt, FeatureMatchRunType.FULL, null, null);
+        }
     }
 
     public record TargetRow(long id, long featureMatchRunId, long pullRequestAnalysisId,
-                            String analysisHeadSha, String analysisSnapshotHash,
-                            FeatureMatchTargetStatus status, String claimedBy, int attempts) {
+                            String analysisHeadSha, String analysisSnapshotHash, String sourceSnapshotHash,
+                            FeatureMatchTargetStatus status, String claimedBy, int attempts, String inputJson) {
+        public TargetRow(long id, long featureMatchRunId, long pullRequestAnalysisId,
+                         String analysisHeadSha, String analysisSnapshotHash,
+                         FeatureMatchTargetStatus status, String claimedBy, int attempts) {
+            this(id, featureMatchRunId, pullRequestAnalysisId, analysisHeadSha,
+                    analysisSnapshotHash, null, status, claimedBy, attempts, null);
+        }
     }
 
     public record FeatureRow(long id, Long sectionId, String sectionTitle, Integer sectionOrder,
@@ -60,7 +77,17 @@ public final class FeatureMatchRows {
     public record FileRow(String path, String changeStatus, int additions, int deletions) {
     }
 
+    public record CommitInputRow(long pullRequestId, String message) {
+    }
+
+    public record FileInputRow(long pullRequestId, String path, String changeStatus,
+                               int additions, int deletions) {
+    }
+
     public record Counts(int pendingCount, int runningCount, int completedCount,
                          int failedCount, int cancelledCount) {
+    }
+
+    public record TargetOutcomeRow(long pullRequestId, FeatureMatchTargetStatus status) {
     }
 }

@@ -14,7 +14,9 @@ public record FeatureMatchDetailResponse(long featureMatchRunId, long featureId,
                                          String sectionTitle,
                                          Long repositoryScope, Integer sourcePageStart, Integer sourcePageEnd,
                                          List<Requirement> requirements, long relatedPullRequestCount,
-                                         List<RepositoryGroup> repositories) {
+                                         List<RepositoryGroup> repositories,
+                                         @Schema(description = "기능별이 아닌 프로젝트 전체 현재 결과의 최신 여부")
+                                         FeatureMatchChangesResponse.Freshness freshness) {
     @Schema(name = "FeatureMatchDetailRequirement")
     public record Requirement(long requirementId, String content, long relatedPullRequestCount) {
     }

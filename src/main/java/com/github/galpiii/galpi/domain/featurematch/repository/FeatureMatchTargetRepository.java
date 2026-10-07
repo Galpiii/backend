@@ -14,6 +14,15 @@ public interface FeatureMatchTargetRepository extends JpaRepository<FeatureMatch
 
     List<FeatureMatchTarget> findAllByFeatureMatchRunId(Long runId);
 
+    @Query("""
+            select target from FeatureMatchTarget target
+            join fetch target.pullRequestAnalysis analysis join fetch analysis.pullRequest
+            where target.featureMatchRun.project.id = :projectId and target.status = 'COMPLETED'
+              and target.inputJson is not null
+            order by target.id desc
+            """)
+    List<FeatureMatchTarget> completedByProject(@Param("projectId") long projectId);
+
     /**
      * analysis와 동일하게 잠긴 작업은 건너뛴다. 반드시 선점 트랜잭션 안에서 호출한다.
      */

@@ -65,6 +65,40 @@ class FeatureMatchInputAssemblerTest {
     }
 
     @Test
+    @DisplayName("전달되지 않은 커밋 뒷부분과 비밀 파일 변경은 입력 해시를 바꾸지 않는다")
+    void ignoredCollectedDataDoesNotChangeInputHash() {
+        PrRow pr = mock(PrRow.class);
+        when(pr.id()).thenReturn(10L);
+        FeatureMatchInputAssembler assembler = assembler(2000);
+        when(repository.commits(10)).thenReturn(List.of("a".repeat(600)));
+        when(repository.files(10)).thenReturn(List.of(new FileRow(".env", "ADDED", 1, 0)));
+        var before = FeatureMatchSnapshot.pullRequestInput(assembler.assemble(features, requirements, pr));
+
+        when(repository.commits(10)).thenReturn(List.of("a".repeat(500) + "다른 내용"));
+        when(repository.files(10)).thenReturn(List.of(new FileRow(".env.local", "MODIFIED", 2, 1)));
+        var after = FeatureMatchSnapshot.pullRequestInput(assembler.assemble(features, requirements, pr));
+
+        assertThat(after.analysisHash()).isEqualTo(before.analysisHash());
+        assertThat(after.sourceHash()).isEqualTo(before.sourceHash());
+    }
+
+    @Test
+    @DisplayName("재분석 실패로 요약이 비어도 이전 입력 예산으로 원본 정보를 비교한다")
+    void failedReanalysisKeepsOriginalInputBudget() {
+        PrRow pr = mock(PrRow.class);
+        when(pr.id()).thenReturn(10L);
+        when(pr.summary()).thenReturn("요약".repeat(150));
+        when(repository.commits(10)).thenReturn(List.of("커밋".repeat(200)));
+        FeatureMatchInputAssembler assembler = assembler(2000);
+        var previous = FeatureMatchSnapshot.pullRequestInput(assembler.assemble(features, requirements, pr));
+
+        when(pr.summary()).thenReturn(null);
+        var current = assembler.sourcePullRequest(pr, previous.sectionChars(), previous.analysisChars());
+
+        assertThat(FeatureMatchSnapshot.sourceHash(current)).isEqualTo(previous.sourceHash());
+    }
+
+    @Test
     @DisplayName("필수 기능 목록 자체가 너무 크면 HTTP 예외가 아닌 도메인 예외로 거부한다")
     void rejectsOversizedMandatoryFeatures() {
         List<RequirementRow> oversized = List.of(

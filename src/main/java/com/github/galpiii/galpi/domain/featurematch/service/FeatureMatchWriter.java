@@ -1,5 +1,6 @@
 package com.github.galpiii.galpi.domain.featurematch.service;
 
+import com.github.galpiii.galpi.ai.dto.FeatureMatchingRequest;
 import com.github.galpiii.galpi.ai.dto.FeatureMatchingResult;
 import com.github.galpiii.galpi.domain.collection.repository.PullRequestRepository;
 import com.github.galpiii.galpi.domain.consent.service.AiDataConsentService;
@@ -10,14 +11,22 @@ import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.Project
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.PrRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RequirementRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.RunRow;
-import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.TargetRow;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.MatchRow;
+import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchRows.TargetRow;
+import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchCurrentFeature;
+import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchCurrentPullRequest;
+import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchCurrentState;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchFailureCode;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRun;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRunStatus;
+import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRunType;
+import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchSource;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchTargetStatus;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeaturePrMatch;
 import com.github.galpiii.galpi.domain.featurematch.entity.FeaturePrMatchRequirement;
+import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchCurrentFeatureRepository;
+import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchCurrentPullRequestRepository;
+import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchCurrentStateRepository;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchQueryRepository;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchRunRepository;
 import com.github.galpiii.galpi.domain.featurematch.repository.FeatureMatchTargetRepository;
@@ -29,6 +38,7 @@ import com.github.galpiii.galpi.domain.featurematch.support.FeatureMatchSnapshot
 import com.github.galpiii.galpi.domain.featurespec.repository.FeatureRepository;
 import com.github.galpiii.galpi.domain.featurespec.repository.FeatureRequirementRepository;
 import com.github.galpiii.galpi.domain.featurespec.repository.SpecDocumentRepository;
+import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -36,18 +46,18 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
-/**
- * AI 네트워크 호출 전후에 짧은 트랜잭션을 분리하고 저장 직전 실행 기준을 재검증한다.
- */
+/** AI 네트워크 호출 전후에 짧은 트랜잭션을 분리하고 선점·권한·동의를 재검증한다. */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class FeatureMatchWriter {
 
     private final FeatureMatchQueryRepository queryRepository;
-    private final FeatureMatchScope scope;
     private final FeatureMatchInputAssembler assembler;
     private final FeatureMatchResultValidator validator;
     private final FeatureMatchProperties properties;
@@ -60,6 +70,10 @@ public class FeatureMatchWriter {
     private final FeatureRequirementRepository requirementRepository;
     private final PullRequestRepository pullRequestRepository;
     private final SpecDocumentRepository documentRepository;
+    private final ProjectRepository projectRepository;
+    private final FeatureMatchCurrentStateRepository currentStateRepository;
+    private final FeatureMatchCurrentFeatureRepository currentFeatureRepository;
+    private final FeatureMatchCurrentPullRequestRepository currentPrRepository;
 
     public record Prepared(String input) {
     }
@@ -83,7 +97,9 @@ public class FeatureMatchWriter {
             return null;
         }
         runRepository.findById(context.run().id()).ifPresent(FeatureMatchRun::start);
-        return new Prepared(assembler.assemble(context.features(), context.requirements(), context.pr()));
+        return new Prepared(context.target().inputJson() == null
+                ? assembler.assemble(context.features(), context.requirements(), context.pr())
+                : context.target().inputJson());
     }
 
     @Transactional
@@ -92,21 +108,45 @@ public class FeatureMatchWriter {
         if (context == null) {
             return;
         }
-        result = validator.validate(result, context.features(), context.requirements());
-        List<MatchRow> existing = queryRepository.matches(context.run().id(), context.run().specDocumentId());
+        FeatureMatchingRequest input = context.target().inputJson() == null ? null
+                : FeatureMatchSnapshot.parseRequest(context.target().inputJson());
+        result = input == null ? validator.validate(result, context.features(), context.requirements())
+                : validator.validate(result, input);
+        List<MatchRow> existing = queryRepository.matches(context.run().specDocumentId());
+        matchRepository.deleteAiByProjectAndPullRequestIds(context.run().projectId(), List.of(context.pr().id()));
         for (FeatureMatchingResult.Match match : result.matches()) {
-            if (existing.stream().anyMatch(m -> m.featureId() == match.featureId() && m.pullRequestId() == context.pr().id())) {
+            if (existing.stream().anyMatch(m -> m.source() == FeatureMatchSource.USER
+                    && m.featureId() == match.featureId() && m.pullRequestId() == context.pr().id())) {
                 continue;
-            } // 이전 실행에서 사용자가 직접 연결한 쌍은 AI가 덮어쓰지 않는다.
-            FeaturePrMatch saved = matchRepository.save(FeaturePrMatch.byAi(
-                    runRepository.getReferenceById(context.run().id()), targetRepository.getReferenceById(id),
+            }
+            if (!featureRepository.existsById(match.featureId())) {
+                continue;
+            }
+            FeaturePrMatch saved = matchRepository.save(FeaturePrMatch.currentAi(
                     featureRepository.getReferenceById(match.featureId()),
                     pullRequestRepository.getReferenceById(context.pr().id()), assembler.safe(match.reason(), null)));
             requirementMatchRepository.saveAll(match.requirementIds().stream()
+                    .filter(requirementRepository::existsById)
                     .map(requirementId -> FeaturePrMatchRequirement.of(saved,
                             requirementRepository.getReferenceById(requirementId)))
                     .toList());
         }
+        FeatureMatchSnapshot.PullRequestInput snapshot = context.target().inputJson() == null ? null
+                : FeatureMatchSnapshot.pullRequestInput(context.target().inputJson());
+        currentPrRepository.findById(context.pr().id()).ifPresentOrElse(
+                current -> {
+                    if (snapshot == null) {
+                        current.update(context.target().analysisSnapshotHash(), context.target().sourceSnapshotHash());
+                    } else {
+                        current.update(snapshot.analysisHash(), snapshot.sourceHash(),
+                                snapshot.sectionChars(), snapshot.analysisChars());
+                    }
+                },
+                () -> currentPrRepository.save(snapshot == null
+                        ? new FeatureMatchCurrentPullRequest(context.run().projectId(), context.pr().id(),
+                        context.target().analysisSnapshotHash(), context.target().sourceSnapshotHash())
+                        : new FeatureMatchCurrentPullRequest(context.run().projectId(), context.pr().id(),
+                        snapshot.analysisHash(), snapshot.sourceHash(), snapshot.sectionChars(), snapshot.analysisChars())));
         finishTarget(id, token, FeatureMatchTargetStatus.COMPLETED, null, null);
         aggregate(context.run().id());
     }
@@ -133,7 +173,7 @@ public class FeatureMatchWriter {
     }
 
     /**
-     * 모든 저장/전송 직전에 권한·동의·스냅샷·선점 토큰을 다시 확인한다.
+     * 모든 저장/전송 직전에 권한·동의·선점 토큰을 다시 확인한다.
      */
     private Context context(long id, String token) {
         TargetRow initial = queryRepository.target(id);
@@ -167,21 +207,14 @@ public class FeatureMatchWriter {
         if (!consent.status(run.userId()).agreed()) {
             return cancel(run, FeatureMatchFailureCode.CONSENT_REVOKED);
         }
-        if (!Objects.equals(project.activeSpecDocumentId(), run.specDocumentId())) {
-            return cancel(run, FeatureMatchFailureCode.SOURCE_CHANGED);
-        }
         List<FeatureRow> features = queryRepository.features(run.specDocumentId());
         List<RequirementRow> requirements = queryRepository.requirements(run.specDocumentId());
-        if (!run.featureSnapshotHash().equals(FeatureMatchSnapshot.featureHash(features, requirements))
-                || queryRepository.targetCount(run.id()) != run.eligiblePrCount()) {
-            return cancel(run, FeatureMatchFailureCode.SOURCE_CHANGED);
-        }
-        // 요약 완료와 결과 저장이 같은 트랜잭션에서 경쟁하지 않도록 요약 행도 잠근다.
-        queryRepository.lockAnalysis(target.pullRequestAnalysisId());
         PrRow pr = queryRepository.pullRequestForAnalysis(
                 target.pullRequestAnalysisId(), run.projectId());
-        if (!scope.current(target, pr)) {
-            return cancel(run, FeatureMatchFailureCode.SOURCE_CHANGED);
+        if (pr == null) {
+            finishTarget(id, token, FeatureMatchTargetStatus.CANCELLED, FeatureMatchFailureCode.SOURCE_CHANGED, null);
+            aggregate(run.id());
+            return null;
         }
         return new Context(run, target, features, requirements, pr);
     }
@@ -189,7 +222,15 @@ public class FeatureMatchWriter {
     private Context cancel(RunRow run, FeatureMatchFailureCode reason) {
         log.info("[기능대조] 실행 취소 projectId={} runId={} reason={}", run.projectId(), run.id(), reason);
         targetRepository.findAllByFeatureMatchRunId(run.id()).forEach(target -> target.cancel(reason));
-        runRepository.findById(run.id()).ifPresent(entity -> entity.finish(FeatureMatchRunStatus.CANCELLED, reason));
+        int completed = queryRepository.counts(run.id()).completedCount();
+        runRepository.findById(run.id()).ifPresent(entity -> {
+            entity.finish(completed > 0 ? FeatureMatchRunStatus.PARTIALLY_COMPLETED
+                    : FeatureMatchRunStatus.CANCELLED, reason);
+            if (completed > 0 && entity.getRunType() == FeatureMatchRunType.FULL
+                    && reason != FeatureMatchFailureCode.PROJECT_DELETED) {
+                publishFull(entity, false);
+            }
+        });
         return null;
     }
 
@@ -215,9 +256,45 @@ public class FeatureMatchWriter {
         runRepository.findById(runId).ifPresent(run -> {
             if (run.isInFlight()) {
                 run.finish(status, failureCode);
+                if (run.getRunType() == FeatureMatchRunType.FULL && context.completedCount() > 0) {
+                    publishFull(run, context.failedCount() + context.cancelledCount() == 0);
+                }
                 log.info("[기능대조] 실행 종료 runId={} status={} failureCode={}", runId, status, failureCode);
             }
         });
+    }
+
+    private void publishFull(FeatureMatchRun run, boolean complete) {
+        long projectId = run.getProject().getId();
+        Set<Long> linkedPrIds = queryRepository.pullRequests(projectId).stream()
+                .map(PrRow::id).collect(Collectors.toSet());
+        List<Long> removedPrIds = currentPrRepository.findAllByProjectId(projectId).stream()
+                .map(FeatureMatchCurrentPullRequest::getPullRequestId)
+                .filter(id -> !linkedPrIds.contains(id)).toList();
+        if (!removedPrIds.isEmpty()) {
+            matchRepository.deleteAiByProjectAndPullRequestIds(projectId, removedPrIds);
+            currentPrRepository.deleteAllById(removedPrIds);
+        }
+        FeatureMatchCurrentState current = currentStateRepository.findById(run.getProject().getId()).orElse(null);
+        if (current == null) {
+            current = currentStateRepository.save(new FeatureMatchCurrentState(
+                    projectRepository.getReferenceById(run.getProject().getId()), run.getSpecDocument(),
+                    run, run.getFeatureSnapshotHash()));
+            complete = true;
+        } else {
+            current.update(run.getSpecDocument(), run,
+                    complete ? run.getFeatureSnapshotHash() : current.getFeatureSnapshotHash());
+        }
+        currentStateRepository.flush();
+        if (complete && run.getFeatureSnapshotJson() != null) {
+            currentFeatureRepository.deleteAllByProjectId(run.getProject().getId());
+            currentFeatureRepository.flush();
+            Map<Long, String> hashes = FeatureMatchSnapshot.parseFeatureHashes(run.getFeatureSnapshotJson());
+            currentFeatureRepository.saveAll(hashes.entrySet().stream()
+                    .map(entry -> new FeatureMatchCurrentFeature(run.getProject().getId(),
+                            entry.getKey(), entry.getValue())).toList());
+        }
+        runRepository.deleteAll(runRepository.findAllByProjectIdAndIdNot(run.getProject().getId(), run.getId()));
     }
 
     private void finishTarget(long id, String token, FeatureMatchTargetStatus status,

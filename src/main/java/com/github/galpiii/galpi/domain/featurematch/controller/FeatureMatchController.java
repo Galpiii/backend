@@ -4,14 +4,17 @@ import com.github.galpiii.galpi.domain.auth.jwt.AuthPrincipal;
 import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFilter;
 import com.github.galpiii.galpi.domain.featurematch.dto.request.FeaturePrMatchesCreateRequest;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchDetailResponse;
+import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchChangesResponse;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchResultsResponse;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchRunCreatedResponse;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchRunStatusResponse;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeaturePrMatchesCreatedResponse;
+import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRunStatus;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.UnmatchedPullRequestListResponse;
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchQueryService;
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchRunService;
 import com.github.galpiii.galpi.domain.featurematch.service.FeaturePrMatchService;
+import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchChangeService;
 import com.github.galpiii.galpi.global.response.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +35,7 @@ public class FeatureMatchController implements FeatureMatchApi {
     private final FeatureMatchRunService runs;
     private final FeatureMatchQueryService queries;
     private final FeaturePrMatchService matches;
+    private final FeatureMatchChangeService changes;
 
     @Override
     @PostMapping("/projects/{projectId}/feature-match-runs")
@@ -39,6 +43,15 @@ public class FeatureMatchController implements FeatureMatchApi {
             @AuthenticationPrincipal AuthPrincipal principal,
             @PathVariable Long projectId) {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(runs.create(projectId, principal.userId())));
+    }
+
+    @Override
+    @PostMapping("/projects/{projectId}/feature-match-runs/partial")
+    public ResponseEntity<ApiResponse<FeatureMatchRunCreatedResponse>> partial(
+            @AuthenticationPrincipal AuthPrincipal principal, @PathVariable Long projectId) {
+        FeatureMatchRunCreatedResponse created = runs.createPartial(projectId, principal.userId());
+        return ResponseEntity.status(created.status() == FeatureMatchRunStatus.COMPLETED
+                ? HttpStatus.OK : HttpStatus.ACCEPTED).body(ApiResponse.success(created));
     }
 
     @Override
@@ -66,6 +79,13 @@ public class FeatureMatchController implements FeatureMatchApi {
             @RequestParam(name = "q", required = false) String query,
             @RequestParam(required = false) FeatureMatchFilter filter) {
         return ResponseEntity.ok(ApiResponse.success(queries.results(projectId, principal.userId(), repositoryId, query, filter)));
+    }
+
+    @Override
+    @GetMapping("/projects/{projectId}/feature-match-results/changes")
+    public ResponseEntity<ApiResponse<FeatureMatchChangesResponse>> changes(
+            @AuthenticationPrincipal AuthPrincipal principal, @PathVariable Long projectId) {
+        return ResponseEntity.ok(ApiResponse.success(changes.get(projectId, principal.userId())));
     }
 
     @Override

@@ -80,3 +80,36 @@ App 설정은 `Settings → Developer settings → GitHub Apps → {App}`에서 
 | `PR_SUMMARY_MAX_INPUT_CHARS` | 제목·본문·커밋·파일 목록·diff를 합친 최종 LLM 입력 상한. 기본 90000 |
 | `PR_SUMMARY_MAX_FILE_PAGES` | 요약 입력을 만들 때 받아 올 변경 파일 페이지 수(페이지당 100개). 기본 2. 수집(`COLLECTION_MAX_PR_FILE_PAGES`)과 나눈 이유는 뒤쪽 페이지가 입력 상한에서 어차피 잘리기 때문이다 |
 | `TASK_SCHEDULING_POOL_SIZE` | `@Scheduled` 워커 수. 기본 3(분석 워커·PR 요약 워커·토큰 폐기 배치) |
+
+## 기능대조 V18 배포
+
+V18은 V17의 진행 중 기능대조 실행을 이어받지 않는다. **V17과 V18의 롤링 배포는 지원하지 않는다.**
+V18 적용 뒤 V17 인스턴스가 실행을 생성하거나 AI 연결을 저장하면 새 스키마와 충돌한다.
+
+1. 외부 요청에서 새 기능대조 실행을 막되, V17 워커는 계속 실행해 이미 시작된 작업을 마치게 한다.
+2. 아래 조회 결과가 비었는지 확인한 뒤 V17 인스턴스를 모두 중지한다. 중지 후 한 번 더 확인한다.
+3. V18을 적용하고 V18 인스턴스를 시작한 뒤 새 실행 요청을 다시 허용한다. V18은 실행 테이블을 잠그고
+   같은 조건을 재검사한다. 진행 중 실행이 남아 있으면 자동 취소하지 않고 마이그레이션을 실패시킨다.
+
+```sql
+SELECT id, project_id, status FROM feature_match_runs
+WHERE status IN ('QUEUED', 'RUNNING') ORDER BY id;
+```
+
+작업이 멈춰 자연 종료할 수 없다면, **V17 인스턴스를 모두 중지한 후** 운영자가 대상 실행 ID와
+프로젝트를 확인하고 백업한 다음, 다음 SQL을 실행 ID 한 건씩 트랜잭션으로 적용한다. `:run_id`는 확인한
+실행 ID를 SQL 클라이언트의 파라미터로 바인딩한다. 첫 조회가 한 행을 반환하지 않으면 이후 문장을 실행하지 않는다.
+
+```sql
+BEGIN;
+SELECT id, project_id, status FROM feature_match_runs
+WHERE id = :run_id AND status IN ('QUEUED', 'RUNNING') FOR UPDATE;
+UPDATE feature_match_targets
+SET status = 'CANCELLED', claimed_by = NULL, claimed_at = NULL,
+    next_attempt_at = NULL, finished_at = now(), updated_at = now()
+WHERE feature_match_run_id = :run_id AND status IN ('PENDING', 'RUNNING');
+UPDATE feature_match_runs
+SET status = 'CANCELLED', finished_at = now(), updated_at = now()
+WHERE id = :run_id AND status IN ('QUEUED', 'RUNNING');
+COMMIT;
+```

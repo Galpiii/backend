@@ -112,7 +112,7 @@ public enum ErrorCode {
 
     // Feature matching
     FEATURE_MATCH_RUN_NOT_FOUND("FEATURE-MATCH-001", HttpStatus.NOT_FOUND, "기능대조 작업을 찾을 수 없습니다."),
-    FEATURE_MATCH_PR_NOT_READY("FEATURE-MATCH-002", HttpStatus.CONFLICT, "PR 수집과 분석이 끝난 뒤 대조할 수 있습니다."),
+    FEATURE_MATCH_PR_NOT_READY("FEATURE-MATCH-002", HttpStatus.CONFLICT, "PR 수집·분석이 완료되어야 대조할 수 있습니다. 실패한 PR은 분석을 재시도해 주세요."),
     FEATURE_MATCH_ALREADY_RUNNING("FEATURE-MATCH-003", HttpStatus.CONFLICT, "기능대조가 이미 진행 중입니다."),
     FEATURE_MATCH_NO_TARGET("FEATURE-MATCH-004", HttpStatus.CONFLICT, "대조할 기능 또는 분석 완료 PR이 없습니다."),
     FEATURE_MATCH_RESULT_RUNNING("FEATURE-MATCH-005", HttpStatus.CONFLICT, "기능대조가 끝난 뒤 결과를 조회할 수 있습니다."),
@@ -122,6 +122,8 @@ public enum ErrorCode {
     FEATURE_MATCH_NOT_FOUND("FEATURE-MATCH-009", HttpStatus.NOT_FOUND, "기능과 PR의 연결을 찾을 수 없습니다."),
     FEATURE_MATCH_RESULT_STALE("FEATURE-MATCH-010", HttpStatus.CONFLICT, "대조 기준이 변경되었습니다. 기능대조를 다시 실행해 주세요."),
     FEATURE_MATCH_INPUT_TOO_LARGE("FEATURE-MATCH-011", HttpStatus.BAD_REQUEST, "기능 목록이 대조 입력 상한을 초과했습니다."),
+    FEATURE_MATCH_NO_CHANGES("FEATURE-MATCH-012", HttpStatus.CONFLICT, "재대조할 변경사항이 없습니다."),
+    FEATURE_MATCH_FULL_REQUIRED("FEATURE-MATCH-013", HttpStatus.CONFLICT, "기능명세 변경으로 전체 재대조가 필요합니다."),
 
     // Feature Spec File
     FEATURE_SPEC_FILE_EMPTY("FEATURE-SPEC-FILE-001", HttpStatus.BAD_REQUEST, "업로드된 파일이 비어 있습니다."),

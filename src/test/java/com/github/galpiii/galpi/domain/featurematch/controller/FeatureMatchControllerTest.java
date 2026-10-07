@@ -5,6 +5,8 @@ import com.github.galpiii.galpi.domain.featurematch.dto.FeatureMatchFilter;
 import com.github.galpiii.galpi.domain.featurematch.dto.request.FeaturePrMatchesCreateRequest;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchRunCreatedResponse;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchRunStatusResponse;
+import com.github.galpiii.galpi.domain.featurematch.dto.response.FeatureMatchChangesResponse;
+import com.github.galpiii.galpi.domain.featurematch.entity.FeatureMatchRunType;
 import com.github.galpiii.galpi.global.error.exception.NotFoundException;
 import org.junit.jupiter.params.provider.EnumSource;
 import com.github.galpiii.galpi.domain.featurematch.dto.response.FeaturePrMatchesCreatedResponse;
@@ -34,6 +36,50 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class FeatureMatchControllerTest extends WebMvcTestSupport {
+
+    @Test
+    @DisplayName("변경 확인은 현재 저장된 대조 상태를 반환한다")
+    void returnsChanges() throws Exception {
+        given(featureMatchChangeService.get(3L, 7L)).willReturn(new FeatureMatchChangesResponse(
+                FeatureMatchChangesResponse.Freshness.STALE, false,
+                List.of(new FeatureMatchChangesResponse.ChangedPullRequest(15, 38, "대조 수정")),
+                List.of(), List.of(), List.of(), 1, 0,
+                List.of(FeatureMatchChangesResponse.StaleReason.PULL_REQUEST_CHANGED),
+                List.of(FeatureMatchChangesResponse.RerunBlockReason.PR_REANALYSIS_REQUIRED)));
+        mockMvc.perform(get("/projects/3/feature-match-results/changes").header("Authorization", bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.freshness").value("STALE"))
+                .andExpect(jsonPath("$.data.changedPullRequestCount").value(1))
+                .andExpect(jsonPath("$.data.changedPullRequests[0].pullRequestId").value(15))
+                .andExpect(jsonPath("$.data.rerunBlockReasons[0]").value("PR_REANALYSIS_REQUIRED"))
+                .andExpect(jsonPath("$.data.analysisRetryRequiredPullRequests").doesNotExist());
+        verify(featureMatchChangeService).get(3L, 7L);
+    }
+
+    @Test
+    @DisplayName("부분 대조 요청은 실행 유형과 기준 실행을 반환한다")
+    void createsPartialRun() throws Exception {
+        given(featureMatchRunService.createPartial(3L, 7L)).willReturn(
+                new FeatureMatchRunCreatedResponse(101, FeatureMatchRunStatus.QUEUED,
+                        10, 2, 0, 1, 0, 0, OffsetDateTime.now(), FeatureMatchRunType.PARTIAL, 100L));
+        mockMvc.perform(post("/projects/3/feature-match-runs/partial").header("Authorization", bearer()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.runType").value("PARTIAL"))
+                .andExpect(jsonPath("$.data.baseRunId").value(100));
+        verify(featureMatchRunService).createPartial(3L, 7L);
+    }
+
+    @Test
+    @DisplayName("기능 삭제만 처리한 부분 실행은 즉시 완료를 반환한다")
+    void returnsCompletedDeletionOnlyRun() throws Exception {
+        given(featureMatchRunService.createPartial(3L, 7L)).willReturn(
+                new FeatureMatchRunCreatedResponse(102, FeatureMatchRunStatus.COMPLETED,
+                        10, 1, 0, 0, 0, 0, OffsetDateTime.now(), FeatureMatchRunType.PARTIAL, 100L));
+        mockMvc.perform(post("/projects/3/feature-match-runs/partial").header("Authorization", bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.eligiblePullRequestCount").value(0));
+    }
 
     @Test
     @DisplayName("최신 실행 조회는 인증이 필요하다")

@@ -17,7 +17,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * AI 연결은 실행에 속하고, 사용자 연결은 재실행과 무관하게 유지한다.
+ * AI 연결은 현재 표시 결과로 유지하고, 사용자 연결은 재실행과 무관하게 유지한다.
  */
 @Entity
 @Getter
@@ -63,9 +63,8 @@ public class FeaturePrMatch extends BaseEntity {
         this.user = user;
     }
 
-    public static FeaturePrMatch byAi(FeatureMatchRun run, FeatureMatchTarget target, Feature feature,
-                                      PullRequest pullRequest, String reason) {
-        return new FeaturePrMatch(run, target, feature, pullRequest, FeatureMatchSource.AI, reason, null);
+    public static FeaturePrMatch currentAi(Feature feature, PullRequest pullRequest, String reason) {
+        return new FeaturePrMatch(null, null, feature, pullRequest, FeatureMatchSource.AI, reason, null);
     }
 
     public static FeaturePrMatch byUser(Feature feature, PullRequest pullRequest, User user) {
