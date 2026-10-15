@@ -40,9 +40,9 @@ public class FeatureSpecService {
             Long userId,
             MultipartFile file
     ) {
-        verifyProjectOwner(projectId, userId);
-        verifyNoRegisteredSpecDocument(projectId);
-        verifyExtractionCapacity(projectId);
+        verifyProjectOwner(projectId, userId);  // 소유자 검증
+        verifyNoRegisteredSpecDocument(projectId);  // 이미 올린 명세서가 있는지
+        verifyExtractionCapacity(projectId);    // 분석 대기열 꽉 찼는지
 
         ValidatedFeatureSpec validatedFeatureSpec = featureSpecFileValidator.validate(file);
 
@@ -54,8 +54,7 @@ public class FeatureSpecService {
                 ErrorCode.FEATURE_SPEC_EXTRACTION_BUSY
         );
 
-        // 위저드를 ② 저장소 연결 단계로 넘긴다. 제출이 거부되면 접수 자체를 되돌리는데
-        // 단계 전진은 되돌릴 수단이 없으므로, 제출이 성공한 뒤에만 옮긴다.
+        // 위저드를 ② 저장소 연결 단계로 넘긴다.
         specDocumentWriter.attachToProject(projectId, savedSpecDocument.getId());
 
         log.info(
@@ -181,9 +180,7 @@ public class FeatureSpecService {
         }
     }
 
-    // 제출이 거부되면 비동기 메서드가 실행되지 않아 임시 파일도 접수한 행도 정리할 주체가 없다.
-    // 분석을 시작조차 못 했으므로 접수 자체를 되돌린다.
-    // 거부 시 안내가 업로드와 교체에서 다르다. 교체는 기존 문서를 이미 지운 뒤라 되돌릴 원본이 없다.
+    // 기능명세서 분석 제출
     private void submitExtraction(Long specDocumentId, File tempFile, ErrorCode rejectedError) {
         try {
             featureExtractionService.extract(specDocumentId, tempFile);
@@ -232,7 +229,7 @@ public class FeatureSpecService {
         }
     }
 
-    // 어차피 거절할 요청에 임시 파일 쓰기와 PDF 파싱 비용을 들이지 않는다.
+    // 분석 대기열 확인
     private void verifyExtractionCapacity(Long projectId) {
         if (featureExtractionService.isBusy()) {
             log.warn("[기능명세서] 분석 큐가 가득 차 요청을 거절합니다. projectId: {}", projectId);
