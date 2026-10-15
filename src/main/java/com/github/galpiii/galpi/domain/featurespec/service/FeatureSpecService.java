@@ -46,13 +46,19 @@ public class FeatureSpecService {
 
         ValidatedFeatureSpec validatedFeatureSpec = featureSpecFileValidator.validate(file);
 
-        SpecDocument savedSpecDocument = saveOrDeleteTempFile(projectId, userId, validatedFeatureSpec);
-
-        submitExtraction(
-                savedSpecDocument.getId(),
-                validatedFeatureSpec.tempFile(),
-                ErrorCode.FEATURE_SPEC_EXTRACTION_BUSY
-        );
+        // 제출에 성공하면 임시 파일은 분석 작업이 지운다. 그 전에 실패하면 여기서 지운다.
+        SpecDocument savedSpecDocument;
+        try {
+            savedSpecDocument = specDocumentWriter.save(projectId, userId, validatedFeatureSpec.fileName());
+            submitExtraction(
+                    savedSpecDocument.getId(),
+                    validatedFeatureSpec.tempFile(),
+                    ErrorCode.FEATURE_SPEC_EXTRACTION_BUSY
+            );
+        } catch (RuntimeException e) {
+            tempFileStore.delete(validatedFeatureSpec.tempFile());
+            throw e;
+        }
 
         // 위저드를 ② 저장소 연결 단계로 넘긴다.
         specDocumentWriter.attachToProject(projectId, savedSpecDocument.getId());
@@ -83,16 +89,22 @@ public class FeatureSpecService {
         verifyExtractionCapacity(projectId);
 
         ValidatedFeatureSpec validatedFeatureSpec = featureSpecFileValidator.validate(file);
-        verifyExtractionCapacityBeforeDeleting(projectId, validatedFeatureSpec);
 
-        SpecDocument savedSpecDocument =
-                replaceOrDeleteTempFile(projectId, userId, current.getId(), validatedFeatureSpec);
-
-        submitExtraction(
-                savedSpecDocument.getId(),
-                validatedFeatureSpec.tempFile(),
-                ErrorCode.FEATURE_SPEC_REPLACE_BUSY
-        );
+        // 제출에 성공하면 임시 파일은 분석 작업이 지운다. 그 전에 실패하면 여기서 지운다.
+        SpecDocument savedSpecDocument;
+        try {
+            verifyExtractionCapacity(projectId);
+            savedSpecDocument = specDocumentWriter.replace(
+                    projectId, userId, current.getId(), validatedFeatureSpec.fileName());
+            submitExtraction(
+                    savedSpecDocument.getId(),
+                    validatedFeatureSpec.tempFile(),
+                    ErrorCode.FEATURE_SPEC_REPLACE_BUSY
+            );
+        } catch (RuntimeException e) {
+            tempFileStore.delete(validatedFeatureSpec.tempFile());
+            throw e;
+        }
 
         log.info(
                 "[기능명세서 교체] 교체 완료. specDocumentId: {}, 이전 specDocumentId: {}, projectId: {}, userId: {}",
@@ -140,46 +152,6 @@ public class FeatureSpecService {
         return current;
     }
 
-    private void verifyExtractionCapacityBeforeDeleting(
-            Long projectId,
-            ValidatedFeatureSpec validatedFeatureSpec
-    ) {
-        try {
-            verifyExtractionCapacity(projectId);
-        } catch (RuntimeException e) {
-            tempFileStore.delete(validatedFeatureSpec.tempFile());
-            throw e;
-        }
-    }
-
-    private SpecDocument replaceOrDeleteTempFile(
-            Long projectId,
-            Long userId,
-            Long currentSpecDocumentId,
-            ValidatedFeatureSpec validatedFeatureSpec
-    ) {
-        try {
-            return specDocumentWriter.replace(
-                    projectId, userId, currentSpecDocumentId, validatedFeatureSpec.fileName());
-        } catch (RuntimeException e) {
-            tempFileStore.delete(validatedFeatureSpec.tempFile());
-            throw e;
-        }
-    }
-
-    private SpecDocument saveOrDeleteTempFile(
-            Long projectId,
-            Long userId,
-            ValidatedFeatureSpec validatedFeatureSpec
-    ) {
-        try {
-            return specDocumentWriter.save(projectId, userId, validatedFeatureSpec.fileName());
-        } catch (RuntimeException e) {
-            tempFileStore.delete(validatedFeatureSpec.tempFile());
-            throw e;
-        }
-    }
-
     // 기능명세서 분석 제출
     private void submitExtraction(Long specDocumentId, File tempFile, ErrorCode rejectedError) {
         try {
@@ -191,7 +163,6 @@ public class FeatureSpecService {
                     e
             );
             specDocumentWriter.delete(specDocumentId);
-            tempFileStore.delete(tempFile);
 
             throw new GlobalException(rejectedError);
         }
@@ -215,9 +186,6 @@ public class FeatureSpecService {
     }
 
     // 프로젝트 존재 및 소유자 검증
-    //
-    // 소유자 확인과 삭제 여부를 조회 조건에 함께 넣는다. 남의 프로젝트, 없는 프로젝트,
-    // 삭제된 프로젝트가 모두 같은 404로 나가야 프로젝트 id의 존재 여부가 새지 않는다.
     private void verifyProjectOwner(Long projectId, Long userId) {
         if (projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(projectId, userId).isEmpty()) {
             log.warn(
