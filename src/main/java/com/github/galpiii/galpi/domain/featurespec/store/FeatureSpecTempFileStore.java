@@ -1,4 +1,4 @@
-package com.github.galpiii.galpi.domain.featurespec.validator;
+package com.github.galpiii.galpi.domain.featurespec.store;
 
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.GlobalException;

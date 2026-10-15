@@ -1,5 +1,6 @@
 package com.github.galpiii.galpi.domain.featurespec.validator;
 
+import com.github.galpiii.galpi.domain.featurespec.store.FeatureSpecTempFileStore;
 import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileValidator.ValidatedFeatureSpec;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.BadRequestException;

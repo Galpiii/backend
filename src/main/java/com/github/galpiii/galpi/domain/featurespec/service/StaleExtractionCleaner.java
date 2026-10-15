@@ -2,7 +2,7 @@ package com.github.galpiii.galpi.domain.featurespec.service;
 
 import com.github.galpiii.galpi.ai.config.OpenAiProperties;
 import com.github.galpiii.galpi.domain.featurespec.config.FeatureExtractionProperties;
-import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecTempFileStore;
+import com.github.galpiii.galpi.domain.featurespec.store.FeatureSpecTempFileStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;

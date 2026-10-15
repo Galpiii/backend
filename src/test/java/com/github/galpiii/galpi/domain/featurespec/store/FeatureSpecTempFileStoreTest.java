@@ -1,4 +1,4 @@
-package com.github.galpiii.galpi.domain.featurespec.validator;
+package com.github.galpiii.galpi.domain.featurespec.store;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
