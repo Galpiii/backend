@@ -64,7 +64,7 @@ class FeatureSpecFileValidatorTest {
     }
 
     private static long tempFileCount() {
-        File[] files = new File(System.getProperty("java.io.tmpdir"))
+        File[] files = new File(System.getProperty("java.io.tmpdir"), "galpi-feature-spec")
                 .listFiles((dir, name) -> name.startsWith("feature-spec-") && name.endsWith(".pdf"));
 
         return files == null ? 0 : files.length;
