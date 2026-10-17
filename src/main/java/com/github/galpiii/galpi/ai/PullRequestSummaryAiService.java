@@ -75,7 +75,7 @@ public class PullRequestSummaryAiService {
      * @throws PullRequestSummaryAiException              호출이 재시도로도 풀리지 않았을 때
      */
     public PullRequestSummaryResult summarize(String input) {
-        Instant deadline = Instant.now().plus(properties.summaryBudget());
+        Instant deadline = Instant.now().plus(properties.summary().budget());
 
         PullRequestSummaryResult result = retries.execute(OPERATION, deadline, () -> {
             Response response;
@@ -99,7 +99,7 @@ public class PullRequestSummaryAiService {
 
     /** 요약에 쓴 모델. 어떤 모델이 만든 결과인지 행에 남긴다. */
     public String model() {
-        return properties.summaryModel();
+        return properties.summary().model();
     }
 
     /**
@@ -112,17 +112,17 @@ public class PullRequestSummaryAiService {
      */
     private RequestOptions callOptions() {
         return RequestOptions.builder()
-                .timeout(properties.summaryBudget())
+                .timeout(properties.summary().budget())
                 .build();
     }
 
     private ResponseCreateParams responseCreateParams(String input) {
         return ResponseCreateParams.builder()
-                .model(properties.summaryModel())
+                .model(properties.summary().model())
                 .instructions(prompt.instructions())
                 // 명세서 추출용 상한(기본 128,000)을 그대로 쓰면 폭주한 응답 하나가 요약
                 // 수백 건 값을 태운다. gpt-5 계열은 reasoning 토큰이 출력에 과금된다.
-                .maxOutputTokens(properties.summaryMaxOutputTokens())
+                .maxOutputTokens(properties.summary().maxOutputTokens())
                 .store(false)
                 .text(ResponseTextConfig.builder()
                         .format(prompt.schemaConfig())

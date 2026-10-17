@@ -1,5 +1,6 @@
 package com.github.galpiii.galpi.domain.featurespec.validator;
 
+import com.github.galpiii.galpi.domain.featurespec.store.FeatureSpecTempFileStore;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.BadRequestException;
 import com.github.galpiii.galpi.global.error.exception.GlobalException;
@@ -23,7 +24,6 @@ import java.nio.file.Files;
 @RequiredArgsConstructor
 public class FeatureSpecFileValidator {
 
-    private static final long MAX_FILE_SIZE = 20L * 1024 * 1024;
     private static final int MAX_FILE_NAME_LENGTH = 255;
     private static final int MIN_PAGE_COUNT = 1;
     private static final int MAX_PAGE_COUNT = 100;
@@ -45,7 +45,8 @@ public class FeatureSpecFileValidator {
         return new ValidatedFeatureSpec(fileName, tempFile);
     }
 
-    // 파일 존재 여부, 파일명, 확장자, 크기, Content-Type 검증
+    // 파일 존재 여부, 파일명, 확장자, Content-Type 검증
+    // 크기 상한(20MB)은 spring.servlet.multipart.max-file-size가 컨트롤러 도달 전에 막는다.
     private String validateBasicFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new BadRequestException(ErrorCode.FEATURE_SPEC_FILE_EMPTY);
@@ -71,10 +72,6 @@ public class FeatureSpecFileValidator {
 
         if (!PDF_EXTENSION.equalsIgnoreCase(extension)) {
             throw new BadRequestException(ErrorCode.FEATURE_SPEC_FILE_EXTENSION_INVALID);
-        }
-
-        if (file.getSize() > MAX_FILE_SIZE) {
-            throw new BadRequestException(ErrorCode.FEATURE_SPEC_FILE_SIZE_EXCEEDED);
         }
 
         if (!MediaType.APPLICATION_PDF_VALUE.equalsIgnoreCase(file.getContentType())) {

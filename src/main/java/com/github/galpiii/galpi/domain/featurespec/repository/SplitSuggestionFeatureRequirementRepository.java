@@ -1,12 +1,16 @@
 package com.github.galpiii.galpi.domain.featurespec.repository;
 
+import com.github.galpiii.galpi.domain.featurespec.entity.FeatureRequirement;
 import com.github.galpiii.galpi.domain.featurespec.entity.SplitSuggestionFeatureRequirement;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 public interface SplitSuggestionFeatureRequirementRepository
         extends JpaRepository<SplitSuggestionFeatureRequirement, Long> {
@@ -29,4 +33,20 @@ public interface SplitSuggestionFeatureRequirementRepository
             """)
     List<SplitSuggestionFeatureRequirement> findAllWithRequirement(
             @Param("suggestionIds") Collection<Long> suggestionIds);
+
+    /** 추천안별로 가져갈 요구사항. 목록 조회는 내용만, 분리 실행은 복사할 원본으로 쓴다. */
+    default Map<Long, List<FeatureRequirement>> findRequirementsBySuggestionId(
+            Collection<Long> suggestionIds) {
+        if (suggestionIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return findAllWithRequirement(suggestionIds).stream()
+                .collect(Collectors.groupingBy(
+                        link -> link.getSplitFeatureSuggestion().getId(),
+                        LinkedHashMap::new,
+                        Collectors.mapping(
+                                SplitSuggestionFeatureRequirement::getFeatureRequirement,
+                                Collectors.toList())));
+    }
 }

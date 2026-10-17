@@ -47,7 +47,7 @@ class FeatureMatchingAiServiceTest {
 
     private FeatureMatchingAiService service(Duration budget) {
         OpenAiProperties properties = mock(OpenAiProperties.class);
-        when(properties.matching()).thenReturn(new OpenAiProperties.Matching("gpt-5-mini", 12000, budget));
+        when(properties.matching()).thenReturn(new OpenAiProperties.ModelSettings("gpt-5-mini", 12000, budget));
         when(properties.retryBackoff()).thenReturn(Duration.ofSeconds(5));
         FeatureMatchingPrompt prompt = new FeatureMatchingPrompt();
         prompt.load();

@@ -5,7 +5,7 @@ import com.github.galpiii.galpi.domain.featurespec.entity.ExtractionStatus;
 import com.github.galpiii.galpi.domain.featurespec.entity.SpecDocument;
 import com.github.galpiii.galpi.domain.featurespec.repository.SpecDocumentRepository;
 import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileValidator;
-import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecTempFileStore;
+import com.github.galpiii.galpi.domain.featurespec.store.FeatureSpecTempFileStore;
 import com.github.galpiii.galpi.domain.project.entity.Project;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.domain.user.entity.User;
