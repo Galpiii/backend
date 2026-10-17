@@ -14,6 +14,6 @@ public enum FeatureIssueType {
     // 원문 근거가 약해 확인 필요
     SOURCE_REVIEW_REQUIRED,
 
-    // 원문 내용끼리 서로 어긋남
+    // 기능명과 세부 요구사항이 서로 어긋남
     SOURCE_CONTENT_CONFLICT
 }

@@ -107,12 +107,13 @@ public class FeatureExtractionResultNormalizer {
     }
 
     private Set<String> referableExtractionIds(Long specDocumentId, List<Feature> features) {
-        // groupingBy는 null 키를 허용하지 않아 extractionId가 비어 있으면 정규화 전체가 죽는다.
+        // id별로 몇 번 나왔는지 세기
         Map<String, Long> countById = features.stream()
                 .map(Feature::extractionId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.groupingBy(id -> id, Collectors.counting()));
 
+        // 2번 이상 나온 id는 경고 로그
         countById.forEach((id, count) -> {
             if (count > 1) {
                 log.warn(
@@ -123,6 +124,7 @@ public class FeatureExtractionResultNormalizer {
             }
         });
 
+        // 딱 1번 나온 id만 모아서 돌려주기
         return countById.entrySet().stream()
                 .filter(entry -> entry.getValue() == 1)
                 .map(Map.Entry::getKey)
