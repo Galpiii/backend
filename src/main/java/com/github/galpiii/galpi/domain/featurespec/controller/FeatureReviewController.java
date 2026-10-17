@@ -7,6 +7,7 @@ import com.github.galpiii.galpi.domain.featurespec.dto.request.FeatureSplitReque
 import com.github.galpiii.galpi.domain.featurespec.dto.request.FeatureUpdateRequest;
 import com.github.galpiii.galpi.domain.featurespec.dto.response.FeatureReviewResponse;
 import com.github.galpiii.galpi.domain.featurespec.dto.response.FeatureReviewSummaryResponse;
+import com.github.galpiii.galpi.domain.featurespec.service.FeatureReviewQueryService;
 import com.github.galpiii.galpi.domain.featurespec.service.FeatureReviewService;
 import com.github.galpiii.galpi.global.response.ApiResponse;
 import jakarta.validation.Valid;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class FeatureReviewController implements FeatureReviewApi {
 
     private final FeatureReviewService featureReviewService;
+    private final FeatureReviewQueryService featureReviewQueryService;
 
     @Override
     @GetMapping("/features")
@@ -37,7 +39,7 @@ public class FeatureReviewController implements FeatureReviewApi {
             @AuthenticationPrincipal AuthPrincipal principal,
             @RequestParam(required = false) FeatureReviewFilter filter
     ) {
-        FeatureReviewResponse response = featureReviewService.list(
+        FeatureReviewResponse response = featureReviewQueryService.list(
                 specDocumentId,
                 principal.userId(),
                 filter
@@ -52,7 +54,7 @@ public class FeatureReviewController implements FeatureReviewApi {
             @PathVariable Long specDocumentId,
             @AuthenticationPrincipal AuthPrincipal principal
     ) {
-        FeatureReviewSummaryResponse response = featureReviewService.summary(
+        FeatureReviewSummaryResponse response = featureReviewQueryService.summary(
                 specDocumentId,
                 principal.userId()
         );

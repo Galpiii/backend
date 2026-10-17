@@ -64,7 +64,7 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
                     List.of(new FeatureReviewResponse.Requirement(34L, "게시글을 작성한다.", "원문")),
                     List.of(), List.of(), List.of());
 
-            given(featureReviewService.list(SPEC_DOCUMENT_ID, USER_ID, null))
+            given(featureReviewQueryService.list(SPEC_DOCUMENT_ID, USER_ID, null))
                     .willReturn(new FeatureReviewResponse(List.of(
                             new FeatureReviewResponse.SectionGroup(3L, "게시글", List.of(feature)))));
 
@@ -81,7 +81,7 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("filter를 그대로 서비스에 넘긴다")
         void passesFilter() throws Exception {
-            given(featureReviewService.list(SPEC_DOCUMENT_ID, USER_ID,
+            given(featureReviewQueryService.list(SPEC_DOCUMENT_ID, USER_ID,
                     FeatureReviewFilter.REVIEW_REQUIRED))
                     .willReturn(new FeatureReviewResponse(List.of()));
 
@@ -90,7 +90,7 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
                             .header(HttpHeaders.AUTHORIZATION, bearer()))
                     .andExpect(status().isOk());
 
-            verify(featureReviewService).list(
+            verify(featureReviewQueryService).list(
                     SPEC_DOCUMENT_ID, USER_ID, FeatureReviewFilter.REVIEW_REQUIRED);
         }
 
@@ -110,7 +110,7 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
             mockMvc.perform(get(FEATURES_PATH, SPEC_DOCUMENT_ID))
                     .andExpect(status().isUnauthorized());
 
-            verify(featureReviewService, never()).list(any(), any(), any());
+            verify(featureReviewQueryService, never()).list(any(), any(), any());
         }
     }
 
@@ -121,7 +121,7 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
         @Test
         @DisplayName("탭별 개수를 200으로 내려준다")
         void returnsSummary() throws Exception {
-            given(featureReviewService.summary(SPEC_DOCUMENT_ID, USER_ID))
+            given(featureReviewQueryService.summary(SPEC_DOCUMENT_ID, USER_ID))
                     .willReturn(new FeatureReviewSummaryResponse(5, 7, 25, 37));
 
             mockMvc.perform(get(SUMMARY_PATH, SPEC_DOCUMENT_ID)
@@ -137,7 +137,7 @@ class FeatureReviewControllerTest extends WebMvcTestSupport {
         @DisplayName("접근할 수 없는 기능명세서면 404다")
         void returnsNotFound() throws Exception {
             willThrow(new NotFoundException(ErrorCode.FEATURE_SPEC_NOT_ACCESSIBLE))
-                    .given(featureReviewService).summary(SPEC_DOCUMENT_ID, USER_ID);
+                    .given(featureReviewQueryService).summary(SPEC_DOCUMENT_ID, USER_ID);
 
             mockMvc.perform(get(SUMMARY_PATH, SPEC_DOCUMENT_ID)
                             .header(HttpHeaders.AUTHORIZATION, bearer()))

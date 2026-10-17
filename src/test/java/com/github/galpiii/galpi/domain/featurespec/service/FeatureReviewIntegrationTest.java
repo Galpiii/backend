@@ -51,6 +51,8 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
     @Autowired
     private FeatureReviewService featureReviewService;
     @Autowired
+    private FeatureReviewQueryService featureReviewQueryService;
+    @Autowired
     private UserRepository userRepository;
     @Autowired
     private ProjectRepository projectRepository;
@@ -262,7 +264,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
             User stranger = userRepository.save(
                     User.ofGithub(System.nanoTime(), "stranger", "남", null, null));
 
-            assertThatThrownBy(() -> featureReviewService.list(
+            assertThatThrownBy(() -> featureReviewQueryService.list(
                     specDocumentId, stranger.getId(), FeatureReviewFilter.ALL))
                     .isInstanceOf(NotFoundException.class);
         }
@@ -858,7 +860,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
                     new FeatureUpdateRequest("신고 관리", null));
 
             FeatureReviewSummaryResponse summary =
-                    featureReviewService.summary(specDocumentId, userId);
+                    featureReviewQueryService.summary(specDocumentId, userId);
 
             assertThat(summary.reviewRequired()).isEqualTo(2);
             assertThat(summary.noIssue()).isEqualTo(1);
@@ -868,7 +870,7 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
     }
 
     private FeatureReviewResponse list(FeatureReviewFilter filter) {
-        return featureReviewService.list(specDocumentId, userId, filter);
+        return featureReviewQueryService.list(specDocumentId, userId, filter);
     }
 
     private List<String> featureNames(FeatureReviewResponse response) {
