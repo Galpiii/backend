@@ -55,16 +55,19 @@ galpi:
 
   openai:
     api-key: ${OPENAI_API_KEY}
-    model: ${OPENAI_MODEL}
-    max-output-tokens: ${OPENAI_MAX_OUTPUT_TOKENS}
-    timeout: ${OPENAI_TIMEOUT}
-    max-attempts: ${OPENAI_MAX_ATTEMPTS}
-    analysis-budget: ${OPENAI_ANALYSIS_BUDGET}
-    # PR 요약은 모델과 상한을 따로 둔다. 명세서 추출은 문서 한 건에 한 번이지만 요약은
+    timeout: ${OPENAI_TIMEOUT:10m}
+    max-attempts: ${OPENAI_MAX_ATTEMPTS:3}
+    retry-backoff: ${OPENAI_RETRY_BACKOFF:1s}
+    # 용도별로 모델과 상한을 따로 둔다. 명세서 추출은 문서 한 건에 한 번이지만 요약은
     # 저장소 하나에 수백 건이라, 같은 값을 쓰면 비용이 그대로 곱해진다.
-    summary-model: ${OPENAI_SUMMARY_MODEL:gpt-5-mini}
-    summary-max-output-tokens: ${OPENAI_SUMMARY_MAX_OUTPUT_TOKENS:2000}
-    summary-budget: ${OPENAI_SUMMARY_BUDGET:3m}
+    extraction:
+      model: ${OPENAI_MODEL:gpt-5}
+      max-output-tokens: ${OPENAI_MAX_OUTPUT_TOKENS:128000}
+      budget: ${OPENAI_ANALYSIS_BUDGET:15m}
+    summary:
+      model: ${OPENAI_SUMMARY_MODEL:gpt-5-mini}
+      max-output-tokens: ${OPENAI_SUMMARY_MAX_OUTPUT_TOKENS:2000}
+      budget: ${OPENAI_SUMMARY_BUDGET:3m}
     matching:
       model: ${OPENAI_MATCHING_MODEL:gpt-5-mini}
       max-output-tokens: ${OPENAI_MATCHING_MAX_OUTPUT_TOKENS:12000}

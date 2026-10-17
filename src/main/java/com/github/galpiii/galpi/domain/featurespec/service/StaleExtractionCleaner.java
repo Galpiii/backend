@@ -77,7 +77,7 @@ class StaleExtractionCleaner {
      * 자기 분석을 시작한다. 한 건의 최대 수명은 예산에 진행 중인 호출의 타임아웃을 더한 값이다.
      */
     private Duration staleAfter() {
-        Duration perTask = openAiProperties.analysisBudget().plus(openAiProperties.timeout());
+        Duration perTask = openAiProperties.extraction().budget().plus(openAiProperties.timeout());
         int queuedBatches = (properties.queueCapacity() / properties.maxPoolSize()) + 1;
 
         return perTask.multipliedBy((long) queuedBatches * SAFETY_FACTOR);

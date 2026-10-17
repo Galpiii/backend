@@ -59,7 +59,7 @@ public class FeatureSpecAiService {
     }
 
     public FeatureSpecExtractionResult analyze(File pdf) {
-        Instant deadline = Instant.now().plus(properties.analysisBudget());
+        Instant deadline = Instant.now().plus(properties.extraction().budget());
         String fileId = uploadPdf(pdf, deadline);
 
         try {
@@ -134,9 +134,9 @@ public class FeatureSpecAiService {
                         .build());
 
         return ResponseCreateParams.builder()
-                .model(properties.model())
+                .model(properties.extraction().model())
                 .instructions(prompt.instructions())
-                .maxOutputTokens(properties.maxOutputTokens())
+                .maxOutputTokens(properties.extraction().maxOutputTokens())
                 .store(false)
                 .text(ResponseTextConfig.builder()
                         .format(prompt.schemaConfig())
