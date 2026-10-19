@@ -37,7 +37,7 @@ public class FeatureMatchingAiService {
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     private final OpenAIClient client;
-    private final OpenAiProperties.Matching properties;
+    private final OpenAiProperties.ModelSettings properties;
     private final FeatureMatchingPrompt prompt;
     private final AiRetryTemplate failures;
 

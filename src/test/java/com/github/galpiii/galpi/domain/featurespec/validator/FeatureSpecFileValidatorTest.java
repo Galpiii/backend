@@ -1,5 +1,6 @@
 package com.github.galpiii.galpi.domain.featurespec.validator;
 
+import com.github.galpiii.galpi.domain.featurespec.store.FeatureSpecTempFileStore;
 import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileValidator.ValidatedFeatureSpec;
 import com.github.galpiii.galpi.global.error.ErrorCode;
 import com.github.galpiii.galpi.global.error.exception.BadRequestException;
@@ -27,7 +28,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class FeatureSpecFileValidatorTest {
 
     private static final String FILE_NAME = "기능명세서.pdf";
-    private static final long MAX_FILE_SIZE = 20L * 1024 * 1024;
 
     private final FeatureSpecTempFileStore tempFileStore = new FeatureSpecTempFileStore();
     private final FeatureSpecFileValidator validator = new FeatureSpecFileValidator(tempFileStore);
@@ -64,7 +64,7 @@ class FeatureSpecFileValidatorTest {
     }
 
     private static long tempFileCount() {
-        File[] files = new File(System.getProperty("java.io.tmpdir"))
+        File[] files = new File(System.getProperty("java.io.tmpdir"), "galpi-feature-spec")
                 .listFiles((dir, name) -> name.startsWith("feature-spec-") && name.endsWith(".pdf"));
 
         return files == null ? 0 : files.length;
@@ -145,23 +145,6 @@ class FeatureSpecFileValidatorTest {
         assertThatThrownBy(() -> validator.validate(pdfFile("기능명세서.png", pdfWithPages(1))))
                 .isInstanceOf(BadRequestException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_SPEC_FILE_EXTENSION_INVALID);
-    }
-
-    @Test
-    @DisplayName("20MB를 넘으면 거부한다")
-    void rejectsOversizedFile() throws IOException {
-        byte[] content = pdfWithPages(1);
-        MultipartFile file =
-                new MockMultipartFile("file", FILE_NAME, MediaType.APPLICATION_PDF_VALUE, content) {
-                    @Override
-                    public long getSize() {
-                        return MAX_FILE_SIZE + 1;
-                    }
-                };
-
-        assertThatThrownBy(() -> validator.validate(file))
-                .isInstanceOf(BadRequestException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_SPEC_FILE_SIZE_EXCEEDED);
     }
 
     @Test

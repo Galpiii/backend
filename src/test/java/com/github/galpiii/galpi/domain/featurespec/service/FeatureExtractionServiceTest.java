@@ -8,7 +8,7 @@ import com.github.galpiii.galpi.ai.dto.FeatureSpecExtractionResult.Source;
 import com.github.galpiii.galpi.ai.exception.FeatureSpecAiException;
 import com.github.galpiii.galpi.domain.featurespec.entity.ExtractionFailureCode;
 import com.github.galpiii.galpi.domain.featurespec.support.FeatureExtractionResultNormalizer;
-import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecTempFileStore;
+import com.github.galpiii.galpi.domain.featurespec.store.FeatureSpecTempFileStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

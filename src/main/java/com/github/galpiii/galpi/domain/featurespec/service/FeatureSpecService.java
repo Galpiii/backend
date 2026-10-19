@@ -6,7 +6,7 @@ import com.github.galpiii.galpi.domain.featurespec.entity.ExtractionStatus;
 import com.github.galpiii.galpi.domain.featurespec.entity.SpecDocument;
 import com.github.galpiii.galpi.domain.featurespec.repository.SpecDocumentRepository;
 import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileValidator;
-import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecTempFileStore;
+import com.github.galpiii.galpi.domain.featurespec.store.FeatureSpecTempFileStore;
 import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecFileValidator.ValidatedFeatureSpec;
 import com.github.galpiii.galpi.domain.project.repository.ProjectRepository;
 import com.github.galpiii.galpi.global.error.ErrorCode;
@@ -40,22 +40,27 @@ public class FeatureSpecService {
             Long userId,
             MultipartFile file
     ) {
-        verifyProjectOwner(projectId, userId);
-        verifyNoRegisteredSpecDocument(projectId);
-        verifyExtractionCapacity(projectId);
+        verifyProjectOwner(projectId, userId);  // 소유자 검증
+        verifyNoRegisteredSpecDocument(projectId);  // 이미 올린 명세서가 있는지
+        verifyExtractionCapacity(projectId);    // 분석 대기열 꽉 찼는지
 
         ValidatedFeatureSpec validatedFeatureSpec = featureSpecFileValidator.validate(file);
 
-        SpecDocument savedSpecDocument = saveOrDeleteTempFile(projectId, userId, validatedFeatureSpec);
+        // 제출에 성공하면 임시 파일은 분석 작업이 지운다. 그 전에 실패하면 여기서 지운다.
+        SpecDocument savedSpecDocument;
+        try {
+            savedSpecDocument = specDocumentWriter.save(projectId, userId, validatedFeatureSpec.fileName());
+            submitExtraction(
+                    savedSpecDocument.getId(),
+                    validatedFeatureSpec.tempFile(),
+                    ErrorCode.FEATURE_SPEC_EXTRACTION_BUSY
+            );
+        } catch (RuntimeException e) {
+            tempFileStore.delete(validatedFeatureSpec.tempFile());
+            throw e;
+        }
 
-        submitExtraction(
-                savedSpecDocument.getId(),
-                validatedFeatureSpec.tempFile(),
-                ErrorCode.FEATURE_SPEC_EXTRACTION_BUSY
-        );
-
-        // 위저드를 ② 저장소 연결 단계로 넘긴다. 제출이 거부되면 접수 자체를 되돌리는데
-        // 단계 전진은 되돌릴 수단이 없으므로, 제출이 성공한 뒤에만 옮긴다.
+        // 위저드를 ② 저장소 연결 단계로 넘긴다.
         specDocumentWriter.attachToProject(projectId, savedSpecDocument.getId());
 
         log.info(
@@ -84,16 +89,22 @@ public class FeatureSpecService {
         verifyExtractionCapacity(projectId);
 
         ValidatedFeatureSpec validatedFeatureSpec = featureSpecFileValidator.validate(file);
-        verifyExtractionCapacityBeforeDeleting(projectId, validatedFeatureSpec);
 
-        SpecDocument savedSpecDocument =
-                replaceOrDeleteTempFile(projectId, userId, current.getId(), validatedFeatureSpec);
-
-        submitExtraction(
-                savedSpecDocument.getId(),
-                validatedFeatureSpec.tempFile(),
-                ErrorCode.FEATURE_SPEC_REPLACE_BUSY
-        );
+        // 제출에 성공하면 임시 파일은 분석 작업이 지운다. 그 전에 실패하면 여기서 지운다.
+        SpecDocument savedSpecDocument;
+        try {
+            verifyExtractionCapacity(projectId);
+            savedSpecDocument = specDocumentWriter.replace(
+                    projectId, userId, current.getId(), validatedFeatureSpec.fileName());
+            submitExtraction(
+                    savedSpecDocument.getId(),
+                    validatedFeatureSpec.tempFile(),
+                    ErrorCode.FEATURE_SPEC_REPLACE_BUSY
+            );
+        } catch (RuntimeException e) {
+            tempFileStore.delete(validatedFeatureSpec.tempFile());
+            throw e;
+        }
 
         log.info(
                 "[기능명세서 교체] 교체 완료. specDocumentId: {}, 이전 specDocumentId: {}, projectId: {}, userId: {}",
@@ -141,49 +152,7 @@ public class FeatureSpecService {
         return current;
     }
 
-    private void verifyExtractionCapacityBeforeDeleting(
-            Long projectId,
-            ValidatedFeatureSpec validatedFeatureSpec
-    ) {
-        try {
-            verifyExtractionCapacity(projectId);
-        } catch (RuntimeException e) {
-            tempFileStore.delete(validatedFeatureSpec.tempFile());
-            throw e;
-        }
-    }
-
-    private SpecDocument replaceOrDeleteTempFile(
-            Long projectId,
-            Long userId,
-            Long currentSpecDocumentId,
-            ValidatedFeatureSpec validatedFeatureSpec
-    ) {
-        try {
-            return specDocumentWriter.replace(
-                    projectId, userId, currentSpecDocumentId, validatedFeatureSpec.fileName());
-        } catch (RuntimeException e) {
-            tempFileStore.delete(validatedFeatureSpec.tempFile());
-            throw e;
-        }
-    }
-
-    private SpecDocument saveOrDeleteTempFile(
-            Long projectId,
-            Long userId,
-            ValidatedFeatureSpec validatedFeatureSpec
-    ) {
-        try {
-            return specDocumentWriter.save(projectId, userId, validatedFeatureSpec.fileName());
-        } catch (RuntimeException e) {
-            tempFileStore.delete(validatedFeatureSpec.tempFile());
-            throw e;
-        }
-    }
-
-    // 제출이 거부되면 비동기 메서드가 실행되지 않아 임시 파일도 접수한 행도 정리할 주체가 없다.
-    // 분석을 시작조차 못 했으므로 접수 자체를 되돌린다.
-    // 거부 시 안내가 업로드와 교체에서 다르다. 교체는 기존 문서를 이미 지운 뒤라 되돌릴 원본이 없다.
+    // 기능명세서 분석 제출
     private void submitExtraction(Long specDocumentId, File tempFile, ErrorCode rejectedError) {
         try {
             featureExtractionService.extract(specDocumentId, tempFile);
@@ -194,7 +163,6 @@ public class FeatureSpecService {
                     e
             );
             specDocumentWriter.delete(specDocumentId);
-            tempFileStore.delete(tempFile);
 
             throw new GlobalException(rejectedError);
         }
@@ -218,9 +186,6 @@ public class FeatureSpecService {
     }
 
     // 프로젝트 존재 및 소유자 검증
-    //
-    // 소유자 확인과 삭제 여부를 조회 조건에 함께 넣는다. 남의 프로젝트, 없는 프로젝트,
-    // 삭제된 프로젝트가 모두 같은 404로 나가야 프로젝트 id의 존재 여부가 새지 않는다.
     private void verifyProjectOwner(Long projectId, Long userId) {
         if (projectRepository.findByIdAndOwnerIdAndDeletedAtIsNull(projectId, userId).isEmpty()) {
             log.warn(
@@ -232,7 +197,7 @@ public class FeatureSpecService {
         }
     }
 
-    // 어차피 거절할 요청에 임시 파일 쓰기와 PDF 파싱 비용을 들이지 않는다.
+    // 분석 대기열 확인
     private void verifyExtractionCapacity(Long projectId) {
         if (featureExtractionService.isBusy()) {
             log.warn("[기능명세서] 분석 큐가 가득 차 요청을 거절합니다. projectId: {}", projectId);

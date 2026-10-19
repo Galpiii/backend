@@ -78,7 +78,7 @@ class FeatureSpecReplaceIntegrationTest extends IntegrationTestSupport {
     @Autowired
     private UserRepository userRepository;
     @Autowired
-    private com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecTempFileStore tempFileStore;
+    private com.github.galpiii.galpi.domain.featurespec.store.FeatureSpecTempFileStore tempFileStore;
 
     /** 분석 스레드가 살아 있으면 다음 테스트가 DB를 비우는 사이 상태를 써서 서로를 간섭한다. */
     @MockitoBean

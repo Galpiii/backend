@@ -9,6 +9,7 @@ import com.github.galpiii.galpi.domain.auth.jwt.JwtTokenProvider;
 import com.github.galpiii.galpi.domain.auth.service.AuthService;
 import com.github.galpiii.galpi.domain.auth.support.RefreshCookieFactory;
 import com.github.galpiii.galpi.domain.consent.service.AiDataConsentService;
+import com.github.galpiii.galpi.domain.featurespec.service.FeatureReviewQueryService;
 import com.github.galpiii.galpi.domain.featurespec.service.FeatureReviewService;
 import com.github.galpiii.galpi.domain.featurespec.service.FeatureSpecService;
 import com.github.galpiii.galpi.domain.featurematch.service.FeatureMatchRunService;
@@ -75,6 +76,8 @@ public abstract class WebMvcTestSupport {
     protected FeatureSpecService featureSpecService;
     @MockitoBean
     protected FeatureReviewService featureReviewService;
+    @MockitoBean
+    protected FeatureReviewQueryService featureReviewQueryService;
     @MockitoBean
     protected AnalysisRunService analysisRunService;
     @MockitoBean

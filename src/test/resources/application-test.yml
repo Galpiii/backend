@@ -37,15 +37,17 @@ galpi:
   # OpenAIClient를 대체해 막는다 — 이 값들이 진짜 요청에 쓰이는 일은 없다.
   openai:
     api-key: test-api-key
-    model: gpt-5
-    max-output-tokens: 128000
     timeout: 10m
     max-attempts: 3
     retry-backoff: 1ms
-    analysis-budget: 15m
-    summary-model: gpt-5-mini
-    summary-max-output-tokens: 2000
-    summary-budget: 3m
+    extraction:
+      model: gpt-5
+      max-output-tokens: 128000
+      budget: 15m
+    summary:
+      model: gpt-5-mini
+      max-output-tokens: 2000
+      budget: 3m
 
   feature-extraction:
     core-pool-size: 1

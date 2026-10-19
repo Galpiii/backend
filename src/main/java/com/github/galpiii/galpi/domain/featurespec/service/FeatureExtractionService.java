@@ -5,7 +5,7 @@ import com.github.galpiii.galpi.ai.dto.FeatureSpecExtractionResult;
 import com.github.galpiii.galpi.domain.featurespec.config.FeatureExtractionAsyncConfig;
 import com.github.galpiii.galpi.domain.featurespec.entity.ExtractionFailureCode;
 import com.github.galpiii.galpi.domain.featurespec.support.FeatureExtractionResultNormalizer;
-import com.github.galpiii.galpi.domain.featurespec.validator.FeatureSpecTempFileStore;
+import com.github.galpiii.galpi.domain.featurespec.store.FeatureSpecTempFileStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
