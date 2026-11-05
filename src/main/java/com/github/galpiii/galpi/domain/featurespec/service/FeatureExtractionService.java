@@ -30,16 +30,19 @@ public class FeatureExtractionService {
 
     @Async(FeatureExtractionAsyncConfig.EXECUTOR)
     public void extract(Long specDocumentId, File pdf) {
+        long startedAt = System.nanoTime();
+
         try {
             featureExtractionWriter.markProcessing(specDocumentId);
 
-            FeatureSpecExtractionResult extracted =
-                    normalizer.normalize(specDocumentId, featureSpecAiService.analyze(pdf));
+            FeatureSpecExtractionResult raw = featureSpecAiService.analyze(pdf);
+            FeatureSpecExtractionResult extracted = normalizer.normalize(specDocumentId, raw);
 
             if (extracted.features().isEmpty()) {
                 log.warn(
-                        "[기능명세서 분석] 문서에서 기능을 추출하지 못했습니다. specDocumentId: {}",
-                        specDocumentId
+                        "[기능명세서 분석] 문서에서 기능을 추출하지 못했습니다. specDocumentId: {}, 소요 시간: {}ms",
+                        specDocumentId,
+                        elapsedMs(startedAt)
                 );
                 markFailed(specDocumentId, ExtractionFailureCode.NO_FEATURE_EXTRACTED);
                 return;
@@ -48,16 +51,27 @@ public class FeatureExtractionService {
             featureExtractionWriter.saveResult(specDocumentId, extracted);
 
             log.info(
-                    "[기능명세서 분석] 분석 완료. specDocumentId: {}, 기능 수: {}",
+                    "[기능명세서 분석] 분석 완료. specDocumentId: {}, 기능 수: {}, 정규화로 버린 항목: {}, 소요 시간: {}ms",
                     specDocumentId,
-                    extracted.features().size()
+                    extracted.features().size(),
+                    normalizer.droppedCount(raw, extracted),
+                    elapsedMs(startedAt)
             );
         } catch (Exception e) {
-            log.error("[기능명세서 분석] 분석에 실패했습니다. specDocumentId: {}", specDocumentId, e);
+            log.error(
+                    "[기능명세서 분석] 분석에 실패했습니다. specDocumentId: {}, 소요 시간: {}ms",
+                    specDocumentId,
+                    elapsedMs(startedAt),
+                    e
+            );
             markFailed(specDocumentId, ExtractionFailureCode.ANALYSIS_FAILED);
         } finally {
             tempFileStore.delete(pdf);
         }
+    }
+
+    private static long elapsedMs(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
     private void markFailed(Long specDocumentId, ExtractionFailureCode failureCode) {

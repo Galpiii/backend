@@ -527,4 +527,38 @@ class FeatureExtractionResultNormalizerTest {
             assertThat(result.features().getFirst().issues()).isEmpty();
         }
     }
+
+    @Nested
+    @DisplayName("버린 항목 수")
+    class DroppedCount {
+
+        private int droppedCount(List<Section> sections, List<Feature> features) {
+            FeatureSpecExtractionResult raw = new FeatureSpecExtractionResult(sections, features);
+
+            return normalizer.droppedCount(raw, normalizer.normalize(SPEC_DOCUMENT_ID, raw));
+        }
+
+        @Test
+        @DisplayName("버린 것이 없으면 0이다")
+        void countsNothingForValidResult() {
+            Feature valid = feature("f1", "회원", List.of(requirement("가입한다.")));
+
+            assertThat(droppedCount(List.of(section("회원")), List.of(valid))).isZero();
+        }
+
+        @Test
+        @DisplayName("섹션·섹션 연결·특이사항·중복 후보를 버린 만큼 센다")
+        void countsDroppedPieces() {
+            Feature broken = new Feature("f1", "기능", "없는 섹션", List.of(requirement("하나")),
+                    new Source(1, 1),
+                    List.of(new Issue("UNKNOWN_TYPE", "?"),
+                            new Issue("DUPLICATE_SUSPECTED", "겹친다.")),
+                    List.of(new DuplicateCandidate("없는id", "?", "이름", "섹션")),
+                    null);
+
+            // 중복 섹션 1 + 섹션 연결 1 + 특이사항 2(모르는 유형, 후보를 잃은 배지) + 중복 후보 1
+            assertThat(droppedCount(List.of(section("회원"), section("회원")), List.of(broken)))
+                    .isEqualTo(5);
+        }
+    }
 }
