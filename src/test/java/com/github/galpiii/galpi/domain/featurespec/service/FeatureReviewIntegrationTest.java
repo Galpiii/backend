@@ -35,12 +35,18 @@ import com.github.galpiii.galpi.support.IntegrationTestSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -534,6 +540,57 @@ class FeatureReviewIntegrationTest extends IntegrationTestSupport {
                     .containsExactly("게시글을 작성한다.", "글을 쓴다.");
             // 특이사항은 물려받지 않는다
             assertThat(featureIssueRepository.findAll()).isEmpty();
+        }
+
+        @RepeatedTest(5)
+        @DisplayName("같은 병합을 동시에 눌러도 합쳐진 기능은 하나다")
+        void concurrentMergeCreatesOneFeature() throws Exception {
+            Feature source = newFeature("게시글 작성", section, 0);
+            Feature target = newFeature("글쓰기", section, 1);
+            newRequirement(source, "게시글을 작성한다.", 0);
+            newRequirement(target, "글을 쓴다.", 0);
+            newIssue(source, FeatureIssueType.DUPLICATE_SUSPECTED);
+            newCandidate(source, target, "게시글 관리", "게시글");
+
+            int threads = 4;
+            List<Throwable> failures = new ArrayList<>();
+            int succeeded = 0;
+
+            try (ExecutorService pool = Executors.newFixedThreadPool(threads)) {
+                CountDownLatch start = new CountDownLatch(1);
+                List<Future<Throwable>> futures = new ArrayList<>();
+
+                for (int i = 0; i < threads; i++) {
+                    futures.add(pool.submit(() -> {
+                        start.await();
+                        try {
+                            featureReviewService.merge(specDocumentId, userId, source.getId(),
+                                    new FeatureMergeRequest(target.getId(), "게시글 관리"));
+                            return null;
+                        } catch (Throwable e) {
+                            return e;
+                        }
+                    }));
+                }
+                start.countDown();
+
+                for (Future<Throwable> future : futures) {
+                    Throwable failure = future.get(30, TimeUnit.SECONDS);
+                    if (failure == null) {
+                        succeeded++;
+                    } else {
+                        failures.add(failure);
+                    }
+                }
+            }
+
+            assertThat(succeeded).isEqualTo(1);
+            assertThat(failures)
+                    .allSatisfy(failure -> assertThat(failure).isInstanceOf(NotFoundException.class));
+            assertThat(featureRepository.findAllForReview(specDocumentId))
+                    .singleElement()
+                    .extracting(Feature::getName)
+                    .isEqualTo("게시글 관리");
         }
 
         @Test
