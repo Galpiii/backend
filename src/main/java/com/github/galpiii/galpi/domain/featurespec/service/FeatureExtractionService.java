@@ -35,8 +35,8 @@ public class FeatureExtractionService {
         try {
             featureExtractionWriter.markProcessing(specDocumentId);
 
-            FeatureSpecExtractionResult extracted =
-                    normalizer.normalize(specDocumentId, featureSpecAiService.analyze(pdf));
+            FeatureSpecExtractionResult raw = featureSpecAiService.analyze(pdf);
+            FeatureSpecExtractionResult extracted = normalizer.normalize(specDocumentId, raw);
 
             if (extracted.features().isEmpty()) {
                 log.warn(
@@ -51,9 +51,10 @@ public class FeatureExtractionService {
             featureExtractionWriter.saveResult(specDocumentId, extracted);
 
             log.info(
-                    "[기능명세서 분석] 분석 완료. specDocumentId: {}, 기능 수: {}, 소요 시간: {}ms",
+                    "[기능명세서 분석] 분석 완료. specDocumentId: {}, 기능 수: {}, 정규화로 버린 항목: {}, 소요 시간: {}ms",
                     specDocumentId,
                     extracted.features().size(),
+                    normalizer.droppedCount(raw, extracted),
                     elapsedMs(startedAt)
             );
         } catch (Exception e) {

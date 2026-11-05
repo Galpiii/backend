@@ -76,6 +76,30 @@ public class FeatureExtractionResultNormalizer {
         return new FeatureSpecExtractionResult(sections, features);
     }
 
+    /** 정규화가 버린 섹션·섹션 연결·특이사항·중복 후보·분리 제안 수. 기능과 요구사항은 버리지 않는다. */
+    public int droppedCount(FeatureSpecExtractionResult raw, FeatureSpecExtractionResult normalized) {
+        List<Feature> rawFeatures = nullToEmpty(raw.features());
+        int dropped = nullToEmpty(raw.sections()).size() - normalized.sections().size();
+
+        for (int index = 0; index < rawFeatures.size(); index++) {
+            Feature before = rawFeatures.get(index);
+            Feature after = normalized.features().get(index);
+
+            if (before.section() != null && after.section() == null) {
+                dropped++;
+            }
+
+            dropped += nullToEmpty(before.issues()).size() - after.issues().size();
+            dropped += nullToEmpty(before.duplicateCandidates()).size() - after.duplicateCandidates().size();
+
+            if (before.splitSuggestion() != null && after.splitSuggestion() == null) {
+                dropped++;
+            }
+        }
+
+        return dropped;
+    }
+
     private List<Section> normalizeSections(Long specDocumentId, List<Section> sections) {
         Set<String> seenTitles = new HashSet<>();
         List<Section> normalized = new ArrayList<>();
