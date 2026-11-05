@@ -19,6 +19,8 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -32,6 +34,13 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -181,5 +190,51 @@ class FeatureSpecUploadIntegrationTest extends IntegrationTestSupport {
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROJECT_NOT_FOUND);
 
         assertThat(specDocumentRepository.count()).isZero();
+    }
+
+    @Nested
+    @DisplayName("동시성 — 더블클릭")
+    class Concurrency {
+
+        private static final int THREADS = 4;
+
+        @RepeatedTest(5)
+        @DisplayName("동시에 올려도 문서는 하나이고 진 쪽은 409다")
+        void onlyOneUploadWins() throws Exception {
+            List<Throwable> failures = new ArrayList<>();
+            List<Long> succeeded = new ArrayList<>();
+
+            try (ExecutorService pool = Executors.newFixedThreadPool(THREADS)) {
+                CountDownLatch start = new CountDownLatch(1);
+                List<Future<Object>> futures = new ArrayList<>();
+
+                for (int i = 0; i < THREADS; i++) {
+                    futures.add(pool.submit(() -> {
+                        start.await();
+                        try {
+                            return service.upload(projectId, userId, pdfFile()).specDocumentId();
+                        } catch (Throwable e) {
+                            return e;
+                        }
+                    }));
+                }
+                start.countDown();
+
+                for (Future<Object> future : futures) {
+                    Object result = future.get(30, TimeUnit.SECONDS);
+                    if (result instanceof Throwable failure) {
+                        failures.add(failure);
+                    } else {
+                        succeeded.add((Long) result);
+                    }
+                }
+            }
+
+            assertThat(succeeded).hasSize(1);
+            assertThat(failures).allSatisfy(failure -> assertThat(failure)
+                    .isInstanceOf(ConflictException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FEATURE_SPEC_ALREADY_EXISTS));
+            assertThat(specDocumentRepository.count()).isEqualTo(1);
+        }
     }
 }
