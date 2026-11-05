@@ -20,7 +20,9 @@ FROM eclipse-temurin:21-jre-jammy AS runtime
 WORKDIR /app
 
 RUN groupadd --system spring \
-    && useradd --system --gid spring spring
+    && useradd --system --gid spring spring \
+    && mkdir -p /app/logs \
+    && chown spring:spring /app/logs
 
 COPY --from=builder --chown=spring:spring /app/build/libs/app.jar ./build/libs/app.jar
 

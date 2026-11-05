@@ -41,6 +41,9 @@ out/
 ### Spring Initializr ###
 HELP.md
 
+### 로그 ###
+logs/
+
 ### 자격증명 — 절대 커밋하지 않는다 ###
 .env
 .env.*
